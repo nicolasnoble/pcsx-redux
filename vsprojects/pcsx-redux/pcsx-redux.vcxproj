@@ -172,6 +172,9 @@
     <ProjectReference Include="..\SPU\SPU.vcxproj">
       <Project>{bf968fd3-ef46-45af-b74e-46a41a96276f}</Project>
     </ProjectReference>
+    <ProjectReference Include="..\sse-hash\sse-hash.vcxproj">
+      <Project>{0a91ef5a-d858-4f7e-8997-1727dc9bb403}</Project>
+    </ProjectReference>
     <ProjectReference Include="..\zlib\zlib.vcxproj">
       <Project>{3125e078-7261-48c4-803e-4b29ceeaa56b}</Project>
     </ProjectReference>

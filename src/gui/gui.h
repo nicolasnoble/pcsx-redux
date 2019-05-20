@@ -63,6 +63,7 @@ class GUI final {
     void scheduleHardReset() { m_scheduleHardReset = true; }
 
   private:
+    void work();
     static void checkGL();
     void saveCfg();
 
@@ -72,6 +73,7 @@ class GUI final {
     bool configure();
     void biosCounters();
     void about();
+    void hashes();
 
     void normalizeDimensions(ImVec2 &vec, float ratio) {
         float r = vec.y / vec.x;
@@ -115,6 +117,17 @@ class GUI final {
     bool m_showDemo = false;
     bool &m_showVRAMwindow = {settings.get<ShowVRAM>().value};
     bool m_showAbout = false;
+    bool m_showHashes = false;
+    std::function<std::function<void(uint8_t digest[16])>(float *, uint32_t *)> m_computingHashes = nullptr;
+    int m_numTracks = 0;
+    int m_currentTrack = 0;
+    struct HashInfo {
+        HashInfo() { memset(digest, 0, sizeof(digest)); }
+        uint8_t digest[16];
+        uint32_t length = 0;
+        float progress = 0.0f;
+    };
+    std::vector<HashInfo> m_hashInfos;
     Widgets::Log m_log = {settings.get<ShowLog>().value};
     struct MemoryEditorWrapper {
         MemoryEditorWrapper() {

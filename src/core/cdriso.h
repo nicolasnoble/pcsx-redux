@@ -22,6 +22,8 @@
 
 #include <stdio.h>
 
+#include <functional>
+
 #include "core/file.h"
 #include "core/plugins.h"
 #include "core/psxemulator.h"
@@ -53,6 +55,11 @@ class CDRiso {
 
     int LoadSBI(const char* filename);
     bool CheckSBI(const uint8_t* time);
+
+    int getNumTracks() { return m_numtracks; }
+    std::function<std::function<void(uint8_t digest[16])>(float*, uint32_t*)> startMD5(int trackID);
+    void getTrackStart(int trackID, uint8_t msf[3]) { memcpy(msf, m_ti[trackID].start, sizeof(m_ti[0].start)); }
+    void getTrackLength(int trackID, uint8_t msf[3]) { memcpy(msf, m_ti[trackID].length, sizeof(m_ti[0].length)); }
 
   private:
     typedef ssize_t (CDRiso::*read_func_t)(File* f, unsigned int base, void* dest, int sector);
@@ -157,6 +164,8 @@ class CDRiso {
                      size_t major_mult, size_t minor_inc, uint8_t* ecc);
     void ecc_writesector(const uint8_t* address, const uint8_t* data, uint8_t* ecc);
     void reconstruct_sector(uint8_t* sector, int8_t type);
+
+  public:
     // get a sector from a msf-array
     static unsigned int msf2sec(const uint8_t* msf) { return ((msf[0] * 60 + msf[1]) * 75) + msf[2]; }
     static void sec2msf(unsigned int s, uint8_t* msf) {
@@ -167,6 +176,8 @@ class CDRiso {
         msf[2] = s;
     }
     static void tok2msf(char* time, char* msf);
+
+  private:
     trackinfo::cddatype_t get_cdda_type(const char* str);
     void DecodeRawSubData();
     int do_decode_cdda(struct trackinfo* tri, uint32_t tracknumber);

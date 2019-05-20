@@ -32,10 +32,16 @@
 #include <sys/time.h>
 #include <unistd.h>
 #endif
+#include <SDL.h>
 #include <zlib.h>
 
 #include <algorithm>
 #include <filesystem>
+
+#include <emmintrin.h>
+extern "C" {
+#include "md5-sse2.h"
+}
 
 #include "core/cdriso.h"
 #include "core/cdrom.h"
@@ -807,7 +813,8 @@ int PCSX::CDRiso::parsecue(const char *isofileString) {
 
             file_len = 0;
             if (m_ti[m_numtracks + 1].handle->failed()) {
-                PCSX::g_system->message(_("\ncould not open: %s\n"), m_ti[m_numtracks + 1].handle->filename().u8string().c_str());
+                PCSX::g_system->message(_("\ncould not open: %s\n"),
+                                        m_ti[m_numtracks + 1].handle->filename().u8string().c_str());
                 delete m_ti[m_numtracks + 1].handle;
                 m_ti[m_numtracks + 1].handle = nullptr;
                 continue;
@@ -1950,12 +1957,22 @@ bool PCSX::CDRiso::open(void) {
     }
 
     if (m_numtracks == 0) {
+        int numSectors = 0;
+        m_cdHandle->seek(0, SEEK_END);
+        if (m_isMode1ISO) {
+            numSectors = m_cdHandle->tell() / 2048;
+        } else {
+            numSectors = m_cdHandle->tell() / PCSX::CDRom::CD_FRAMESIZE_RAW;
+        }
+
         // We got no track information, just an iso file, so let's fill in very basic data
         m_numtracks = 1;
         m_ti[1].type = trackinfo::DATA;
         m_ti[1].start[0] = 0;
-        m_ti[1].start[1] = 2;
+        m_ti[1].start[1] = 0;
         m_ti[1].start[2] = 0;
+
+        sec2msf(numSectors, m_ti[1].length);
     }
 
     PCSX::g_system->printf(".\n");
@@ -2241,3 +2258,55 @@ bool PCSX::CDRiso::readCDDA(unsigned char m, unsigned char s, unsigned char f, u
 }
 
 bool PCSX::CDRiso::isActive() { return (m_cdHandle != NULL || m_ecm_savetable != NULL || m_decoded_ecm != NULL); }
+
+struct md5sum {
+    md5_context context;
+    uint8_t digest[16];
+    uint32_t length;
+    unsigned int current, end;
+};
+
+std::function<std::function<void(uint8_t digest[16])>(float *, uint32_t *)> PCSX::CDRiso::startMD5(int trackID) {
+    md5sum *info = new md5sum();
+    info->current = 0;
+    info->end = msf2sec(m_ti[trackID].length) + m_ti[trackID].start_offset / PCSX::CDRom::CD_FRAMESIZE_RAW;
+    info->length = 0;
+    md5_init(&info->context);
+    return [info, trackID, this](float *progress, uint32_t *length) {
+        std::function<void(uint8_t digest[16])> ret;
+        uint8_t buffer[PCSX::CDRom::CD_FRAMESIZE_RAW * 64];
+        auto handle = m_ti[trackID].handle;
+        if (!handle) handle = m_cdHandle;
+        unsigned int left = info->end - info->current;
+        if ((m_cdimg_read_func == &CDRiso::cdread_normal) && (left >= 64)) {
+            handle->seek(info->current * PCSX::CDRom::CD_FRAMESIZE_RAW, SEEK_SET);
+            auto r = handle->read(buffer, PCSX::CDRom::CD_FRAMESIZE_RAW * 64);
+            md5_update(&info->context, buffer, r);
+            info->length += r;
+            if (!r) {
+                info->current = info->end;
+            } else {
+                info->current += r / PCSX::CDRom::CD_FRAMESIZE_RAW;
+            }
+        } else {
+            (*this.*m_cdimg_read_func)(handle, m_ti[trackID].start_offset, buffer,
+                                       info->current++ - m_ti[trackID].start_offset / PCSX::CDRom::CD_FRAMESIZE_RAW);
+            md5_update(&info->context, buffer, PCSX::CDRom::CD_FRAMESIZE_RAW);
+            info->length += PCSX::CDRom::CD_FRAMESIZE_RAW;
+        }
+        if (progress) {
+            *progress = info->current;
+            *progress /= info->end;
+        }
+        if (length) *length = info->length;
+        SDL_assert(info->current <= info->end);
+        if (info->current == info->end) {
+            md5_finish(&info->context, info->digest);
+            ret = [info](uint8_t digest[16]) {
+                memcpy(digest, info->digest, sizeof(info->digest));
+                delete info;
+            };
+        }
+        return ret;
+    };
+}

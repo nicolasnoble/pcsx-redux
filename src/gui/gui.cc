@@ -270,6 +270,8 @@ void PCSX::GUI::flip() {
 }
 
 void PCSX::GUI::endFrame() {
+    work();
+
     // bind back the output frame buffer
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     checkGL();
@@ -319,6 +321,7 @@ void PCSX::GUI::endFrame() {
                     PCSX::g_emulator.m_cdrom->m_iso.close();
                     CheckCdrom();
                 }
+                ImGui::MenuItem("Hashes", nullptr, &m_showHashes);
                 ImGui::Separator();
                 if (ImGui::MenuItem("Open LID")) {
                     PCSX::g_emulator.m_cdrom->setCdOpenCaseTime(-1);
@@ -496,6 +499,10 @@ void PCSX::GUI::endFrame() {
     if (m_breakpoints.m_show) {
         m_breakpoints.draw("Breakpoints");
     }
+
+    about();
+    biosCounters();
+    hashes();
 
     PCSX::g_emulator.m_spu->debug();
     changed |= PCSX::g_emulator.m_spu->configure();
@@ -717,11 +724,54 @@ void PCSX::GUI::about() {
     ImGui::End();
 }
 
+void PCSX::GUI::hashes() {
+    if (!m_showHashes) return;
+    if (ImGui::Begin("Hashes", &m_showHashes)) {
+        if (ImGui::Button("Compute Hashes") && !m_computingHashes) {
+            m_numTracks = g_emulator.m_cdrom->m_iso.getNumTracks();
+            if (m_numTracks) {
+                m_currentTrack = 0;
+                m_hashInfos.clear();
+                m_hashInfos.resize(m_numTracks);
+                m_computingHashes = g_emulator.m_cdrom->m_iso.startMD5(m_currentTrack + 1);
+            }
+        }
+
+        int trackNum = 0;
+        for (auto& hash : m_hashInfos) {
+            char digest[33];
+            for (int i = 0; i < 16; i++) {
+                std::snprintf(digest + i * 2, 3, "%02x", hash.digest[i]);
+            }
+            ImGui::Text("Track %2i | %9i bytes | %s", ++trackNum, hash.length, digest);
+            ImGui::SameLine();
+            ImGui::ProgressBar(hash.progress, ImVec2(-1, 0));
+        }
+    }
+    ImGui::End();
+}
+
+void PCSX::GUI::work() {
+    if (m_computingHashes) {
+        auto done = m_computingHashes(&m_hashInfos[m_currentTrack].progress, &m_hashInfos[m_currentTrack].length);
+        if (done) {
+            done(m_hashInfos[m_currentTrack].digest);
+            if (++m_currentTrack != m_numTracks) {
+                m_computingHashes = g_emulator.m_cdrom->m_iso.startMD5(m_currentTrack + 1);
+            } else {
+                m_computingHashes = nullptr;
+            }
+        }
+    }
+}
+
 void PCSX::GUI::update() {
     endFrame();
     startFrame();
     // This scheduling is extremely delicate, because this will cause update to be reentrant.
     // We basically need these to be tail calls, or at least, close from it.
+
+    // Note: the comment above might no longer be accurate.
     if (m_scheduleSoftReset) {
         m_scheduleSoftReset = false;
         PCSX::g_emulator.m_psxCpu->psxReset();
