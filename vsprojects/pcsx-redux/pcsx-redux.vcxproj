@@ -155,6 +155,9 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ProjectReference Include="..\bzip2\bzip2.vcxproj">
+      <Project>{019bafc8-d85a-44f3-b1ff-9cd6707f100e}</Project>
+    </ProjectReference>
     <ProjectReference Include="..\core\core.vcxproj">
       <Project>{9372d878-f76c-418b-8e2a-8e9896ff575b}</Project>
     </ProjectReference>
@@ -166,6 +169,12 @@
     </ProjectReference>
     <ProjectReference Include="..\ImGuiColorTextEdit\ImGuiColorTextEdit.vcxproj">
       <Project>{cbf9b825-f140-4a02-8a3f-059103d6ca90}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\libarchive\libarchive.vcxproj">
+      <Project>{f23a63ca-bd0f-4c8a-90f5-92dda24fafaa}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\liblzma\liblzma.vcxproj">
+      <Project>{8691d7f7-d78c-4f7c-b6c1-02b4328754ca}</Project>
     </ProjectReference>
     <ProjectReference Include="..\libuv\libuv.vcxproj">
       <Project>{4b88e4f6-56b3-4f66-bee8-0a4a21937bee}</Project>

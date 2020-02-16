@@ -23,9 +23,8 @@
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
-#include <windows.h>
-
 #include <process.h>
+#include <windows.h>
 #define strcasecmp _stricmp
 #else
 #include <limits.h>
@@ -797,7 +796,8 @@ int PCSX::CDRiso::parsecue(const char *isofileString) {
                 m_ti[m_numtracks + 1].handle = new File(filepath / tmpb);
             }
 
-            strcpy(m_ti[m_numtracks + 1].filepath, reinterpret_cast<const char *>(m_ti[m_numtracks + 1].handle->filename().u8string().c_str()));
+            strcpy(m_ti[m_numtracks + 1].filepath,
+                   reinterpret_cast<const char *>(m_ti[m_numtracks + 1].handle->filename().u8string().c_str()));
 
             // update global offset if this is not first file in this .cue
             if (m_numtracks + 1 > 1) {
@@ -807,7 +807,8 @@ int PCSX::CDRiso::parsecue(const char *isofileString) {
 
             file_len = 0;
             if (m_ti[m_numtracks + 1].handle->failed()) {
-                PCSX::g_system->message(_("\ncould not open: %s\n"), m_ti[m_numtracks + 1].handle->filename().u8string().c_str());
+                PCSX::g_system->message(_("\ncould not open: %s\n"),
+                                        m_ti[m_numtracks + 1].handle->filename().u8string().c_str());
                 delete m_ti[m_numtracks + 1].handle;
                 m_ti[m_numtracks + 1].handle = nullptr;
                 continue;
@@ -1656,7 +1657,7 @@ ssize_t PCSX::CDRiso::cdread_ecm_decode(File *f, unsigned int base, void *dest, 
 error_in:
 error:
 error_out:
-    // memset(dest, 0x0, PCSX::CDRomCD_FRAMESIZE_RAW);
+    // memset(dest, 0x0, PCSX::CDRom::CD_FRAMESIZE_RAW);
     PCSX::g_system->printf("Error decoding ECM image: WantedSector %i Type %i Base %i Sectors %i(%i) Pos %i(%li)\n",
                            sector, type, base, sectorcount, pos->sector, writebytecount, f->tell());
     return -1;
@@ -1689,7 +1690,7 @@ int PCSX::CDRiso::handleecm(const char *isoname, File *cdh, int32_t *accurate_le
         eccedc_init();
 
         // Reserve maximum known sector ammount for LUT (80MIN CD)
-        m_len_ecm_savetable = 75 * 80 * 60;  // 2*(accurate_length/PCSX::CDRomCD_FRAMESIZE_RAW);
+        m_len_ecm_savetable = 75 * 80 * 60;  // 2*(accurate_length/PCSX::CDRom::CD_FRAMESIZE_RAW);
 
         // Index 0 always points to beginning of ECM data
         m_ecm_savetable = (ECMFILELUT *)calloc(m_len_ecm_savetable, sizeof(ECMFILELUT));  // calloc returns nulled data
@@ -1711,7 +1712,6 @@ int PCSX::CDRiso::handleecm(const char *isoname, File *cdh, int32_t *accurate_le
     return -1;
 }
 
-#ifdef HAVE_LIBARCHIVE
 #include <archive.h>
 #include <archive_entry.h>
 
@@ -1720,7 +1720,7 @@ uint32_t len_uncompressed_buffer = 0;
 void *cdimage_buffer_mem = NULL;
 FILE *cdimage_buffer = NULL;  // m_cdHandle to store file
 
-int aropen(FILE *fparchive, const char *_fn) {
+int PCSX::CDRiso::aropen(FILE *fparchive, const char *_fn) {
     int32_t r;
     uint64_t length = 0, length_peek;
     bool use_temp_file = false;  // TODO make a config param
@@ -1735,7 +1735,7 @@ int aropen(FILE *fparchive, const char *_fn) {
         // r = archive_read_support_filter_all(a);
         // r = archive_read_support_format_raw(a);
         // r = archive_read_open_FILE(a, archive);
-        archive_read_open_filename(a, _fn, 75 * PCSX::CDRomCD_FRAMESIZE_RAW);
+        archive_read_open_filename(a, _fn, 75 * PCSX::CDRom::CD_FRAMESIZE_RAW);
         if (r != ARCHIVE_OK) {
             PCSX::g_system->printf("Archive open failed (%i).\n", r);
             archive_read_free(a);
@@ -1746,7 +1746,7 @@ int aropen(FILE *fparchive, const char *_fn) {
         while ((r = archive_read_next_header(a, &ae_peek)) == ARCHIVE_OK) {
             length_peek = archive_entry_size(ae_peek);
             // printf("Entry canditate %s %i\n", archive_entry_pathname(ae_peek), length_peek);
-            length = MAX(length_peek, length);
+            length = std::max(length_peek, length);
             ae = (ae == NULL ? ae_peek : ae);
         }
         archive_read_free(a);
@@ -1759,7 +1759,7 @@ int aropen(FILE *fparchive, const char *_fn) {
         a = archive_read_new();
         //      r = archive_read_support_compression_all(a);
         r = archive_read_support_format_all(a);
-        archive_read_open_filename(a, _fn, 75 * PCSX::CDRomCD_FRAMESIZE_RAW);
+        archive_read_open_filename(a, _fn, 75 * PCSX::CDRom::CD_FRAMESIZE_RAW);
         while ((r = archive_read_next_header(a, &ae)) == ARCHIVE_OK) {
             length_peek = archive_entry_size(ae);
             if (length_peek == length) {
@@ -1772,6 +1772,7 @@ int aropen(FILE *fparchive, const char *_fn) {
         len_uncompressed_buffer = length ? length : 700 * 1024 * 1024;
     }
 
+#ifdef BROKEN_CODE
     if (use_temp_file && (cdimage_buffer == NULL || m_cdHandle != cdimage_buffer)) {
         cdimage_buffer = fopen("/tmp/pcsxr.tmp.bin", "w+b");
     } else if (!use_temp_file && (cdimage_buffer == NULL || m_cdHandle != cdimage_buffer)) {
@@ -1788,30 +1789,32 @@ int aropen(FILE *fparchive, const char *_fn) {
         fclose(m_cdHandle);  // opened thru archive so this not needed anymore
         m_cdHandle = cdimage_buffer;
     }
+#endif
 
     return 0;
 }
 
-static int cdread_archive(FILE *f, unsigned int base, void *dest, int sector) {
-    int32_t r;
+int PCSX::CDRiso::cdread_archive(FILE *f, unsigned int base, void *dest, int sector) {
+    int32_t r = 0;
     size_t size;
     size_t readsize;
     static off_t offset = 0;  // w/o read always or static/ftell
     const void *buff;
 
+#ifdef BROKEN_CODE
     // If not pointing to archive file but CDDA file or some other track
     if (f != m_cdHandle) {
         return m_cdimg_read_func_archive(f, base, dest, sector);
     }
 
     // Jump if already completely read
-    if (a != NULL /*&& (m_ecm_file_detected || sector*PCSX::CDRomCD_FRAMESIZE_RAW <= len_uncompressed_buffer)*/) {
-        readsize = (sector + 1) * PCSX::CDRomCD_FRAMESIZE_RAW;
+    if (a != NULL /*&& (m_ecm_file_detected || sector*PCSX::CDRom::CD_FRAMESIZE_RAW <= len_uncompressed_buffer)*/) {
+        readsize = (sector + 1) * PCSX::CDRom::CD_FRAMESIZE_RAW;
         for (fseek(cdimage_buffer, offset, SEEK_SET); offset < readsize;) {
             r = archive_read_data_block(a, &buff, &size, &offset);
             offset += size;
             PCSX::g_system->printf("ReadArchive seek:%u(%u) cur:%u(%u)\r", sector, readsize / 1024,
-                                   offset / PCSX::CDRomCD_FRAMESIZE_RAW, offset / 1024);
+                                   offset / PCSX::CDRom::CD_FRAMESIZE_RAW, offset / 1024);
             fwrite(buff, size, 1, cdimage_buffer);
             if (r != ARCHIVE_OK) {
                 // PCSX::g_system->printf("End of archive.\n");
@@ -1824,16 +1827,18 @@ static int cdread_archive(FILE *f, unsigned int base, void *dest, int sector) {
         }
     } else {
         // PCSX::g_system->printf("ReadSectorArchSector: %u(%u)\n", sector,
-        // sector*PCSX::CDRomCD_FRAMESIZE_RAW);
+        // sector*PCSX::CDRom::CD_FRAMESIZE_RAW);
     }
 
     // TODO what causes req sector to be greater than CD size?
     r = m_cdimg_read_func_archive(cdimage_buffer, base, dest, sector);
+#endif
     return r;
 }
-int handlearchive(const char *isoname, int32_t *accurate_length) {
-    uint32_t read_size = accurate_length ? MSF2SECT(70, 70, 16) : MSF2SECT(0, 0, 16);
+int PCSX::CDRiso::handlearchive(const char *isoname, int32_t *accurate_length) {
     int ret = -1;
+#ifdef BROKEN_CODE
+    uint32_t read_size = accurate_length ? MSF2SECT(70, 70, 16) : MSF2SECT(0, 0, 16);
     if ((ret = aropen(m_cdHandle, isoname)) == 0) {
         m_cdimg_read_func = cdread_archive;
         PCSX::g_system->printf("[+archive]");
@@ -1850,13 +1855,9 @@ int handlearchive(const char *isoname, int32_t *accurate_length) {
             PCSX::g_system->printf("[+ecm]");
         }
     }
+#endif
     return ret;
 }
-#else
-int PCSX::CDRiso::aropen(FILE *fparchive, const char *_fn) { return -1; }
-int PCSX::CDRiso::cdread_archive(FILE *f, unsigned int base, void *dest, int sector) { return -1; }
-int PCSX::CDRiso::handlearchive(const char *isoname, int32_t *accurate_length) { return -1; }
-#endif
 
 uint8_t *PCSX::CDRiso::getBuffer() {
     if (m_useCompressed) {
@@ -2041,7 +2042,6 @@ void PCSX::CDRiso::shutdown() {
     }
     m_ecm_file_detected = false;
 
-#ifdef HAVE_LIBARCHIVE
     if (cdimage_buffer != NULL) {
         // fclose(cdimage_buffer);
         free(cdimage_buffer_mem);
@@ -2052,7 +2052,6 @@ void PCSX::CDRiso::shutdown() {
             a = NULL;
         }
     }
-#endif
 }
 
 // return Starting and Ending Track
