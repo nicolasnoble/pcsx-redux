@@ -94,31 +94,8 @@ class CDRiso {
     }* m_compr_img = NULL;
 
     read_func_t m_cdimg_read_func = NULL;
-    read_func_t m_cdimg_read_func_archive = NULL;
-    static const unsigned ECM_HEADER_SIZE = 4;
-
-    uint32_t m_len_decoded_ecm_buffer = 0;  // same as decoded ECM file length or 2x size
-    uint32_t m_len_ecm_savetable = 0;       // same as sector count of decoded ECM file or 2x count
-
-    uint32_t m_decoded_ecm_sectors = 0;  // disabled
-
-    bool m_ecm_file_detected = false;
     uint32_t m_prevsector;
 
-    File* m_decoded_ecm = NULL;
-    void* m_decoded_ecm_buffer = NULL;
-
-    // Function that is used to read CD normally
-    read_func_t m_cdimg_read_func_o = NULL;
-
-    struct ECMFILELUT {
-        int32_t sector;
-        int32_t filepos;
-    };
-
-    ECMFILELUT* m_ecm_savetable = NULL;
-
-    static inline const size_t ECM_SECTOR_SIZE[4] = {1, 2352, 2336, 2336};
     ////////////////////////////////////////////////////////////////////////////////
     //
     // LUTs used for computing ECC/EDC
@@ -181,12 +158,7 @@ class CDRiso {
     ssize_t cdread_sub_mixed(File* f, unsigned int base, void* dest, int sector);
     ssize_t cdread_compressed(File* f, unsigned int base, void* dest, int sector);
     ssize_t cdread_2048(File* f, unsigned int base, void* dest, int sector);
-    ssize_t cdread_ecm_decode(File* f, unsigned int base, void* dest, int sector);
-    int handleecm(const char* isoname, File* cdh, int32_t* accurate_length);
     void PrintTracks();
-    int aropen(FILE* fparchive, const char* _fn);
-    int cdread_archive(FILE* f, unsigned int base, void* dest, int sector);
-    int handlearchive(const char* isoname, int32_t* accurate_length);
     void UnloadSBI();
     int opensbifile(const char* isoname);
 };
