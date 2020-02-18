@@ -60,7 +60,6 @@ class CDRiso {
     int64_t m_cdOpenCaseTime = 0;
     bool m_useCompressed = false;
 
-    File* m_cdHandle = NULL;
     File* m_subHandle = NULL;
 
     bool m_subChanMixed = false;
@@ -118,7 +117,7 @@ class CDRiso {
         uint32_t start_offset = 0;  // byte offset from start of above file
     };
 
-    static const unsigned MAXTRACKS = 100; /* How many tracks can a CD hold? */
+    static const unsigned MAXTRACKS = 100;
 
     int m_numtracks = 0;
     struct trackinfo m_ti[MAXTRACKS];
