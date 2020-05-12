@@ -55,3 +55,8 @@ const char * splitFilepathAndFindDevice(const char * name, struct Device ** devi
 extern uint32_t psxerrno;
 
 void cdevscan();
+void cdevinput(struct CircularBuffer * circ, char c);
+int circgetc(struct CircularBuffer * circ, const char * caller);
+int circputc(char c, struct CircularBuffer * circ);
+
+extern int g_ignoreStopRequests;

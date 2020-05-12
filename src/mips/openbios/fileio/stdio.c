@@ -27,8 +27,7 @@
 #include "openbios/fileio/fileio.h"
 
 static int s_currentTabulationColumn;
-// not sure about this one
-static int s_ignoreCarriageReturns;
+int g_ignoreStopRequests;
 
 void reopenStdio() {
     psxclose(0);
@@ -42,7 +41,7 @@ void reopenStdio() {
 void installStdIo(int installTTY) {
     POST = 3;
     s_currentTabulationColumn = 0;
-    s_ignoreCarriageReturns = 0;
+    g_ignoreStopRequests = 0;
     removeDevice("tty");
     POST = 4;
     switch(installTTY) {

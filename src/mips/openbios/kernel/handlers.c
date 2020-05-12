@@ -202,8 +202,8 @@ void * C0table[0x20] = {
     unimplemented, unimplemented, setTimerAutoAck, unimplemented, // 08
     enqueueIrqHandler, unimplemented, unimplemented, unimplemented, // 0c
     unimplemented, unimplemented, setupFileIO, unimplemented, // 10
-    unimplemented, unimplemented, unimplemented, unimplemented, // 14
-    setupFileIO, unimplemented, unimplemented, unimplemented, // 18
+    unimplemented, cdevinput, cdevscan, circgetc, // 14
+    circputc, unimplemented, unimplemented, unimplemented, // 18
     patchA0table, unimplemented, unimplemented, unimplemented, // 1c
 };
 

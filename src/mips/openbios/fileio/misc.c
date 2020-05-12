@@ -75,7 +75,7 @@ struct Device * findDevice(const char * name) {
     }
 
     // what?
-    // s_ignoreCarriageReturns = 0;
+    g_ignoreStopRequests = 0;
     romsyscall_printf("%s is not known device\n", name);
     romsyscall_printf("Known devices are:\n");
     printInstalledDevices();
@@ -152,6 +152,47 @@ const char * splitFilepathAndFindDevice(const char * name, struct Device ** devi
 void cdevscan() {
     for (int i = 0; i < sizeof(s_files) / sizeof(s_files[0]); i++) {
         if (s_files[i].flags & 0x1000) psxioctl(i, PSXFIOCSCAN, 0);
+    }
+}
+
+void cdevinput(struct CircularBuffer * circ, char c) {
+    if (c && !(circ->flags & 1)) {
+        if ((c == 3) && ((circ->flags & 4))) syscall_ioabortraw(1);
+        if ((c & 0x7f) == 0x13) {
+            if (g_ignoreStopRequests) return;
+            circ->flags |= 2;
+            return;
+        }
+        if ((c & 0x7f) == 0x11) {
+            circ->flags &= ~2;
+            return;
+        }
+    }
+    if (!(circ->flags & 2)) {
+        circputc(c, circ);
+    }
+}
+
+int circgetc(struct CircularBuffer * circ, const char * caller) {
+    char * ptr = circ->end;
+    if (ptr == circ->start) {
+        ioAbortWithMsg("_circgetc", caller);
+    }
+    char ret = *ptr;
+    circ->end = ptr + 1;
+    if (circ->end >= circ->buffer + sizeof(circ->buffer)) {
+        circ->end = circ->buffer;
+    }
+
+    return ret & 0xff;
+}
+
+int circputc(char c, struct CircularBuffer * circ) {
+    char * ptr = circ->start + 1;
+    if (ptr >= circ->buffer + sizeof(circ->buffer)) ptr = circ->buffer;
+    if (ptr != circ->end) {
+        *circ->start = c;
+        circ->start = ptr;
     }
 }
 
