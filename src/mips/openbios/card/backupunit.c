@@ -544,8 +544,14 @@ int buWriteTOC(int deviceId, int *bitmap) {
     if (!gotError) {
         buWriteTOCInternal(deviceId, &buf, filterInner, bitmap);
         buWriteTOCInternal(deviceId, &buf, filterFirst, bitmap);
-        // so... no final block? (0x53)
+        // Only 0x51 and 0x52 are used in the bitmap data...
     }
 
     return gotError != 0;
+}
+
+int buSetAutoFormat(int autoFormat) {
+    int old = g_buAutoFormat;
+    g_buAutoFormat = autoFormat;
+    return old;
 }

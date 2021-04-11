@@ -210,7 +210,7 @@ static const void *romA0table[0xc0] = {
     unimplementedThunk, unimplementedThunk, enqueueCDRomHandlers, dequeueCDRomHandlers, // a0
     unimplementedThunk, unimplementedThunk, unimplementedThunk, buLowLevelOpCompleted, // a4
     buLowLevelOpError1, buLowLevelOpError2, buLowLevelOpError3, cardInfo, // a8
-    buReadTOC, unimplementedThunk, unimplementedThunk, unimplementedThunk, // ac
+    buReadTOC, buSetAutoFormat, unimplementedThunk, unimplementedThunk, // ac
     unimplementedThunk, unimplementedThunk, ioabortraw, unimplementedThunk, // b0
     unimplementedThunk, unimplementedThunk, unimplementedThunk, unimplementedThunk, // b4
     unimplementedThunk, unimplementedThunk, unimplementedThunk, unimplementedThunk, // b8
@@ -235,8 +235,8 @@ void *B0table[0x60] = {
     psxexit, isFileConsole, psxgetc, psxputc, // 38
     psxgetchar, psxputchar, psxgets, psxputs, // 3c
     unimplementedThunk, format, firstFile, nextFile, // 40
-    unimplementedThunk, unimplementedThunk, unimplementedThunk, addDevice, // 44
-    removeDevice, unimplementedThunk, initCard, startCard, // 48
+    unimplementedThunk, psxerase, unimplementedThunk, addDevice, // 44
+    removeDevice, printInstalledDevices, initCard, startCard, // 48
     stopCard, cardInfoInternal, mcWriteSector, mcReadSector, // 4c
     mcAllowNewCard, Krom2RawAdd, unimplementedThunk, Krom2Offset, // 50
     unimplementedThunk, unimplementedThunk, getC0table, getB0table, // 54

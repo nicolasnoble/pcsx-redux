@@ -335,3 +335,31 @@ int psxprintf(const char* fmt, ...) {
     vxprintf(xprintfcallback, NULL, fmt, ap);
     va_end(ap);
 }
+
+int psxerase(const char * path) {
+    struct File* file = findEmptyFile();
+
+    const char* filename;
+    int deviceId;
+    struct Device* device;
+
+    if (!file) {
+        psxerrno = PSXEMFILE;
+        return -1;
+    }
+
+    filename = splitFilepathAndFindDevice(path, &device, &deviceId);
+    if (filename == ((char*)-1)) {
+        psxerrno = PSXENODEV;
+        file->flags = 0;
+        return -1;
+    }
+
+    file->deviceId = deviceId;
+    file->device = device;
+    int res = device->erase(file, filename);
+    file->flags = 0;
+    if (res == 0) return 1;
+    psxerrno = file->errno;
+    return 0;
+}

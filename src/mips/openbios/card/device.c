@@ -434,10 +434,66 @@ int dev_bu_write(struct File *file, void *buffer, int size) {
     return size;
 }
 
-void dev_bu_erase() {
-    uint32_t ra;
-    asm("move %0, $ra\n" : "=r"(ra));
-    dev_bu_unimplemented("mcErase", ra);
+int dev_bu_erase(struct File *file, const char *filename) {
+    int deviceId = file->deviceId;
+    int port = deviceId >= 0 ? deviceId : deviceId + 15;
+    port >>= 4;
+
+    if (g_buOperation[port] != 0) return 1;
+    mcResetStatus();
+    if (buDevInit(deviceId) == 0) return 1;
+    syscall_setDeviceStatus(0);
+    int index = buNextFileInternal(deviceId, 0, filename);
+    if (index == 0) {
+        file->errno = PSXENOENT;
+        return 1;
+    }
+    int bitmap[15];
+    for (unsigned i = 0; i < 15; i++) bitmap[i] = 0;
+    struct BuDirectoryEntry *entries = &g_buDirEntries[port];
+    struct BuDirectoryEntry *entry = entries + index;
+    entry->allocState = 0xa1;
+    bitmap[index] = 0x51;
+
+    int32_t size = entry->fileSize;
+    int16_t next = entry->nextBlock;
+
+    if (size < 0) size += 0x1fff;
+    int blocks = size >> 13;
+    blocks--;
+
+    if (blocks > 0) {
+        entry = entries + next;
+        while ((entry->nextBlock != -1) && (entry->allocState == 0x52)) {
+            entry->allocState = 0xa2;
+            bitmap[next] = 0x52;
+            next = entry->nextBlock;
+            if (--blocks < 1) break;
+            entry = entries + next;
+        }
+    }
+    if (blocks > 0) {
+        entry = entries + next;
+        if ((entry->nextBlock == -1) && (entry->allocState == 0x53)) {
+            entry->allocState = 0xa3;
+            bitmap[next] = 0x52;
+        }
+    }
+
+    if (!buWriteTOC(deviceId, bitmap)) {
+        file->errno = PSXENOERR;
+        return 0;
+    }
+
+    for (unsigned int i = 0; i < 15; i++) {
+        if (bitmap[i] == 0) break;
+        entries[i].fileSize = 0;
+        entries[i].nextBlock = -1;
+        entries[i].allocState = 0xa0;
+    }
+    file->errno = PSXEBUSY;
+
+    return 1;
 }
 
 void dev_bu_undelete() {

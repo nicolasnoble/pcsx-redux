@@ -39,6 +39,7 @@ void psxexit(int code);
 int isFileConsole(int fd);
 int psxgetc(int fd);
 void psxputc(int c, int fd);
+int psxerase(const char *fname);
 
 void psxputchar(int c);
 int psxgetchar();

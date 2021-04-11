@@ -52,6 +52,7 @@ typedef int (*device_close)(struct File *);
 typedef int (*device_ioctl)(struct File *, int cmd, int arg);
 typedef int (*device_read)(struct File *, void *buffer, int size);
 typedef int (*device_write)(struct File *, void *buffer, int size);
+typedef int (*device_erase)(struct File *, const char *filename);
 typedef struct DirEntry *(*device_firstFile)(struct File *file, const char *filename, struct DirEntry *entry);
 typedef struct DirEntry *(*device_nextFile)(struct File *file, struct DirEntry *entry);
 typedef int (*device_format)(struct File *file);
@@ -69,7 +70,8 @@ struct Device {
     device_ioctl ioctl;
     device_read read;
     device_write write;
-    void *erase, *undelete;
+    device_erase erase;
+    void *undelete;
     device_firstFile firstFile;
     device_nextFile nextFile;
     device_format format;
