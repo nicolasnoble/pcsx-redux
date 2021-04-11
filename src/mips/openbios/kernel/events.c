@@ -49,7 +49,7 @@ int initEvents(int count) {
     return size;
 }
 
-static int getFreeEvCBSlot(void) {
+int getFreeEvCBSlot(void) {
     struct EventInfo *ptr, *end;
     int slot = 0;
 
@@ -142,10 +142,8 @@ int waitEvent(uint32_t event) {
         return 1;
     }
     if (ptr->flags == EVENT_FLAG_ENABLED) {
-        volatile uint32_t *flags = &ptr->flags;
-        while (*flags != EVENT_FLAG_PENDING)
-            ;
-        *flags = EVENT_FLAG_ENABLED;
+        while (ptr->flags != EVENT_FLAG_PENDING) __asm__ volatile("" : : : "memory");
+        ptr->flags = EVENT_FLAG_ENABLED;
         return 1;
     }
     return 0;
