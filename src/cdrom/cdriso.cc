@@ -532,3 +532,12 @@ bool PCSX::CDRIso::readCDDA(IEC60908b::MSF msf, unsigned char *buffer) {
 }
 
 bool PCSX::CDRIso::failed() { return !m_cdHandle && !m_ecm_savetable && !m_decoded_ecm; }
+
+void PCSX::CDRIso::patchSector(IEC60908b::MSF msf, const void *src, const void *dest) {
+    if (m_cdHandle->failed()) {
+        return;
+    }
+
+    m_lastWrite = std::chrono::steady_clock::now();
+    m_ppf.calculatePatch(reinterpret_cast<const uint8_t *>(src), reinterpret_cast<const uint8_t *>(dest), msf);
+}

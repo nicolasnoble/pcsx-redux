@@ -22,6 +22,7 @@
 #include <stdio.h>
 #include <zlib.h>
 
+#include <chrono>
 #include <filesystem>
 
 #include "cdrom/iec-60908b.h"
@@ -62,11 +63,15 @@ class CDRIso {
 
     bool CheckSBI(const uint8_t* time);
 
+    std::chrono::time_point<std::chrono::steady_clock> getLastWrite() { return m_lastWrite; }
+    void patchSector(IEC60908b::MSF msf, const void* src, const void* dest);
+
   private:
     bool open();
     void close();
 
     std::filesystem::path m_isoPath;
+    std::chrono::time_point<std::chrono::steady_clock> m_lastWrite = std::chrono::steady_clock::now();
     typedef ssize_t (CDRIso::*read_func_t)(IO<File> f, unsigned int base, void* dest, int sector);
 
     bool m_useCompressed = false;

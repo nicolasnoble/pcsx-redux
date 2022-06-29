@@ -46,11 +46,15 @@ class CDRIsoFile : public File {
     virtual bool failed() final override { return m_failed; }
     virtual ssize_t rSeek(ssize_t pos, int wheel) override;
     virtual ssize_t rTell() override { return m_ptrR; }
+    virtual ssize_t wSeek(ssize_t pos, int wheel) override;
+    virtual ssize_t wTell() override { return m_ptrW; }
     virtual size_t size() override { return m_size; }
     virtual ssize_t read(void* dest, size_t size) override;
+    virtual ssize_t write(const void* dest, size_t size) override;
     virtual File* dup() override { return new CDRIsoFile(m_iso, m_lba, m_size, m_mode); };
 
   private:
+    bool cacheSector(uint32_t lba);
     std::shared_ptr<CDRIso> m_iso;
     uint8_t m_cachedSector[2352];
     int32_t m_cachedLBA = -1;
@@ -58,7 +62,10 @@ class CDRIsoFile : public File {
     uint32_t m_size;
     SectorMode m_mode;
     size_t m_ptrR = 0;
+    size_t m_ptrW = 0;
+    static constexpr size_t c_sectorOffsets[] = {0, 0, 16, 16, 24, 24};
 
+    std::chrono::time_point<std::chrono::steady_clock> m_lastRead = std::chrono::steady_clock::now();
     bool m_failed = false;
 };
 

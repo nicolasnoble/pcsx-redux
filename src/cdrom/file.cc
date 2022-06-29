@@ -23,7 +23,7 @@
 #include "magic_enum/include/magic_enum.hpp"
 
 PCSX::CDRIsoFile::CDRIsoFile(std::shared_ptr<CDRIso> iso, uint32_t lba, int32_t size, SectorMode mode)
-    : File(RO_SEEKABLE), m_iso(iso), m_lba(lba) {
+    : File(RW_SEEKABLE), m_iso(iso), m_lba(lba) {
     uint8_t* sector = m_cachedSector;
     if (iso->failed()) {
         m_failed = true;
@@ -116,6 +116,38 @@ ssize_t PCSX::CDRIsoFile::rSeek(ssize_t pos, int wheel) {
     return m_ptrR;
 }
 
+ssize_t PCSX::CDRIsoFile::wSeek(ssize_t pos, int wheel) {
+    if (m_failed) return -1;
+    switch (wheel) {
+        case SEEK_SET:
+            m_ptrW = pos;
+            break;
+
+        case SEEK_CUR:
+            m_ptrW += pos;
+            break;
+
+        case SEEK_END:
+            m_ptrW = m_size + pos;
+            break;
+    }
+    if (m_ptrW < 0) m_ptrW = 0;
+
+    if (m_ptrW > m_size) m_ptrW = m_size;
+
+    return m_ptrW;
+}
+
+bool PCSX::CDRIsoFile::cacheSector(uint32_t lba) {
+    if ((m_cachedLBA != lba) || (m_lastRead <= m_iso->getLastWrite())) {
+        m_lastRead = std::chrono::steady_clock::now();
+        m_cachedLBA = lba;
+        auto res = m_iso->readSectors(lba++, m_cachedSector, 1);
+        if (res != 1) return false;
+    }
+    return true;
+}
+
 ssize_t PCSX::CDRIsoFile::read(void* buffer_, size_t size) {
     uint8_t* buffer = static_cast<uint8_t*>(buffer_);
     if (m_failed) return -1;
@@ -128,16 +160,11 @@ ssize_t PCSX::CDRIsoFile::read(void* buffer_, size_t size) {
     uint32_t sectorOffset = m_ptrR % sectorSize;
     uint32_t toCopy = size;
 
-    static constexpr size_t c_sectorOffsets[] = {0, 0, 16, 16, 24, 24};
     size_t actualSize = 0;
     uint32_t lba = m_lba + m_ptrR / 2352;
 
     while (toCopy != 0) {
-        if (m_cachedLBA != lba) {
-            m_cachedLBA = lba;
-            auto res = m_iso->readSectors(lba++, m_cachedSector, 1);
-            if (res != 1) return -1;
-        }
+        if (!cacheSector(lba)) return -1;
         size_t blocSize = std::min(toCopy, c_sectorSizes[modeIndex] - sectorOffset);
         memcpy(buffer + actualSize, m_cachedSector + c_sectorOffsets[modeIndex] + sectorOffset, blocSize);
         sectorOffset = 0;
@@ -148,3 +175,5 @@ ssize_t PCSX::CDRIsoFile::read(void* buffer_, size_t size) {
     m_ptrR += actualSize;
     return actualSize;
 }
+
+ssize_t PCSX::CDRIsoFile::write(const void* buffer_, size_t size) { return 0; }
