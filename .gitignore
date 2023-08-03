@@ -101,3 +101,6 @@ sstate.proto
 
 # Sentry Native files
 .sentry-native
+
+# Generated files from the examples
+examples/vp/DUMP
