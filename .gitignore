@@ -130,3 +130,6 @@ luacov.stats.out
 /AppDir
 /*.AppImage
 /*.AppImage.zsync
+
+# Generated files from the examples
+examples/vp/DUMP
