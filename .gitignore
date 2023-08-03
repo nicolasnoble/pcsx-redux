@@ -157,3 +157,6 @@ tests/**/*.o
 # Objects from the shared MIPS/host util sources, built by the guest toolchain.
 src/mips-common/**/*.o
 src/mips-common/**/*.dep
+
+# Generated files from the examples
+examples/vp/DUMP
