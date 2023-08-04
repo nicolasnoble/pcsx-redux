@@ -4,8 +4,8 @@ function processOneFile(file, fileInfo, handler)
     local isTIM = signature == 0x00000010
     if isTIM then fileInfo.ext = 'tim' end
     if isSLZ(signature) then
-        print('Decompressing and processing ' .. fileInfo.name)
-        local dest = Support.File.open(fileInfo.name .. '.slz', 'TRUNCATE')
+        print('Decompressing and processing ' .. fileInfo.dir .. '/' .. fileInfo.name)
+        local dest = Support.File.open(fileInfo.dir .. '/' .. fileInfo.name .. '.slz', 'TRUNCATE')
         dumpFile(file, dest)
         dest:close()
         local files = slzDecompress(file)
@@ -13,23 +13,17 @@ function processOneFile(file, fileInfo, handler)
             print('  Processing subfile ' .. k)
             signature = v[0] + v[1] * 256 + v[2] * 65536 + v[3] * 16777216
             local info = {}
-            info.dir = fileInfo.name
-            info.name = info.dir .. '/' .. string.format('%04i', fileInfo.index) .. '-' .. string.format('%02i', k)
-            info.ext = signature == 0x00000010 and 'tim' or 'out'
-            mkdir(info.dir)
-            local dest = Support.File.open(info.name .. '.' .. info.ext, 'TRUNCATE')
-            dumpFile(v, dest)
-            dest:close()
-            if handler then
-                local file = Support.File.buffer()
-                file:writeAt(v, 0)
-                handler(file, info)
-                file:close()
-            end
+            info.dir = fileInfo.dir .. '/' .. fileInfo.name
+            info.name = fileInfo.name .. string.format('-%02i', k)
+            info.ext = 'out'
+            local file = Support.File.buffer()
+            file:writeAt(v, 0)
+            processOneFile(file, info, handler)
+            file:close()
         end
     else
-        print('Processing file ' .. fileInfo.name)
-        local dest = Support.File.open(fileInfo.name .. '.' .. fileInfo.ext, 'TRUNCATE')
+        print('Processing file ' .. fileInfo.dir .. '/' .. fileInfo.name)
+        local dest = Support.File.open(fileInfo.dir .. '/' .. fileInfo.name .. '.' .. fileInfo.ext, 'TRUNCATE')
         dumpFile(file, dest)
         dest:close()
         if handler then
@@ -46,9 +40,8 @@ function processAllFiles()
             local fileInfo = VP.globals.filemap[i]
             if not fileInfo then fileInfo = {} end
             if not fileInfo.ext then fileInfo.ext = 'out' end
-            if not fileInfo.dir then fileInfo.dir = 'UNKNOWN' end
-            fileInfo.dir = 'DUMP/' .. fileInfo.dir
-            fileInfo.name = fileInfo.dir .. '/' .. string.format('%04i', i)
+            if not fileInfo.dir then fileInfo.dir = 'DUMP/UNKNOWN' end
+            if not fileInfo.name then fileInfo.name = string.format('%04i', i) end
             local fileType = fileInfo.ftype
             local handler = nil
             if fileType then
