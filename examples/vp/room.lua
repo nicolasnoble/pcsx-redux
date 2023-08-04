@@ -13,8 +13,8 @@ function process_arcroom(file, fileInfo)
         indexData.size = file:readU32()
         indexData.file = file:subFile(offset, indexData.size)
         info = deepCopy(fileInfo)
-        info.dir = info.name
-        info.name = info.dir .. '/' .. string.format('%04i-%02i-%08i', info.index, i, indexData.ftype)
+        info.dir = info.dir .. '/' .. info.name
+        info.name = info.name .. string.format('-%02i-%08i', i, indexData.ftype)
         info.ext = 'out'
         offset = offset + indexData.size
         indexData.info = info
@@ -29,9 +29,9 @@ function process_arcroom(file, fileInfo)
             local counter = 1
             handler = function(file, fileInfo)
                 if counter == 1 then
-                    script = file
+                    script = file:dup()
                 elseif counter == 2 then
-                    font = file
+                    font = file:dup()
                 else
                     error 'Too many files...'
                 end
@@ -39,5 +39,9 @@ function process_arcroom(file, fileInfo)
             end
         end
         processOneFile(index[i].file, index[i].info, handler)
+        if script and font then
+            print '  Extracting font.'
+            fontData = extractFont(font, index[i].info)
+        end
     end
 end

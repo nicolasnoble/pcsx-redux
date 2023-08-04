@@ -1,5 +1,8 @@
-VP = { globals = {}, constants = {}, arguments = { dump = true } }
+PCSX.settings.emulator.FullCaching = true
 
+VP = { globals = {}, constants = {}, arguments = { dump = true, dumpGlyphs = false } }
+
+dofile 'base64.lua'
 dofile 'constants.lua'
 dofile 'filemap.lua'
 dofile 'font.lua'

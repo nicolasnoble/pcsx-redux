@@ -173,10 +173,14 @@ function generateFileMap()
     for _, v in pairs(mapspans) do
         for i = v.idx_s, v.idx_e do
             VP.globals.filemap[i] = deepCopy(v.data)
+            VP.globals.filemap[i].name = string.format('%04i', i)
+            VP.globals.filemap[i].dir = 'DUMP/' .. VP.globals.filemap[i].dir
         end
     end
 
     for k, v in pairs(handmap) do
-        VP.globals.filemap[k] = v
+        VP.globals.filemap[k] = deepCopy(v)
+        VP.globals.filemap[k].name = string.format('%04i', k)
+        VP.globals.filemap[k].dir = 'DUMP/' .. v.dir
     end
 end
