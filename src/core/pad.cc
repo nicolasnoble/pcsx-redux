@@ -22,6 +22,7 @@
 #include "core/pad.h"
 
 #include <GLFW/glfw3.h>
+#include <SDL3/SDL.h>
 #include <memory.h>
 
 #include <algorithm>
@@ -69,13 +70,18 @@ class PadsImpl : public PCSX::Pads {
 
   private:
     PCSX::EventBus::Listener m_listener;
-    // This is a list of all of the valid GLFW gamepad IDs that we have found querying GLFW.
-    // A value of -1 means that there is no gamepad at that index.
-    int m_gamepadsMap[16] = {0};
+    // Open SDL gamepad handles, one per slot we've discovered. nullptr means the
+    // slot is unused. The slot index doubles as the user-visible "controller ID"
+    // saved in SettingControllerID.
+    SDL_Gamepad* m_gamepads[16] = {nullptr};
 
-    static constexpr int GLFW_GAMEPAD_BUTTON_LEFT_TRIGGER = GLFW_GAMEPAD_BUTTON_LAST + 1;
-    static constexpr int GLFW_GAMEPAD_BUTTON_RIGHT_TRIGGER = GLFW_GAMEPAD_BUTTON_LAST + 2;
-    static constexpr int GLFW_GAMEPAD_BUTTON_INVALID = GLFW_GAMEPAD_BUTTON_LAST + 3;
+    // Triggers are reported as axes by SDL but pad bindings treat them as
+    // virtual buttons. INVALID is encoded as SDL_GAMEPAD_BUTTON_INVALID (-1) so
+    // raw SDL queries naturally short-circuit. The trigger sentinels live above
+    // SDL_GAMEPAD_BUTTON_COUNT to avoid collisions with future enum entries.
+    static constexpr int PCSX_GAMEPAD_BUTTON_LEFT_TRIGGER = 100;
+    static constexpr int PCSX_GAMEPAD_BUTTON_RIGHT_TRIGGER = 101;
+    static constexpr int PCSX_GAMEPAD_BUTTON_INVALID = SDL_GAMEPAD_BUTTON_INVALID;
 
     // settings block
     // Pad keyboard bindings
@@ -97,24 +103,28 @@ class PadsImpl : public PCSX::Pads {
     typedef PCSX::Setting<int, TYPESTRING("Keyboard_PadR3"), GLFW_KEY_T> Keyboard_PadR3;
     typedef PCSX::Setting<int, TYPESTRING("Keyboard_AnalogMode"), GLFW_KEY_UNKNOWN> Keyboard_AnalogMode;
 
-    // Pad controller bindings
-    typedef PCSX::Setting<int, TYPESTRING("Controller_PadUp"), GLFW_GAMEPAD_BUTTON_DPAD_UP> Controller_PadUp;
-    typedef PCSX::Setting<int, TYPESTRING("Controller_PadRight"), GLFW_GAMEPAD_BUTTON_DPAD_RIGHT> Controller_PadRight;
-    typedef PCSX::Setting<int, TYPESTRING("Controller_PadDown"), GLFW_GAMEPAD_BUTTON_DPAD_DOWN> Controller_PadDown;
-    typedef PCSX::Setting<int, TYPESTRING("Controller_PadLeft"), GLFW_GAMEPAD_BUTTON_DPAD_LEFT> Controller_PadLeft;
-    typedef PCSX::Setting<int, TYPESTRING("Controller_PadCross"), GLFW_GAMEPAD_BUTTON_CROSS> Controller_PadCross;
-    typedef PCSX::Setting<int, TYPESTRING("Controller_PadTriangle"), GLFW_GAMEPAD_BUTTON_TRIANGLE>
+    // Pad controller bindings. Defaults reference SDL gamepad button enums
+    // (PS-style face buttons via SDL_GAMEPAD_BUTTON_SOUTH/EAST/WEST/NORTH).
+    // Existing user configs that hand-edited these values to GLFW button enums
+    // will not round-trip; the in-tree UI does not expose per-button rebinding,
+    // so the impact is limited to hand-rolled JSON.
+    typedef PCSX::Setting<int, TYPESTRING("Controller_PadUp"), SDL_GAMEPAD_BUTTON_DPAD_UP> Controller_PadUp;
+    typedef PCSX::Setting<int, TYPESTRING("Controller_PadRight"), SDL_GAMEPAD_BUTTON_DPAD_RIGHT> Controller_PadRight;
+    typedef PCSX::Setting<int, TYPESTRING("Controller_PadDown"), SDL_GAMEPAD_BUTTON_DPAD_DOWN> Controller_PadDown;
+    typedef PCSX::Setting<int, TYPESTRING("Controller_PadLeft"), SDL_GAMEPAD_BUTTON_DPAD_LEFT> Controller_PadLeft;
+    typedef PCSX::Setting<int, TYPESTRING("Controller_PadCross"), SDL_GAMEPAD_BUTTON_SOUTH> Controller_PadCross;
+    typedef PCSX::Setting<int, TYPESTRING("Controller_PadTriangle"), SDL_GAMEPAD_BUTTON_NORTH>
         Controller_PadTriangle;
-    typedef PCSX::Setting<int, TYPESTRING("Controller_PadSquare"), GLFW_GAMEPAD_BUTTON_SQUARE> Controller_PadSquare;
-    typedef PCSX::Setting<int, TYPESTRING("Controller_PadCircle"), GLFW_GAMEPAD_BUTTON_CIRCLE> Controller_PadCircle;
-    typedef PCSX::Setting<int, TYPESTRING("Controller_PadSelect"), GLFW_GAMEPAD_BUTTON_BACK> Controller_PadSelect;
-    typedef PCSX::Setting<int, TYPESTRING("Controller_PadSstart"), GLFW_GAMEPAD_BUTTON_START> Controller_PadStart;
-    typedef PCSX::Setting<int, TYPESTRING("Controller_PadL1"), GLFW_GAMEPAD_BUTTON_LEFT_BUMPER> Controller_PadL1;
-    typedef PCSX::Setting<int, TYPESTRING("Controller_PadL2"), GLFW_GAMEPAD_BUTTON_LEFT_TRIGGER> Controller_PadL2;
-    typedef PCSX::Setting<int, TYPESTRING("Controller_PadL3"), GLFW_GAMEPAD_BUTTON_LEFT_THUMB> Controller_PadL3;
-    typedef PCSX::Setting<int, TYPESTRING("Controller_PadR1"), GLFW_GAMEPAD_BUTTON_RIGHT_BUMPER> Controller_PadR1;
-    typedef PCSX::Setting<int, TYPESTRING("Controller_PadR2"), GLFW_GAMEPAD_BUTTON_RIGHT_TRIGGER> Controller_PadR2;
-    typedef PCSX::Setting<int, TYPESTRING("Controller_PadR3"), GLFW_GAMEPAD_BUTTON_RIGHT_THUMB> Controller_PadR3;
+    typedef PCSX::Setting<int, TYPESTRING("Controller_PadSquare"), SDL_GAMEPAD_BUTTON_WEST> Controller_PadSquare;
+    typedef PCSX::Setting<int, TYPESTRING("Controller_PadCircle"), SDL_GAMEPAD_BUTTON_EAST> Controller_PadCircle;
+    typedef PCSX::Setting<int, TYPESTRING("Controller_PadSelect"), SDL_GAMEPAD_BUTTON_BACK> Controller_PadSelect;
+    typedef PCSX::Setting<int, TYPESTRING("Controller_PadSstart"), SDL_GAMEPAD_BUTTON_START> Controller_PadStart;
+    typedef PCSX::Setting<int, TYPESTRING("Controller_PadL1"), SDL_GAMEPAD_BUTTON_LEFT_SHOULDER> Controller_PadL1;
+    typedef PCSX::Setting<int, TYPESTRING("Controller_PadL2"), PCSX_GAMEPAD_BUTTON_LEFT_TRIGGER> Controller_PadL2;
+    typedef PCSX::Setting<int, TYPESTRING("Controller_PadL3"), SDL_GAMEPAD_BUTTON_LEFT_STICK> Controller_PadL3;
+    typedef PCSX::Setting<int, TYPESTRING("Controller_PadR1"), SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER> Controller_PadR1;
+    typedef PCSX::Setting<int, TYPESTRING("Controller_PadR2"), PCSX_GAMEPAD_BUTTON_RIGHT_TRIGGER> Controller_PadR2;
+    typedef PCSX::Setting<int, TYPESTRING("Controller_PadR3"), SDL_GAMEPAD_BUTTON_RIGHT_STICK> Controller_PadR3;
 
     typedef PCSX::Setting<InputType, TYPESTRING("PadType"), InputType::Auto> SettingInputType;
     // These typestrings are kind of odd, but it's best not to change so as not to break old config files
@@ -165,7 +175,11 @@ class PadsImpl : public PCSX::Pads {
         uint8_t poll(uint8_t value, uint32_t& padState);
         uint8_t doDualshockCommand(uint32_t& padState);
         void getButtons();
-        bool isControllerButtonPressed(int button, GLFWgamepadstate* state);
+        struct GamepadState {
+            bool buttons[SDL_GAMEPAD_BUTTON_COUNT];
+            float axes[SDL_GAMEPAD_AXIS_COUNT];  // normalized to [-1, 1] like GLFW reported
+        };
+        bool isControllerButtonPressed(int button, const GamepadState& state);
         bool isControllerConnected() { return m_settings.get<SettingConnected>(); }
 
         json getCfg();
@@ -183,7 +197,7 @@ class PadsImpl : public PCSX::Pads {
         PadType m_type;
         PadData m_data;
 
-        int m_padID = -1;
+        SDL_Gamepad* m_gamepad = nullptr;
         int m_buttonToWait = -1;
         bool m_changed = false;
 
@@ -426,11 +440,9 @@ static ImGuiKey GlfwKeyToImGuiKey(int key) {
 
 void PadsImpl::init() {
     s_pads = this;
-    scanGamepads();
-    glfwSetJoystickCallback([](int jid, int event) {
-        s_pads->scanGamepads();
-        s_pads->map();
-    });
+    if (!SDL_InitSubSystem(SDL_INIT_GAMEPAD)) {
+        PCSX::g_system->log(PCSX::LogClass::UI, "SDL_InitSubSystem(SDL_INIT_GAMEPAD) failed: %s\n", SDL_GetError());
+    }
     PCSX::g_system->findResource(
         [](const std::filesystem::path& filename) -> bool {
             PCSX::IO<PCSX::File> database(new PCSX::PosixFile(filename));
@@ -441,17 +453,27 @@ void PadsImpl::init() {
             size_t dbsize = database->size();
             auto dbStr = database->readString(dbsize);
 
-            int ret = glfwUpdateGamepadMappings(dbStr.c_str());
-
-            return ret;
+            // Wrap the in-memory buffer as an SDL_IOStream so SDL parses the
+            // mapping DB using the same routine it uses for files.
+            SDL_IOStream* io = SDL_IOFromConstMem(dbStr.data(), dbStr.size());
+            if (!io) return false;
+            int ret = SDL_AddGamepadMappingsFromIO(io, true /* closeio */);
+            return ret > 0;
         },
         "gamecontrollerdb.txt", "resources", std::filesystem::path("third_party") / "SDL_GameControllerDB");
+    scanGamepads();
     reset();
     map();
 }
 
 void PadsImpl::shutdown() {
-    glfwSetJoystickCallback(nullptr);
+    for (auto& g : m_gamepads) {
+        if (g) {
+            SDL_CloseGamepad(g);
+            g = nullptr;
+        }
+    }
+    SDL_QuitSubSystem(SDL_INIT_GAMEPAD);
     s_pads = nullptr;
 }
 
@@ -464,16 +486,23 @@ PadsImpl::PadsImpl() : m_listener(PCSX::g_system->m_eventBus) {
 }
 
 void PadsImpl::scanGamepads() {
-    static_assert((1 + GLFW_JOYSTICK_LAST - GLFW_JOYSTICK_1) <= sizeof(m_gamepadsMap) / sizeof(m_gamepadsMap[0]));
-    for (auto& m : m_gamepadsMap) {
-        m = -1;
-    }
-    unsigned index = 0;
-    for (int i = GLFW_JOYSTICK_1; i < GLFW_JOYSTICK_LAST; i++) {
-        if (glfwJoystickPresent(i) && glfwJoystickIsGamepad(i)) {
-            m_gamepadsMap[index++] = i;
+    // Close any currently-open handles so re-scans (e.g. after hotplug) don't
+    // leak. m_gamepad pointers in each Pad become stale here; the caller is
+    // expected to follow up with map() to re-resolve them.
+    for (auto& g : m_gamepads) {
+        if (g) {
+            SDL_CloseGamepad(g);
+            g = nullptr;
         }
     }
+    int count = 0;
+    SDL_JoystickID* ids = SDL_GetGamepads(&count);
+    if (!ids) return;
+    const unsigned slots = sizeof(m_gamepads) / sizeof(m_gamepads[0]);
+    for (int i = 0; i < count && static_cast<unsigned>(i) < slots; i++) {
+        m_gamepads[i] = SDL_OpenGamepad(ids[i]);
+    }
+    SDL_free(ids);
 }
 
 void PadsImpl::reset() {
@@ -497,7 +526,9 @@ void PadsImpl::map() {
 }
 
 void PadsImpl::Pad::map() {
-    m_padID = s_pads->m_gamepadsMap[m_settings.get<SettingControllerID>()];
+    int id = m_settings.get<SettingControllerID>();
+    const unsigned slots = sizeof(s_pads->m_gamepads) / sizeof(s_pads->m_gamepads[0]);
+    m_gamepad = (id >= 0 && static_cast<unsigned>(id) < slots) ? s_pads->m_gamepads[id] : nullptr;
     m_type = m_settings.get<SettingDeviceType>();
 
     // L3/R3 are only avalable on analog controllers
@@ -509,8 +540,8 @@ void PadsImpl::Pad::map() {
     } else {
         m_scancodes[1] = 255;
         m_scancodes[2] = 255;
-        m_padMapping[1] = GLFW_GAMEPAD_BUTTON_INVALID;
-        m_padMapping[2] = GLFW_GAMEPAD_BUTTON_INVALID;
+        m_padMapping[1] = PCSX_GAMEPAD_BUTTON_INVALID;
+        m_padMapping[2] = PCSX_GAMEPAD_BUTTON_INVALID;
     }
 
     // keyboard mappings
@@ -549,18 +580,18 @@ void PadsImpl::Pad::map() {
 static constexpr float THRESHOLD = 0.85f;
 
 // Certain buttons on controllers are actually axis that can be pressed, half-pressed, etc.
-bool PadsImpl::Pad::isControllerButtonPressed(int button, GLFWgamepadstate* state) {
+bool PadsImpl::Pad::isControllerButtonPressed(int button, const GamepadState& state) {
     int mapped = m_padMapping[button];
     switch (mapped) {
-        case GLFW_GAMEPAD_BUTTON_LEFT_TRIGGER:
-            return state->axes[GLFW_GAMEPAD_AXIS_LEFT_TRIGGER] >= THRESHOLD;
-        case GLFW_GAMEPAD_BUTTON_RIGHT_TRIGGER:
-            return state->axes[GLFW_GAMEPAD_AXIS_RIGHT_TRIGGER] >= THRESHOLD;
-        case GLFW_GAMEPAD_BUTTON_INVALID:
+        case PCSX_GAMEPAD_BUTTON_LEFT_TRIGGER:
+            return state.axes[SDL_GAMEPAD_AXIS_LEFT_TRIGGER] >= THRESHOLD;
+        case PCSX_GAMEPAD_BUTTON_RIGHT_TRIGGER:
+            return state.axes[SDL_GAMEPAD_AXIS_RIGHT_TRIGGER] >= THRESHOLD;
+        case PCSX_GAMEPAD_BUTTON_INVALID:
             return false;
         default:
-            return state->buttons[mapped];
-            break;
+            if (mapped < 0 || mapped >= SDL_GAMEPAD_BUTTON_COUNT) return false;
+            return state.buttons[mapped];
     }
 }
 
@@ -574,8 +605,8 @@ void PadsImpl::Pad::getButtons() {
         return;
     }
 
-    GLFWgamepadstate state;
-    int hasPad = GLFW_FALSE;
+    GamepadState state{};
+    bool hasPad = false;
     const auto& inputType = m_settings.get<SettingInputType>();
 
     auto getKeyboardButtons = [this]() -> uint16_t {
@@ -595,12 +626,37 @@ void PadsImpl::Pad::getButtons() {
         return;
     }
 
-    if ((m_padID >= GLFW_JOYSTICK_1) && (m_padID <= GLFW_JOYSTICK_LAST)) {
-        hasPad = glfwGetGamepadState(m_padID, &state);
-        if (!hasPad) {
-            const char* guid = glfwGetJoystickGUID(m_padID);
-            PCSX::g_system->printf("Gamepad error: GUID %s likely has no database mapping, disabling pad\n", guid);
-            m_padID = -1;
+    // Drive SDL's internal gamepad state and pluck out hotplug events. Other
+    // SDL events stay in the queue (gui.cc still owns the rest of the input
+    // surface today). Move this to the central event pump when Phase 3 lands.
+    SDL_PumpEvents();
+    {
+        SDL_Event scratch[16];
+        int drained = SDL_PeepEvents(scratch, 16, SDL_GETEVENT, SDL_EVENT_GAMEPAD_ADDED, SDL_EVENT_GAMEPAD_REMOVED);
+        if (drained > 0) {
+            s_pads->scanGamepads();
+            s_pads->map();
+        }
+    }
+
+    if (m_gamepad) {
+        if (!SDL_GamepadConnected(m_gamepad)) {
+            const SDL_JoystickID jid = SDL_GetGamepadID(m_gamepad);
+            PCSX::g_system->printf("Gamepad error: joystick id %u disconnected, disabling pad\n",
+                                   static_cast<unsigned>(jid));
+            m_gamepad = nullptr;
+        } else {
+            for (int i = 0; i < SDL_GAMEPAD_BUTTON_COUNT; i++) {
+                state.buttons[i] = SDL_GetGamepadButton(m_gamepad, static_cast<SDL_GamepadButton>(i));
+            }
+            // SDL reports axes as int16_t [-32768, 32767]. Triggers are signed but
+            // only ever positive in practice. Normalize to [-1, 1] to match the
+            // shape the rest of this code was built around.
+            for (int i = 0; i < SDL_GAMEPAD_AXIS_COUNT; i++) {
+                int16_t raw = SDL_GetGamepadAxis(m_gamepad, static_cast<SDL_GamepadAxis>(i));
+                state.axes[i] = raw < 0 ? raw / 32768.0f : raw / 32767.0f;
+            }
+            hasPad = true;
         }
     }
 
@@ -617,13 +673,13 @@ void PadsImpl::Pad::getButtons() {
 
     bool buttons[16];
     for (unsigned i = 0; i < 16; i++) {
-        buttons[i] = isControllerButtonPressed(i, &state);
+        buttons[i] = isControllerButtonPressed(i, state);
     }
 
     // For digital gamepads, make the PS1 dpad controllable with our gamepad's left analog stick
     if (m_type == PadType::Digital) {
-        float x = state.axes[GLFW_GAMEPAD_AXIS_LEFT_X];
-        float y = -state.axes[GLFW_GAMEPAD_AXIS_LEFT_Y];
+        float x = state.axes[SDL_GAMEPAD_AXIS_LEFTX];
+        float y = -state.axes[SDL_GAMEPAD_AXIS_LEFTY];
         float ds = x * x + y * y;
         if (ds >= THRESHOLD * THRESHOLD) {
             float d = std::sqrt(ds);
@@ -667,10 +723,10 @@ void PadsImpl::Pad::getButtons() {
             const float scaledValue = std::clamp<float>(axis * scale, -1.0f, 1.0f);
             return (uint8_t)(std::clamp<float>(std::round(((scaledValue + 1.0f) / 2.0f) * 255.0f), 0.0f, 255.0f));
         };
-        pad.leftJoyX = axisToUint8(state.axes[GLFW_GAMEPAD_AXIS_LEFT_X]);
-        pad.leftJoyY = axisToUint8(state.axes[GLFW_GAMEPAD_AXIS_LEFT_Y]);
-        pad.rightJoyX = axisToUint8(state.axes[GLFW_GAMEPAD_AXIS_RIGHT_X]);
-        pad.rightJoyY = axisToUint8(state.axes[GLFW_GAMEPAD_AXIS_RIGHT_Y]);
+        pad.leftJoyX = axisToUint8(state.axes[SDL_GAMEPAD_AXIS_LEFTX]);
+        pad.leftJoyY = axisToUint8(state.axes[SDL_GAMEPAD_AXIS_LEFTY]);
+        pad.rightJoyX = axisToUint8(state.axes[SDL_GAMEPAD_AXIS_RIGHTX]);
+        pad.rightJoyY = axisToUint8(state.axes[SDL_GAMEPAD_AXIS_RIGHTY]);
     }
 
     uint16_t result = 0;
@@ -1111,27 +1167,34 @@ bool PadsImpl::Pad::configure() {
 
     const char* preview = _("No gamepad selected or connected");
     auto& id = m_settings.get<SettingControllerID>().value;
-    int glfwjid = id >= 0 ? s_pads->m_gamepadsMap[id] : -1;
+    SDL_Gamepad* selected = (id >= 0 && static_cast<unsigned>(id) <
+                                            sizeof(s_pads->m_gamepads) / sizeof(s_pads->m_gamepads[0]))
+                                ? s_pads->m_gamepads[id]
+                                : nullptr;
 
-    std::vector<const char*> gamepadsNames;
-
-    for (auto& m : s_pads->m_gamepadsMap) {
-        if (m == -1) {
-            continue;
-        }
-        const char* name = glfwGetGamepadName(m);
-        gamepadsNames.push_back(name);
-        if (m == glfwjid) {
-            preview = name;
-        }
+    // Slot index -> displayable name. Empty slots are skipped during render but
+    // we keep the slot index so the user's saved SettingControllerID continues
+    // to refer to the same physical position.
+    struct Entry {
+        int slot;
+        const char* name;
+    };
+    std::vector<Entry> gamepads;
+    for (unsigned i = 0; i < sizeof(s_pads->m_gamepads) / sizeof(s_pads->m_gamepads[0]); i++) {
+        SDL_Gamepad* g = s_pads->m_gamepads[i];
+        if (!g) continue;
+        const char* name = SDL_GetGamepadName(g);
+        if (!name) name = "<unnamed gamepad>";
+        gamepads.push_back({static_cast<int>(i), name});
+        if (g == selected) preview = name;
     }
 
     if (ImGui::BeginCombo(_("Gamepad"), preview)) {
-        for (int i = 0; i < gamepadsNames.size(); i++) {
-            const auto gamepadName = fmt::format("{}##{}", gamepadsNames[i], i);
+        for (const auto& entry : gamepads) {
+            const auto gamepadName = fmt::format("{}##{}", entry.name, entry.slot);
             if (ImGui::Selectable(gamepadName.c_str())) {
                 changed = true;
-                id = i;
+                id = entry.slot;
                 map();
             }
         }
