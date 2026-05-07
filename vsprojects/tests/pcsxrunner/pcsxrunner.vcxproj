@@ -221,6 +221,9 @@
     <ProjectReference Include="..\..\nanovg\nanovg.vcxproj">
       <Project>{b68e9c60-8362-4a32-ac2e-4f0c2673f3e1}</Project>
     </ProjectReference>
+    <ProjectReference Include="..\..\SDL\SDL.vcxproj">
+      <Project>{13621b3d-871a-46a0-935f-d92a585ae034}</Project>
+    </ProjectReference>
     <ProjectReference Include="..\..\soft\soft.vcxproj">
       <Project>{660a9963-15e0-4b91-a5cf-bed493e862ec}</Project>
     </ProjectReference>
