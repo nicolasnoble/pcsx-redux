@@ -493,8 +493,20 @@ class GUI final : public UI {
     Widgets::ShaderEditor m_offscreenShaderEditor = {"offscreen"};
     ImFont *getMainFont() { return findClosestFont(m_mainFonts); }
     ImFont *getMonoFont() { return findClosestFont(m_monoFonts); }
-    void useMainFont() { ImGui::PushFont(getMainFont()); }
-    void useMonoFont() { ImGui::PushFont(getMonoFont()); }
+    // ImGui v1.92's PushFont takes a size. We pass the closest-matching font's
+    // LegacySize (the size that was passed to AddFontFromFileTTF) so the
+    // per-scale font map continues to drive rendering size, matching pre-1.92
+    // PushFont(font) semantics. Passing 0.0f instead would mean "keep current
+    // size" which would render the larger DPI-baked font at the previous
+    // smaller base size, defeating the per-scale map entirely.
+    void useMainFont() {
+        ImFont *f = getMainFont();
+        ImGui::PushFont(f, f ? f->LegacySize : 0.0f);
+    }
+    void useMonoFont() {
+        ImFont *f = getMonoFont();
+        ImGui::PushFont(f, f ? f->LegacySize : 0.0f);
+    }
 
     bool &allowMouseCaptureToggle() { return settings.get<AllowMouseCaptureToggle>().value; }
     bool &isRawMouseMotionEnabled() { return settings.get<EnableRawMouseMotion>().value; }

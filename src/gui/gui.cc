@@ -1030,7 +1030,13 @@ void PCSX::GUI::startFrame() {
         auto scales = m_allScales;
         if (scales.empty()) scales.emplace(1.0f);
 
-        ImGui_ImplOpenGL3_DestroyFontsTexture();
+        // ImGui v1.92 retired ImGui_ImplOpenGL3_{Destroy,Create}FontsTexture and
+        // ImFontAtlas::Build() in favour of the dynamic-texture protocol; the
+        // backend pulls fresh glyphs from the atlas as it grows. We still
+        // rebuild the per-scale font map below so each pinned scale has a
+        // matching ImFont with the right LegacySize ready for PushFont; actual
+        // per-size glyph data is allocated lazily inside ImFontBaked when those
+        // fonts are first rendered.
         m_mainFonts.clear();
         m_monoFonts.clear();
 
@@ -1048,9 +1054,13 @@ void PCSX::GUI::startFrame() {
             m_monoFonts[scale] = loadFont(MAKEU8("NotoMono-Regular.ttf"), settings.get<MonoFontSize>().value * scale,
                                           io, nullptr, false, false);
         }
-        io.Fonts->Build();
-        io.FontDefault = m_mainFonts.begin()->second;
-        ImGui_ImplOpenGL3_CreateFontsTexture();
+        // Pick the font matching the current DPI scale as the default; in
+        // v1.92 ImGui draws frames at Style.FontSizeBase unless overridden by
+        // PushFont, so we have to push that size up to match or the default
+        // frame text would render at the smallest pinned scale.
+        ImFont* mainFont = getMainFont();
+        io.FontDefault = mainFont;
+        if (mainFont) ImGui::GetStyle().FontSizeBase = mainFont->LegacySize;
     }
 
     ImGui_ImplOpenGL3_NewFrame();
@@ -2976,6 +2986,25 @@ ImFont* PCSX::GUI::findClosestFont(const std::map<float, ImFont*>& fonts) {
 void PCSX::GUI::changeScale(float scale) {
     if (scale <= 0.0f) return;
     m_currentScale = scale;
-    m_allScales.emplace(scale);
-    ImGui::SetCurrentFont(getMainFont());
+    // Track this scale so the font reload pass bakes glyphs pre-sized for it;
+    // if it's a previously-unseen scale, request a reload so the per-scale font
+    // map gets a matching entry. v1.92's dynamic font system also handles
+    // unbaked sizes lazily via PushFont(font, size), but the pre-baked path
+    // still avoids a same-frame atlas grow on viewport DPI flips.
+    if (m_allScales.insert(scale).second) {
+        m_reloadFonts = true;
+        return;
+    }
+    // Already-pinned scale: no font reload needed, but the default frame font
+    // and base size still have to track the new closest-scale match. v1.92
+    // draws default-context frames at Style.FontSizeBase, so we have to keep
+    // it in sync with the active main font's LegacySize on every DPI flip,
+    // not only the first one.
+    if (ImGui::GetCurrentContext()) {
+        ImFont* mainFont = getMainFont();
+        if (mainFont) {
+            ImGui::GetIO().FontDefault = mainFont;
+            ImGui::GetStyle().FontSizeBase = mainFont->LegacySize;
+        }
+    }
 }
