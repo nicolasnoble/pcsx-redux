@@ -75,7 +75,9 @@
 #define GL_SHADER_VERSION "#version 300 es\n"
 #endif
 
-struct GLFWwindow;
+struct SDL_Window;
+struct SDL_GLContextState;
+typedef SDL_GLContextState* SDL_GLContext;
 struct NVGcontext;
 
 namespace PCSX {
@@ -175,10 +177,6 @@ class GUI final : public UI {
     void (*m_createWindowOldCallback)(ImGuiViewport *viewport) = nullptr;
     void (*m_onChangedViewportOldCallback)(ImGuiViewport *viewport) = nullptr;
     void (*m_destroyWindowOldCallback)(ImGuiViewport *viewport) = nullptr;
-    static void glfwKeyCallbackTrampoline(GLFWwindow *window, int key, int scancode, int action, int mods) {
-        g_gui->glfwKeyCallback(window, key, scancode, action, mods);
-    }
-    void glfwKeyCallback(GLFWwindow *window, int key, int scancode, int action, int mods);
     void glErrorCallback(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar *message);
     void changeScale(float scale);
     bool m_onlyLogGLErrors = false;
@@ -298,13 +296,14 @@ class GUI final : public UI {
     const ImVec2 &getRenderSize() { return m_renderSize; }
 
   private:
-    GLFWwindow *m_window = nullptr;
+    SDL_Window *m_window = nullptr;
+    SDL_GLContext m_glContext = nullptr;
     bool m_hasCoreProfile = false;
-    int &m_glfwPosX = settings.get<WindowPosX>().value;
-    int &m_glfwPosY = settings.get<WindowPosY>().value;
-    int &m_glfwSizeX = settings.get<WindowSizeX>().value;
-    int &m_glfwSizeY = settings.get<WindowSizeY>().value;
-    bool &m_glfwMaximized = settings.get<WindowMaximized>().value;
+    int &m_windowPosX = settings.get<WindowPosX>().value;
+    int &m_windowPosY = settings.get<WindowPosY>().value;
+    int &m_windowSizeX = settings.get<WindowSizeX>().value;
+    int &m_windowSizeY = settings.get<WindowSizeY>().value;
+    bool &m_windowMaximized = settings.get<WindowMaximized>().value;
     GLuint m_VRAMTexture = 0;
     NVGcontext *m_nvgContext = nullptr;
     std::map<unsigned, void *> m_nvgSubContextes;
@@ -316,7 +315,7 @@ class GUI final : public UI {
     int m_currentTexture = 0;
 
     ImVec4 m_backgroundColor = ImColor(114, 144, 154);
-    ImVec2 m_framebufferSize = ImVec2(1, 1);  // Size of GLFW window framebuffer
+    ImVec2 m_framebufferSize = ImVec2(1, 1);  // Size of the SDL window framebuffer (in pixels)
     ImVec2 m_renderSize = ImVec2(1, 1);
     ImVec2 m_outputWindowSize = ImVec2(1, 1);
 

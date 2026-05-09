@@ -8,7 +8,7 @@ UNAME_M := $(shell uname -m)
 rwildcard = $(wildcard $1$2) $(foreach d,$(wildcard $1*),$(call rwildcard,$d/,$2))
 CC_IS_CLANG := $(shell $(CC) --version | grep -q clang && echo true || echo false)
 
-PACKAGES := capstone freetype2 glfw3 libavcodec libavformat libavutil libswresample libcurl libuv sdl3 zlib
+PACKAGES := capstone freetype2 libavcodec libavformat libavutil libswresample libcurl libuv sdl3 zlib
 OPTIONAL_PACKAGES := md4c fmt libllhttp libluv liburiparser
 OPTIONAL_LIBRARIES := multipart ucl
 
@@ -124,7 +124,7 @@ SRCS += third_party/gl3w/GL/gl3w-throwers.cc
 SRCS += $(wildcard third_party/iec-60908b/*.c)
 SRCS += third_party/ImFileDialog/ImFileDialog.cpp
 SRCS += third_party/imgui/backends/imgui_impl_opengl3.cpp
-SRCS += third_party/imgui/backends/imgui_impl_glfw.cpp
+SRCS += third_party/imgui/backends/imgui_impl_sdl3.cpp
 SRCS += third_party/imgui/misc/cpp/imgui_stdlib.cpp
 SRCS += third_party/imgui/misc/freetype/imgui_freetype.cpp
 SRCS += third_party/imgui_lua_bindings/imgui_lua_bindings.cpp
