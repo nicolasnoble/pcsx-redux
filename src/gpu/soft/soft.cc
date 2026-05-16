@@ -2918,8 +2918,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3TEx8(int16_t x1, int16_t y1, int16_t 
                                                 int16_t ty3, int16_t clX, int16_t clY) {
     int i, j, xmin, xmax, ymin, ymax;
     int32_t difX, difY, difX2, difY2;
-    int32_t posX, posY, YAdjust, clutP;
-    int16_t tC1, tC2;
+    int32_t posX, posY;
 
     const auto drawX = m_drawX;
     const auto drawY = m_drawY;
@@ -2941,20 +2940,35 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3TEx8(int16_t x1, int16_t y1, int16_t 
         if (nextRowFlatTextured3()) return;
     }
 
-    clutP = (clY << 10) + clX;
-
-    YAdjust = ((m_globalTextAddrY) << 11) + (m_globalTextAddrX << 1);
-    YAdjust += (m_textureWindow.y0 << 11) + (m_textureWindow.x0);
+    RasterState rs{};
+    rs.vram = m_vram;
+    rs.vram16 = m_vram16;
+    rs.texWindowX0 = m_textureWindow.x0;
+    rs.texWindowY0 = m_textureWindow.y0;
+    rs.maskX = m_textureWindow.x1 - 1;
+    rs.maskY = m_textureWindow.y1 - 1;
+    rs.texBaseX = m_globalTextAddrX;
+    rs.texBaseY = m_globalTextAddrY;
+    rs.abr = m_globalTextABR;
+    rs.drawX = drawX;
+    rs.drawY = drawY;
+    rs.drawW = drawW;
+    rs.drawH = drawH;
+    rs.checkMask = m_checkMask;
+    rs.setMask16 = m_setMask16;
+    rs.setMask32 = m_setMask32;
+    rs.drawSemiTrans = m_drawSemiTrans;
+    rs.m1 = m_m1;
+    rs.m2 = m_m2;
+    rs.m3 = m_m3;
+    rs.clutP = (clY << 10) + clX;
+    const int32_t yAdj = Sampler<TexMode::Clut8>::yAdjust(rs);
+    const auto vram16 = rs.vram16;
 
     difX = m_deltaRightU;
     difX2 = difX << 1;
     difY = m_deltaRightV;
     difY2 = difY << 1;
-
-    const auto vram = m_vram;
-    const auto vram16 = m_vram16;
-    const auto maskX = m_textureWindow.x1 - 1;
-    const auto maskY = m_textureWindow.y1 - 1;
 
     if (!m_checkMask && !m_drawSemiTrans) {
         for (i = ymin; i <= ymax; i++) {
@@ -2976,19 +2990,16 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3TEx8(int16_t x1, int16_t y1, int16_t 
                 }
 
                 for (j = xmin; j < xmax; j += 2) {
-                    tC1 = vram[static_cast<int32_t>((((posY >> 16) & maskY) << 11) + YAdjust + ((posX >> 16) & maskX))];
-                    tC2 = vram[static_cast<int32_t>(((((posY + difY) >> 16) & maskY) << 11) + YAdjust +
-                                                    (((posX + difX) >> 16) & maskX))];
                     uint32_t *pdest = (uint32_t *)&vram16[(i << 10) + j];
-                    uint32_t color = vram16[clutP + tC1] | ((int32_t)vram16[clutP + tC2]) << 16;
+                    const uint32_t color = Sampler<TexMode::Clut8>::packed(rs, yAdj, posX, posY, difX, difY);
                     getTextureTransColShade32Solid(pdest, color);
                     posX += difX2;
                     posY += difY2;
                 }
 
                 if (j == xmax) {
-                    tC1 = vram[static_cast<int32_t>((((posY >> 16) & maskY) << 11) + YAdjust + ((posX >> 16) & maskX))];
-                    getTextureTransColShadeSolid(&vram16[(i << 10) + j], vram16[clutP + tC1]);
+                    getTextureTransColShadeSolid(&vram16[(i << 10) + j],
+                                                 Sampler<TexMode::Clut8>::scalar(rs, yAdj, posX, posY));
                 }
             }
             if (nextRowFlatTextured3()) return;
@@ -3013,19 +3024,16 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3TEx8(int16_t x1, int16_t y1, int16_t 
             }
 
             for (j = xmin; j < xmax; j += 2) {
-                tC1 = vram[static_cast<int32_t>((((posY >> 16) & maskY) << 11) + YAdjust + ((posX >> 16) & maskX))];
-                tC2 = vram[static_cast<int32_t>(((((posY + difY) >> 16) & maskY) << 11) + YAdjust +
-                                                (((posX + difX) >> 16) & maskX))];
                 uint32_t *pdest = (uint32_t *)&vram16[(i << 10) + j];
-                uint32_t color = vram16[clutP + tC1] | ((int32_t)vram16[clutP + tC2]) << 16;
+                const uint32_t color = Sampler<TexMode::Clut8>::packed(rs, yAdj, posX, posY, difX, difY);
                 getTextureTransColShade32(pdest, color);
                 posX += difX2;
                 posY += difY2;
             }
 
             if (j == xmax) {
-                tC1 = vram[static_cast<int32_t>((((posY >> 16) & maskY) << 11) + YAdjust + ((posX >> 16) & maskX))];
-                getTextureTransColShade(&vram16[(i << 10) + j], vram16[clutP + tC1]);
+                getTextureTransColShade(&vram16[(i << 10) + j],
+                                        Sampler<TexMode::Clut8>::scalar(rs, yAdj, posX, posY));
             }
         }
         if (nextRowFlatTextured3()) return;
