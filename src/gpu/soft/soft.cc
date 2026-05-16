@@ -3908,6 +3908,30 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3TGEx8i(int16_t x1, int16_t y1, int16_
     const auto setMask32 = m_setMask32;
     const auto ditherMode = m_ditherMode;
 
+    RasterState rs{};
+    rs.vram = m_vram;
+    rs.vram16 = m_vram16;
+    rs.texWindowX0 = m_textureWindow.x0;
+    rs.texWindowY0 = m_textureWindow.y0;
+    rs.maskX = maskX;
+    rs.maskY = maskY;
+    rs.texBaseX = m_globalTextAddrX;
+    rs.texBaseY = m_globalTextAddrY;
+    rs.abr = m_globalTextABR;
+    rs.drawX = drawX;
+    rs.drawY = drawY;
+    rs.drawW = drawW;
+    rs.drawH = drawH;
+    rs.checkMask = m_checkMask;
+    rs.setMask16 = setMask16;
+    rs.setMask32 = setMask32;
+    rs.drawSemiTrans = m_drawSemiTrans;
+    rs.m1 = m_m1;
+    rs.m2 = m_m2;
+    rs.m3 = m_m3;
+    rs.clutP = clutP;
+    const int32_t yAdj = Sampler<TexMode::Clut8>::yAdjust(rs);
+
     if (!m_checkMask && !m_drawSemiTrans && !m_ditherMode) {
         for (i = ymin; i <= ymax; i++) {
             xmin = (m_leftX >> 16);
@@ -3932,14 +3956,11 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3TGEx8i(int16_t x1, int16_t y1, int16_
                 }
 
                 for (j = xmin; j < xmax; j += 2) {
-                    tC1 = vram[static_cast<int32_t>((((posY >> 16) & maskY) << 11) + YAdjust + ((posX >> 16) & maskX))];
-                    tC2 = vram[static_cast<int32_t>(((((posY + difY) >> 16) & maskY) << 11) + YAdjust +
-                                                    (((posX + difX) >> 16) & maskX))];
-
-                    getTextureTransColShadeX32Solid(
-                        (uint32_t *)&vram16[(i << 10) + j], vram16[clutP + tC1] | ((int32_t)vram16[clutP + tC2]) << 16,
-                        (cB1 >> 16) | ((cB1 + difB) & 0xff0000), (cG1 >> 16) | ((cG1 + difG) & 0xff0000),
-                        (cR1 >> 16) | ((cR1 + difR) & 0xff0000));
+                    uint32_t *pdest = (uint32_t *)&vram16[(i << 10) + j];
+                    const uint32_t color = Sampler<TexMode::Clut8>::packed(rs, yAdj, posX, posY, difX, difY);
+                    PixelWriter<true, GPU::Shading::Gouraud, WriteMode::Solid>::packed(
+                        rs, pdest, color, (cB1 >> 16) | ((cB1 + difB) & 0xff0000),
+                        (cG1 >> 16) | ((cG1 + difG) & 0xff0000), (cR1 >> 16) | ((cR1 + difR) & 0xff0000));
                     posX += difX2;
                     posY += difY2;
                     cR1 += difR2;
@@ -3947,9 +3968,9 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3TGEx8i(int16_t x1, int16_t y1, int16_
                     cB1 += difB2;
                 }
                 if (j == xmax) {
-                    tC1 = vram[static_cast<int32_t>((((posY >> 16) & maskY) << 11) + YAdjust + ((posX >> 16) & maskX))];
-                    getTextureTransColShadeXSolid(&vram16[(i << 10) + j], vram16[clutP + tC1], (cB1 >> 16), (cG1 >> 16),
-                                                  (cR1 >> 16));
+                    PixelWriter<true, GPU::Shading::Gouraud, WriteMode::Solid>::scalar(
+                        rs, &vram16[(i << 10) + j], Sampler<TexMode::Clut8>::scalar(rs, yAdj, posX, posY),
+                        (cB1 >> 16), (cG1 >> 16), (cR1 >> 16));
                 }
             }
             if (nextRowShadeTextured3()) return;
@@ -4080,6 +4101,30 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3TGDi(int16_t x1, int16_t y1, int16_t 
     const auto setMask32 = m_setMask32;
     const auto ditherMode = m_ditherMode;
 
+    RasterState rs{};
+    rs.vram = m_vram;
+    rs.vram16 = m_vram16;
+    rs.texWindowX0 = m_textureWindow.x0;
+    rs.texWindowY0 = m_textureWindow.y0;
+    rs.maskX = maskX;
+    rs.maskY = maskY;
+    rs.texBaseX = m_globalTextAddrX;
+    rs.texBaseY = m_globalTextAddrY;
+    rs.abr = m_globalTextABR;
+    rs.drawX = drawX;
+    rs.drawY = drawY;
+    rs.drawW = drawW;
+    rs.drawH = drawH;
+    rs.checkMask = m_checkMask;
+    rs.setMask16 = setMask16;
+    rs.setMask32 = setMask32;
+    rs.drawSemiTrans = m_drawSemiTrans;
+    rs.m1 = m_m1;
+    rs.m2 = m_m2;
+    rs.m3 = m_m3;
+    rs.clutP = 0;  // unused for Direct15
+    const int32_t yAdj = Sampler<TexMode::Direct15>::yAdjust(rs);
+
     if (!m_checkMask && !m_drawSemiTrans && !m_ditherMode) {
         for (i = ymin; i <= ymax; i++) {
             xmin = (m_leftX >> 16);
@@ -4104,16 +4149,11 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3TGDi(int16_t x1, int16_t y1, int16_t 
                 }
 
                 for (j = xmin; j < xmax; j += 2) {
-                    getTextureTransColShadeX32Solid(
-                        (uint32_t *)&vram16[(i << 10) + j],
-                        (((int32_t)
-                              vram16[(((((posY + difY) >> 16) & maskY) + globalTextAddrY + textureWindow.y0) << 10) +
-                                     (((posX + difX) >> 16) & maskX) + globalTextAddrX + textureWindow.x0])
-                         << 16) |
-                            vram16[((((posY >> 16) & maskY) + globalTextAddrY + textureWindow.y0) << 10) +
-                                   (((posX) >> 16) & maskX) + globalTextAddrX + textureWindow.x0],
-                        (cB1 >> 16) | ((cB1 + difB) & 0xff0000), (cG1 >> 16) | ((cG1 + difG) & 0xff0000),
-                        (cR1 >> 16) | ((cR1 + difR) & 0xff0000));
+                    uint32_t *pdest = (uint32_t *)&vram16[(i << 10) + j];
+                    const uint32_t color = Sampler<TexMode::Direct15>::packed(rs, yAdj, posX, posY, difX, difY);
+                    PixelWriter<true, GPU::Shading::Gouraud, WriteMode::Solid>::packed(
+                        rs, pdest, color, (cB1 >> 16) | ((cB1 + difB) & 0xff0000),
+                        (cG1 >> 16) | ((cG1 + difG) & 0xff0000), (cR1 >> 16) | ((cR1 + difR) & 0xff0000));
                     posX += difX2;
                     posY += difY2;
                     cR1 += difR2;
@@ -4121,10 +4161,8 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3TGDi(int16_t x1, int16_t y1, int16_t 
                     cB1 += difB2;
                 }
                 if (j == xmax) {
-                    getTextureTransColShadeXSolid(
-                        &vram16[(i << 10) + j],
-                        vram16[((((posY >> 16) & maskY) + globalTextAddrY + textureWindow.y0) << 10) +
-                               ((posX >> 16) & maskX) + globalTextAddrX + textureWindow.x0],
+                    PixelWriter<true, GPU::Shading::Gouraud, WriteMode::Solid>::scalar(
+                        rs, &vram16[(i << 10) + j], Sampler<TexMode::Direct15>::scalar(rs, yAdj, posX, posY),
                         (cB1 >> 16), (cG1 >> 16), (cR1 >> 16));
                 }
             }
