@@ -2465,93 +2465,50 @@ void PCSX::SoftGPU::SoftRenderer::drawLineOctantShade(int x0, int y0, int x1, in
 
 ///////////////////////////////////////////////////////////////////////
 
-void PCSX::SoftGPU::SoftRenderer::vertLineShade(int x, int y0, int y1, uint32_t rgb0, uint32_t rgb1) {
-    int y, dy;
-    uint32_t r0, g0, b0, r1, g1, b1;
+template <PCSX::SoftGPU::Line::Axis Iter>
+void PCSX::SoftGPU::SoftRenderer::drawAxisLineShade(int constCoord, int varStart, int varEnd, uint32_t rgb0,
+                                                    uint32_t rgb1) {
+    const auto vram16 = m_vram16;
 
-    const auto drawX = m_drawX;
-    const auto drawY = m_drawY;
-    const auto drawH = m_drawH;
-    const auto drawW = m_drawW;
-
-    r0 = (rgb0 & 0x00ff0000);
-    g0 = (rgb0 & 0x0000ff00) << 8;
-    b0 = (rgb0 & 0x000000ff) << 16;
-    r1 = (rgb1 & 0x00ff0000);
-    g1 = (rgb1 & 0x0000ff00) << 8;
-    b1 = (rgb1 & 0x000000ff) << 16;
-
-    dy = (y1 - y0);
+    uint32_t r0 = (rgb0 & 0x00ff0000);
+    uint32_t g0 = (rgb0 & 0x0000ff00) << 8;
+    uint32_t b0 = (rgb0 & 0x000000ff) << 16;
+    const uint32_t r1 = (rgb1 & 0x00ff0000);
+    const uint32_t g1 = (rgb1 & 0x0000ff00) << 8;
+    const uint32_t b1 = (rgb1 & 0x000000ff) << 16;
 
     const uint32_t r_init = r0, g_init = g0, b_init = b0;
     const int32_t dr_full = (int32_t)r1 - (int32_t)r0;
     const int32_t dg_full = (int32_t)g1 - (int32_t)g0;
     const int32_t db_full = (int32_t)b1 - (int32_t)b0;
-    const int steps = dy;
-    const int y0_orig = y0;
+    const int steps = varEnd - varStart;
+    const int varStart_orig = varStart;
 
-    if (y0 < m_drawY) y0 = m_drawY;
-    if (y1 > m_drawH) y1 = m_drawH;
-
-    const auto vram16 = m_vram16;
-
-    RasterState rs = makeBaseRasterState();
-
-    for (y = y0; y <= y1; y++) {
-        if (steps != 0) {
-            const int step_idx = y - y0_orig;
-            r0 = r_init + (int64_t)dr_full * step_idx / steps;
-            g0 = g_init + (int64_t)dg_full * step_idx / steps;
-            b0 = b_init + (int64_t)db_full * step_idx / steps;
-        }
-        PixelWriter<false, GPU::Shading::Flat, WriteMode::Default>::scalar(rs, &vram16[(y << 10) + x],
-                         (uint16_t)(((r0 >> 9) & 0x7c00) | ((g0 >> 14) & 0x03e0) | ((b0 >> 19) & 0x001f)));
+    if constexpr (Iter == Line::Axis::X) {
+        if (varStart < m_drawX) varStart = m_drawX;
+        if (varEnd > m_drawW) varEnd = m_drawW;
+    } else {
+        if (varStart < m_drawY) varStart = m_drawY;
+        if (varEnd > m_drawH) varEnd = m_drawH;
     }
-}
-
-///////////////////////////////////////////////////////////////////////
-
-void PCSX::SoftGPU::SoftRenderer::horzLineShade(int y, int x0, int x1, uint32_t rgb0, uint32_t rgb1) {
-    int x, dx;
-    uint32_t r0, g0, b0, r1, g1, b1;
-
-    const auto drawX = m_drawX;
-    const auto drawY = m_drawY;
-    const auto drawH = m_drawH;
-    const auto drawW = m_drawW;
-
-    r0 = (rgb0 & 0x00ff0000);
-    g0 = (rgb0 & 0x0000ff00) << 8;
-    b0 = (rgb0 & 0x000000ff) << 16;
-    r1 = (rgb1 & 0x00ff0000);
-    g1 = (rgb1 & 0x0000ff00) << 8;
-    b1 = (rgb1 & 0x000000ff) << 16;
-
-    dx = (x1 - x0);
-
-    const uint32_t r_init = r0, g_init = g0, b_init = b0;
-    const int32_t dr_full = (int32_t)r1 - (int32_t)r0;
-    const int32_t dg_full = (int32_t)g1 - (int32_t)g0;
-    const int32_t db_full = (int32_t)b1 - (int32_t)b0;
-    const int steps = dx;
-    const int x0_orig = x0;
-
-    if (x0 < m_drawX) x0 = m_drawX;
-    if (x1 > m_drawW) x1 = m_drawW;
-
-    const auto vram16 = m_vram16;
 
     RasterState rs = makeBaseRasterState();
 
-    for (x = x0; x <= x1; x++) {
+    for (int v = varStart; v <= varEnd; ++v) {
         if (steps != 0) {
-            const int step_idx = x - x0_orig;
+            const int step_idx = v - varStart_orig;
             r0 = r_init + (int64_t)dr_full * step_idx / steps;
             g0 = g_init + (int64_t)dg_full * step_idx / steps;
             b0 = b_init + (int64_t)db_full * step_idx / steps;
         }
-        PixelWriter<false, GPU::Shading::Flat, WriteMode::Default>::scalar(rs, &vram16[(y << 10) + x],
-                         (uint16_t)(((r0 >> 9) & 0x7c00) | ((g0 >> 14) & 0x03e0) | ((b0 >> 19) & 0x001f)));
+        uint16_t *dst;
+        if constexpr (Iter == Line::Axis::X) {
+            dst = &vram16[(constCoord << 10) + v];
+        } else {
+            dst = &vram16[(v << 10) + constCoord];
+        }
+        PixelWriter<false, GPU::Shading::Flat, WriteMode::Default>::scalar(rs, dst,
+            (uint16_t)(((r0 >> 9) & 0x7c00) | ((g0 >> 14) & 0x03e0) | ((b0 >> 19) & 0x001f)));
     }
 }
 
@@ -2584,45 +2541,28 @@ void PCSX::SoftGPU::SoftRenderer::drawLineOctantFlat(int x0, int y0, int x1, int
 
 ///////////////////////////////////////////////////////////////////////
 
-void PCSX::SoftGPU::SoftRenderer::vertLineFlat(int x, int y0, int y1, uint16_t color) {
-    int y;
-
-    const auto drawX = m_drawX;
-    const auto drawY = m_drawY;
-    const auto drawH = m_drawH;
-    const auto drawW = m_drawW;
-
-    if (y0 < drawY) y0 = drawY;
-    if (y1 > drawH) y1 = drawH;
-
+template <PCSX::SoftGPU::Line::Axis Iter>
+void PCSX::SoftGPU::SoftRenderer::drawAxisLineFlat(int constCoord, int varStart, int varEnd, uint16_t color) {
     const auto vram16 = m_vram16;
 
-    RasterState rs = makeBaseRasterState();
-
-    for (y = y0; y <= y1; y++) {
-        PixelWriter<false, GPU::Shading::Flat, WriteMode::Default>::scalar(rs, &vram16[(y << 10) + x], color);
+    if constexpr (Iter == Line::Axis::X) {
+        if (varStart < m_drawX) varStart = m_drawX;
+        if (varEnd > m_drawW) varEnd = m_drawW;
+    } else {
+        if (varStart < m_drawY) varStart = m_drawY;
+        if (varEnd > m_drawH) varEnd = m_drawH;
     }
-}
-
-///////////////////////////////////////////////////////////////////////
-
-void PCSX::SoftGPU::SoftRenderer::horzLineFlat(int y, int x0, int x1, uint16_t color) {
-    int x;
-
-    const auto drawX = m_drawX;
-    const auto drawY = m_drawY;
-    const auto drawH = m_drawH;
-    const auto drawW = m_drawW;
-
-    if (x0 < drawX) x0 = drawX;
-    if (x1 > drawW) x1 = drawW;
-
-    const auto vram16 = m_vram16;
 
     RasterState rs = makeBaseRasterState();
 
-    for (x = x0; x <= x1; x++) {
-        PixelWriter<false, GPU::Shading::Flat, WriteMode::Default>::scalar(rs, &vram16[(y << 10) + x], color);
+    for (int v = varStart; v <= varEnd; ++v) {
+        uint16_t *dst;
+        if constexpr (Iter == Line::Axis::X) {
+            dst = &vram16[(constCoord << 10) + v];
+        } else {
+            dst = &vram16[(v << 10) + constCoord];
+        }
+        PixelWriter<false, GPU::Shading::Flat, WriteMode::Default>::scalar(rs, dst, color);
     }
 }
 
@@ -2650,15 +2590,15 @@ void PCSX::SoftGPU::SoftRenderer::drawSoftwareLineShade(int32_t rgb0, int32_t rg
 
     if (dx == 0) {
         if (dy > 0) {
-            vertLineShade(x0, y0, y1, rgb0, rgb1);
+            drawAxisLineShade<Line::Axis::Y>(x0, y0, y1, rgb0, rgb1);
         } else {
-            vertLineShade(x0, y1, y0, rgb1, rgb0);
+            drawAxisLineShade<Line::Axis::Y>(x0, y1, y0, rgb1, rgb0);
         }
     } else if (dy == 0) {
         if (dx > 0) {
-            horzLineShade(y0, x0, x1, rgb0, rgb1);
+            drawAxisLineShade<Line::Axis::X>(y0, x0, x1, rgb0, rgb1);
         } else {
-            horzLineShade(y0, x1, x0, rgb1, rgb0);
+            drawAxisLineShade<Line::Axis::X>(y0, x1, x0, rgb1, rgb0);
         }
     } else {
         if (dx < 0) {
@@ -2729,15 +2669,15 @@ void PCSX::SoftGPU::SoftRenderer::drawSoftwareLineFlat(int32_t rgb) {
             }
             return;
         } else if (dy > 0) {
-            vertLineFlat(x0, y0, y1, color);
+            drawAxisLineFlat<Line::Axis::Y>(x0, y0, y1, color);
         } else {
-            vertLineFlat(x0, y1, y0, color);
+            drawAxisLineFlat<Line::Axis::Y>(x0, y1, y0, color);
         }
     } else if (dy == 0) {
         if (dx > 0) {
-            horzLineFlat(y0, x0, x1, color);
+            drawAxisLineFlat<Line::Axis::X>(y0, x0, x1, color);
         } else {
-            horzLineFlat(y0, x1, x0, color);
+            drawAxisLineFlat<Line::Axis::X>(y0, x1, x0, color);
         }
     } else {
         if (dx < 0) {

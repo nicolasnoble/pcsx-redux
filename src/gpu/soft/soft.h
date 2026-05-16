@@ -240,14 +240,24 @@ struct SoftRenderer {
     // parameters select major axis, major-axis sign (Y-major only), minor
     // step direction, and the hardware-load-bearing initial-d bias. See
     // the Line namespace block above for the bias-vs-axis contract.
+    // Unified Bresenham line-octant rasterizers. One body handles all four
+    // canonical post-dispatch octants per shading mode; the template
+    // parameters select major axis, major-axis sign (Y-major only), minor
+    // step direction, and the hardware-load-bearing initial-d bias. See
+    // the Line namespace block above for the bias-vs-axis contract.
     template <Line::Axis MajorAxis, Line::MajorSign MaSign, Line::MinorSign MiSign, Line::Bias B>
     void drawLineOctantShade(int x0, int y0, int x1, int y1, uint32_t rgb0, uint32_t rgb1);
     template <Line::Axis MajorAxis, Line::MajorSign MaSign, Line::MinorSign MiSign, Line::Bias B>
     void drawLineOctantFlat(int x0, int y0, int x1, int y1, uint16_t color);
-    void vertLineShade(int x, int y0, int y1, uint32_t rgb0, uint32_t rgb1);
-    void horzLineShade(int y, int x0, int x1, uint32_t rgb0, uint32_t rgb1);
-    void vertLineFlat(int x, int y0, int y1, uint16_t col);
-    void horzLineFlat(int y, int x0, int x1, uint16_t col);
+    // Axis-aligned line variants. Iter selects the iteration axis: X for
+    // horizontal lines (y is fixed, x walks varStart..varEnd), Y for
+    // vertical lines (x is fixed, y walks varStart..varEnd). Callers must
+    // pass the range so that varStart <= varEnd; the dispatcher already
+    // performs that swap on dispatch.
+    template <Line::Axis Iter>
+    void drawAxisLineShade(int constCoord, int varStart, int varEnd, uint32_t rgb0, uint32_t rgb1);
+    template <Line::Axis Iter>
+    void drawAxisLineFlat(int constCoord, int varStart, int varEnd, uint16_t color);
 
     void enableCachedDithering();
     void disableCachedDithering();
