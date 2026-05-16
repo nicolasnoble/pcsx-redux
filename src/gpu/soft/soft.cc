@@ -165,6 +165,19 @@ void PCSX::SoftGPU::SoftRenderer::twindow(GPU::TWindow *prim) {
     // Absolute position of the start of the texture window
     m_textureWindow.y0 = (int16_t)((prim->h & YAlign) << 3);
     m_textureWindow.x0 = (int16_t)((prim->w & XAlign) << 3);
+
+    // Bit-substitution form consumed by the templated Sampler<TexMode>
+    // paths (the legacy 4-vert paths still use the .x0/.x1 fields above).
+    // Hardware applies the window as
+    //   filtered = (raw & ~(mask * 8)) | ((offset * 8) & (mask * 8))
+    // not as "wrap raw within a power-of-2 region", so the mask field's
+    // full 5-bit value participates and offset bits outside the mask
+    // region are discarded. Verified on SCPH-5501 via gpu-raster-phase15
+    // wt_mask01_off07_x0 / wt_mask03_off1f_x0.
+    m_textureWindowMaskU = (uint8_t)((prim->x & 0x1f) << 3);
+    m_textureWindowMaskV = (uint8_t)((prim->y & 0x1f) << 3);
+    m_textureWindowOffU = (uint8_t)(((prim->w & 0x1f) << 3) & m_textureWindowMaskU);
+    m_textureWindowOffV = (uint8_t)(((prim->h & 0x1f) << 3) & m_textureWindowMaskV);
 }
 
 void PCSX::SoftGPU::SoftRenderer::drawingAreaStart(GPU::DrawingAreaStart *prim) {
@@ -1646,10 +1659,13 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3T(int16_t x1, int16_t y1, int16_t x2,
     RasterState rs{};
     rs.vram = m_vram;
     rs.vram16 = m_vram16;
-    rs.texWindowX0 = m_textureWindow.x0;
-    rs.texWindowY0 = m_textureWindow.y0;
-    rs.maskX = m_textureWindow.x1 - 1;
-    rs.maskY = m_textureWindow.y1 - 1;
+    // texWindowX0/Y0: pre-masked offset bits (`(off * 8) & (mask * 8)`).
+    // maskX/Y: mask * 8 (the bits of U/V that get overwritten by the
+    // offset). filtered_u = (u & ~maskX) | texWindowX0. See twindow().
+    rs.texWindowX0 = m_textureWindowOffU;
+    rs.texWindowY0 = m_textureWindowOffV;
+    rs.maskX = m_textureWindowMaskU;
+    rs.maskY = m_textureWindowMaskV;
     rs.texBaseX = m_globalTextAddrX;
     rs.texBaseY = m_globalTextAddrY;
     rs.abr = m_globalTextABR;
@@ -2814,10 +2830,13 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3TG(int16_t x1, int16_t y1, int16_t x2
     RasterState rs{};
     rs.vram = m_vram;
     rs.vram16 = m_vram16;
-    rs.texWindowX0 = m_textureWindow.x0;
-    rs.texWindowY0 = m_textureWindow.y0;
-    rs.maskX = m_textureWindow.x1 - 1;
-    rs.maskY = m_textureWindow.y1 - 1;
+    // texWindowX0/Y0: pre-masked offset bits (`(off * 8) & (mask * 8)`).
+    // maskX/Y: mask * 8 (the bits of U/V that get overwritten by the
+    // offset). filtered_u = (u & ~maskX) | texWindowX0. See twindow().
+    rs.texWindowX0 = m_textureWindowOffU;
+    rs.texWindowY0 = m_textureWindowOffV;
+    rs.maskX = m_textureWindowMaskU;
+    rs.maskY = m_textureWindowMaskV;
     rs.texBaseX = m_globalTextAddrX;
     rs.texBaseY = m_globalTextAddrY;
     rs.abr = m_globalTextABR;

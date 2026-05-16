@@ -59,10 +59,10 @@ struct TriInput {
 struct RasterState {
     uint8_t *vram;          // byte-addressed view of VRAM
     uint16_t *vram16;       // halfword-addressed view of VRAM
-    int16_t texWindowX0;
-    int16_t texWindowY0;
-    uint16_t maskX;         // (textureWindow.x1 - 1)
-    uint16_t maskY;         // (textureWindow.y1 - 1)
+    int16_t texWindowX0;    // pre-masked offset bits, `(off_x * 8) & maskX`
+    int16_t texWindowY0;    // pre-masked offset bits, `(off_y * 8) & maskY`
+    uint16_t maskX;         // mask_x * 8 (which bits of U the window overwrites)
+    uint16_t maskY;         // mask_y * 8 (which bits of V the window overwrites)
     int32_t texBaseX;       // m_globalTextAddrX after texturePage()
     int32_t texBaseY;       // m_globalTextAddrY after texturePage()
     GPU::BlendFunction abr;
@@ -87,15 +87,22 @@ struct RasterState {
 template <TexMode Mode>
 struct Sampler;
 
+// Hardware texture-window formula (verified on SCPH-5501 via
+// gpu-raster-phase15): `filtered = (raw & ~mask_bits) | offset_bits`,
+// where mask_bits = mask_field * 8 and offset_bits is the offset field
+// projected through that same mask. Sampler<TexMode> applies the
+// substitution before reading VRAM, so the texture-page base is the
+// only contribution to the per-primitive yAdjust hoist.
 template <>
 struct Sampler<TexMode::Clut4> {
     static inline int32_t yAdjust(const RasterState &rs) {
-        return (rs.texBaseY << 11) + (rs.texBaseX << 1) + (rs.texWindowY0 << 11) + (rs.texWindowX0 >> 1);
+        return (rs.texBaseY << 11) + (rs.texBaseX << 1);
     }
     static inline uint16_t scalar(const RasterState &rs, int32_t yAdj, int32_t posX, int32_t posY) {
-        const int32_t XAdjust = (posX >> 16) & rs.maskX;
-        const uint8_t raw = rs.vram[static_cast<int32_t>((((posY >> 16) & rs.maskY) << 11) + yAdj + (XAdjust >> 1))];
-        const uint16_t idx = (raw >> ((XAdjust & 1) << 2)) & 0xf;
+        const int32_t filteredX = ((posX >> 16) & ~static_cast<int32_t>(rs.maskX)) | rs.texWindowX0;
+        const int32_t filteredY = ((posY >> 16) & ~static_cast<int32_t>(rs.maskY)) | rs.texWindowY0;
+        const uint8_t raw = rs.vram[(filteredY << 11) + yAdj + (filteredX >> 1)];
+        const uint16_t idx = (raw >> ((filteredX & 1) << 2)) & 0xf;
         return rs.vram16[rs.clutP + idx];
     }
     static inline uint32_t packed(const RasterState &rs, int32_t yAdj, int32_t posX, int32_t posY, int32_t difX,
@@ -109,11 +116,12 @@ struct Sampler<TexMode::Clut4> {
 template <>
 struct Sampler<TexMode::Clut8> {
     static inline int32_t yAdjust(const RasterState &rs) {
-        return (rs.texBaseY << 11) + (rs.texBaseX << 1) + (rs.texWindowY0 << 11) + rs.texWindowX0;
+        return (rs.texBaseY << 11) + (rs.texBaseX << 1);
     }
     static inline uint16_t scalar(const RasterState &rs, int32_t yAdj, int32_t posX, int32_t posY) {
-        const uint8_t idx =
-            rs.vram[static_cast<int32_t>((((posY >> 16) & rs.maskY) << 11) + yAdj + ((posX >> 16) & rs.maskX))];
+        const int32_t filteredX = ((posX >> 16) & ~static_cast<int32_t>(rs.maskX)) | rs.texWindowX0;
+        const int32_t filteredY = ((posY >> 16) & ~static_cast<int32_t>(rs.maskY)) | rs.texWindowY0;
+        const uint8_t idx = rs.vram[(filteredY << 11) + yAdj + filteredX];
         return rs.vram16[rs.clutP + idx];
     }
     static inline uint32_t packed(const RasterState &rs, int32_t yAdj, int32_t posX, int32_t posY, int32_t difX,
@@ -127,13 +135,13 @@ struct Sampler<TexMode::Clut8> {
 template <>
 struct Sampler<TexMode::Direct15> {
     // Direct 15-bit does not use a YAdjust hoist; the per-row address
-    // arithmetic folds the texture-page base and window in inside scalar().
+    // arithmetic folds the texture-page base in inside scalar().
     // Kept for API symmetry with the CLUT specializations.
     static inline int32_t yAdjust(const RasterState &) { return 0; }
     static inline uint16_t scalar(const RasterState &rs, int32_t /*yAdj*/, int32_t posX, int32_t posY) {
-        const int32_t x = ((posX >> 16) & rs.maskX) + rs.texBaseX + rs.texWindowX0;
-        const int32_t y = ((posY >> 16) & rs.maskY) + rs.texBaseY + rs.texWindowY0;
-        return rs.vram16[x + (y << 10)];
+        const int32_t filteredX = ((posX >> 16) & ~static_cast<int32_t>(rs.maskX)) | rs.texWindowX0;
+        const int32_t filteredY = ((posY >> 16) & ~static_cast<int32_t>(rs.maskY)) | rs.texWindowY0;
+        return rs.vram16[(filteredX + rs.texBaseX) + ((filteredY + rs.texBaseY) << 10)];
     }
     static inline uint32_t packed(const RasterState &rs, int32_t yAdj, int32_t posX, int32_t posY, int32_t difX,
                                   int32_t difY) {

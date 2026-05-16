@@ -92,6 +92,15 @@ struct SoftRenderer {
     };
 
     SoftRect m_textureWindow;
+    // Bit-substitution form of the GP0(E2) texture window, computed in
+    // twindow() and consumed by Sampler<TexMode> alongside the legacy
+    // .x0/.x1 fields above. mask = mask_field * 8 (the bits of u/v the
+    // window overwrites); off = (off_field * 8) & mask (pre-masked bits
+    // that get OR'd back in). See twindow() for the hardware citation.
+    uint8_t m_textureWindowMaskU = 0;
+    uint8_t m_textureWindowMaskV = 0;
+    uint8_t m_textureWindowOffU = 0;
+    uint8_t m_textureWindowOffV = 0;
     bool m_ditherMode = false;
     int m_drawX, m_drawY, m_drawW, m_drawH;
 
