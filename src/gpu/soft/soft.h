@@ -33,6 +33,34 @@ namespace SoftGPU {
 // type but doesn't need the enumerator values at declaration time.
 enum class WriteMode;
 
+// Bresenham line-octant axes for the soft GPU line rasterizer.
+//
+// MajorAxis  - which axis advances every iteration. X for shallow lines
+//              (|slope| <= 1), Y for steep lines (|slope| > 1).
+// MajorSign  - direction of the major-axis step. X-major lines always
+//              advance left-to-right after the dispatcher's swap, so
+//              MajorSign::Plus there is structural. Y-major lines run
+//              either downward (Plus) or upward (Minus) depending on
+//              whether the original slope was positive or negative.
+// MinorSign  - direction the minor axis takes on the Bresenham diagonal
+//              decision. Pairs with MajorAxis: for X-major it nudges Y,
+//              for Y-major it nudges X.
+// Bias       - the initial value of the Bresenham error term. Shallow
+//              uses the pixel-centre-biased 3*dy - dx that matches the
+//              PlayStation GPU's minor-axis tie-break at half-pixel
+//              crossings (phase-2 / phase-10 hardware-verified, see
+//              learnings/pcsx-redux/gpu.md). Steep uses the standard
+//              midpoint 2*dx - dy which already matches hardware for
+//              Y-major lines. The bias is hardware-load-bearing and
+//              MUST track MajorAxis explicitly; do not unify the two
+//              policies without re-running phase-2 and phase-10.
+namespace Line {
+enum class Axis { X, Y };
+enum class MajorSign { Plus, Minus };
+enum class MinorSign { Plus, Minus };
+enum class Bias { Shallow, Steep };
+}  // namespace Line
+
 struct SoftRenderer {
     ~SoftRenderer();
     inline void resetRenderer() {
@@ -207,16 +235,17 @@ struct SoftRenderer {
     void drawPoly4TG(int16_t x1, int16_t y1, int16_t x2, int16_t y2, int16_t x3, int16_t y3, int16_t x4, int16_t y4,
                      int16_t tx1, int16_t ty1, int16_t tx2, int16_t ty2, int16_t tx3, int16_t ty3, int16_t tx4,
                      int16_t ty4, int16_t clX, int16_t clY, int32_t col1, int32_t col2, int32_t col3, int32_t col4);
-    void line_E_SE_Shade(int x0, int y0, int x1, int y1, uint32_t rgb0, uint32_t rgb1);
-    void line_S_SE_Shade(int x0, int y0, int x1, int y1, uint32_t rgb0, uint32_t rgb1);
-    void line_N_NE_Shade(int x0, int y0, int x1, int y1, uint32_t rgb0, uint32_t rgb1);
-    void line_E_NE_Shade(int x0, int y0, int x1, int y1, uint32_t rgb0, uint32_t rgb1);
+    // Unified Bresenham line-octant rasterizers. One body handles all four
+    // canonical post-dispatch octants per shading mode; the template
+    // parameters select major axis, major-axis sign (Y-major only), minor
+    // step direction, and the hardware-load-bearing initial-d bias. See
+    // the Line namespace block above for the bias-vs-axis contract.
+    template <Line::Axis MajorAxis, Line::MajorSign MaSign, Line::MinorSign MiSign, Line::Bias B>
+    void drawLineOctantShade(int x0, int y0, int x1, int y1, uint32_t rgb0, uint32_t rgb1);
+    template <Line::Axis MajorAxis, Line::MajorSign MaSign, Line::MinorSign MiSign, Line::Bias B>
+    void drawLineOctantFlat(int x0, int y0, int x1, int y1, uint16_t color);
     void vertLineShade(int x, int y0, int y1, uint32_t rgb0, uint32_t rgb1);
     void horzLineShade(int y, int x0, int x1, uint32_t rgb0, uint32_t rgb1);
-    void line_E_SE_Flat(int x0, int y0, int x1, int y1, uint16_t col);
-    void line_S_SE_Flat(int x0, int y0, int x1, int y1, uint16_t col);
-    void line_N_NE_Flat(int x0, int y0, int x1, int y1, uint16_t col);
-    void line_E_NE_Flat(int x0, int y0, int x1, int y1, uint16_t col);
     void vertLineFlat(int x, int y0, int y1, uint16_t col);
     void horzLineFlat(int y, int x0, int x1, uint16_t col);
 

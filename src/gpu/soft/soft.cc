@@ -2308,259 +2308,158 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3TGD(int16_t x1, int16_t y1, int16_t x
 
 ////////////////////////////////////////////////////////////////////////
 
-void PCSX::SoftGPU::SoftRenderer::line_E_SE_Shade(int x0, int y0, int x1, int y1, uint32_t rgb0, uint32_t rgb1) {
-    int dx, dy, incrE, incrSE, d;
-    uint32_t r0, g0, b0, r1, g1, b1;
+namespace {
 
+// Bresenham octant stepper. One template covers all four canonical octants
+// the dispatcher emits after the negative-dx swap. See soft.h for the
+// per-parameter contract; the bias choice is hardware-load-bearing and
+// MUST track MajorAxis: shallow / X-major uses the pixel-centre 3*dy - dx,
+// steep / Y-major uses the standard 2*dx - dy.
+using Axis = PCSX::SoftGPU::Line::Axis;
+using MajorSign = PCSX::SoftGPU::Line::MajorSign;
+using MinorSign = PCSX::SoftGPU::Line::MinorSign;
+using Bias = PCSX::SoftGPU::Line::Bias;
+
+template <Axis MajorAxis, MajorSign MaSign, MinorSign MiSign, Bias B>
+class LineStepper {
+  public:
+    LineStepper(int x0, int y0, int x1, int y1) : m_x(x0), m_y(y0) {
+        int dx = x1 - x0;
+        int dy = y1 - y0;
+        // Historically the N_NE (Y-major negative slope) and E_NE
+        // (X-major negative slope) octants each pre-negated dy so the
+        // Bresenham bias and increment formulas could pretend the slope
+        // was positive. The stepper does the same trick internally so
+        // its callers don't have to. Whenever the minor axis steps in
+        // the negative direction (X-major MinorSign::Minus, or Y-major
+        // MajorSign::Minus where the minor axis is X but the steep-form
+        // sign discipline routes through MajorSign), normalize dy to a
+        // positive distance.
+        if constexpr (MajorAxis == Axis::X && MiSign == MinorSign::Minus) {
+            dy = -dy;
+        } else if constexpr (MajorAxis == Axis::Y && MaSign == MajorSign::Minus) {
+            dy = -dy;
+        }
+        if constexpr (B == Bias::Shallow) {
+            // Shallow / X-major: pixel-centre biased initial.
+            // Hardware-verified by phase-2 / phase-10; do not soften.
+            m_d = 3 * dy - dx;
+            m_incrMajor = 2 * dy;
+            m_incrDiag = 2 * (dy - dx);
+        } else {
+            // Steep / Y-major: standard midpoint initial; already matches
+            // hardware as-is.
+            m_d = 2 * dx - dy;
+            m_incrMajor = 2 * dx;
+            m_incrDiag = 2 * (dx - dy);
+        }
+        m_endMajor = (MajorAxis == Axis::X) ? x1 : y1;
+    }
+
+    int x() const { return m_x; }
+    int y() const { return m_y; }
+
+    bool more() const {
+        if constexpr (MajorAxis == Axis::X) {
+            return m_x < m_endMajor;
+        } else if constexpr (MaSign == MajorSign::Plus) {
+            return m_y < m_endMajor;
+        } else {
+            return m_y > m_endMajor;
+        }
+    }
+
+    void advance() {
+        if (m_d <= 0) {
+            m_d += m_incrMajor;
+        } else {
+            m_d += m_incrDiag;
+            if constexpr (MajorAxis == Axis::X) {
+                if constexpr (MiSign == MinorSign::Plus) {
+                    ++m_y;
+                } else {
+                    --m_y;
+                }
+            } else {
+                if constexpr (MiSign == MinorSign::Plus) {
+                    ++m_x;
+                } else {
+                    --m_x;
+                }
+            }
+        }
+        if constexpr (MajorAxis == Axis::X) {
+            ++m_x;
+        } else if constexpr (MaSign == MajorSign::Plus) {
+            ++m_y;
+        } else {
+            --m_y;
+        }
+    }
+
+  private:
+    int m_x;
+    int m_y;
+    int m_d;
+    int m_incrMajor;
+    int m_incrDiag;
+    int m_endMajor;
+};
+
+}  // namespace
+
+template <PCSX::SoftGPU::Line::Axis MajorAxis, PCSX::SoftGPU::Line::MajorSign MaSign,
+          PCSX::SoftGPU::Line::MinorSign MiSign, PCSX::SoftGPU::Line::Bias B>
+void PCSX::SoftGPU::SoftRenderer::drawLineOctantShade(int x0, int y0, int x1, int y1, uint32_t rgb0, uint32_t rgb1) {
     const auto drawX = m_drawX;
     const auto drawY = m_drawY;
     const auto drawH = m_drawH;
     const auto drawW = m_drawW;
+    const auto vram16 = m_vram16;
 
-    r0 = (rgb0 & 0x00ff0000);
-    g0 = (rgb0 & 0x0000ff00) << 8;
-    b0 = (rgb0 & 0x000000ff) << 16;
-    r1 = (rgb1 & 0x00ff0000);
-    g1 = (rgb1 & 0x0000ff00) << 8;
-    b1 = (rgb1 & 0x000000ff) << 16;
-
-    dx = x1 - x0;
-    dy = y1 - y0;
+    uint32_t r0 = (rgb0 & 0x00ff0000);
+    uint32_t g0 = (rgb0 & 0x0000ff00) << 8;
+    uint32_t b0 = (rgb0 & 0x000000ff) << 16;
+    const uint32_t r1 = (rgb1 & 0x00ff0000);
+    const uint32_t g1 = (rgb1 & 0x0000ff00) << 8;
+    const uint32_t b1 = (rgb1 & 0x000000ff) << 16;
 
     const uint32_t r_init = r0, g_init = g0, b_init = b0;
     const int32_t dr_full = (int32_t)r1 - (int32_t)r0;
     const int32_t dg_full = (int32_t)g1 - (int32_t)g0;
     const int32_t db_full = (int32_t)b1 - (int32_t)b0;
-    const int steps = dx;
 
-    /* Pixel-center bias: see matching note in line_E_SE_Flat. */
-    d = 3 * dy - dx;        /* Initial value of d (hardware-biased) */
-    incrE = 2 * dy;         /* incr. used for move to E */
-    incrSE = 2 * (dy - dx); /* incr. used for move to SE */
-
-    const auto vram16 = m_vram16;
-
-    RasterState rs = makeBaseRasterState();
-
-    if ((x0 >= drawX) && (x0 < drawW) && (y0 >= drawY) && (y0 < drawH)) {
-        PixelWriter<false, GPU::Shading::Flat, WriteMode::Default>::scalar(rs, &vram16[(y0 << 10) + x0],
-                         (uint16_t)(((r0 >> 9) & 0x7c00) | ((g0 >> 14) & 0x03e0) | ((b0 >> 19) & 0x001f)));
+    // Major-axis distance for the gouraud interpolation denominator.
+    int steps;
+    if constexpr (MajorAxis == Line::Axis::X) {
+        steps = x1 - x0;
+    } else if constexpr (MaSign == Line::MajorSign::Plus) {
+        steps = y1 - y0;
+    } else {
+        steps = y0 - y1;
     }
 
-    int step_idx = 0;
-    while (x0 < x1) {
-        if (d <= 0) {
-            d = d + incrE; /* Choose E */
-        } else {
-            d = d + incrSE; /* Choose SE */
-            y0++;
-        }
-        x0++;
-        step_idx++;
+    LineStepper<MajorAxis, MaSign, MiSign, B> stepper(x0, y0, x1, y1);
+    RasterState rs = makeBaseRasterState();
 
+    auto plot = [&](int x, int y) {
+        if ((x >= drawX) && (x < drawW) && (y >= drawY) && (y < drawH)) {
+            PixelWriter<false, GPU::Shading::Flat, WriteMode::Default>::scalar(rs, &vram16[(y << 10) + x],
+                (uint16_t)(((r0 >> 9) & 0x7c00) | ((g0 >> 14) & 0x03e0) | ((b0 >> 19) & 0x001f)));
+        }
+    };
+
+    plot(stepper.x(), stepper.y());
+    int step_idx = 0;
+    while (stepper.more()) {
+        stepper.advance();
+        ++step_idx;
         if (steps != 0) {
             r0 = r_init + (int64_t)dr_full * step_idx / steps;
             g0 = g_init + (int64_t)dg_full * step_idx / steps;
             b0 = b_init + (int64_t)db_full * step_idx / steps;
         }
-
-        if ((x0 >= drawX) && (x0 < drawW) && (y0 >= drawY) && (y0 < drawH)) {
-            PixelWriter<false, GPU::Shading::Flat, WriteMode::Default>::scalar(rs, &vram16[(y0 << 10) + x0],
-                             (uint16_t)(((r0 >> 9) & 0x7c00) | ((g0 >> 14) & 0x03e0) | ((b0 >> 19) & 0x001f)));
-        }
-    }
-}
-
-///////////////////////////////////////////////////////////////////////
-
-void PCSX::SoftGPU::SoftRenderer::line_S_SE_Shade(int x0, int y0, int x1, int y1, uint32_t rgb0, uint32_t rgb1) {
-    int dx, dy, incrS, incrSE, d;
-    uint32_t r0, g0, b0, r1, g1, b1;
-
-    const auto drawX = m_drawX;
-    const auto drawY = m_drawY;
-    const auto drawH = m_drawH;
-    const auto drawW = m_drawW;
-
-    r0 = (rgb0 & 0x00ff0000);
-    g0 = (rgb0 & 0x0000ff00) << 8;
-    b0 = (rgb0 & 0x000000ff) << 16;
-    r1 = (rgb1 & 0x00ff0000);
-    g1 = (rgb1 & 0x0000ff00) << 8;
-    b1 = (rgb1 & 0x000000ff) << 16;
-
-    dx = x1 - x0;
-    dy = y1 - y0;
-
-    const uint32_t r_init = r0, g_init = g0, b_init = b0;
-    const int32_t dr_full = (int32_t)r1 - (int32_t)r0;
-    const int32_t dg_full = (int32_t)g1 - (int32_t)g0;
-    const int32_t db_full = (int32_t)b1 - (int32_t)b0;
-    const int steps = dy;
-
-    d = 2 * dx - dy;        /* Initial value of d */
-    incrS = 2 * dx;         /* incr. used for move to S */
-    incrSE = 2 * (dx - dy); /* incr. used for move to SE */
-
-    const auto vram16 = m_vram16;
-
-    RasterState rs = makeBaseRasterState();
-
-    if ((x0 >= drawX) && (x0 < drawW) && (y0 >= drawY) && (y0 < drawH)) {
-        PixelWriter<false, GPU::Shading::Flat, WriteMode::Default>::scalar(rs, &vram16[(y0 << 10) + x0],
-                         (uint16_t)(((r0 >> 9) & 0x7c00) | ((g0 >> 14) & 0x03e0) | ((b0 >> 19) & 0x001f)));
-    }
-
-    int step_idx = 0;
-    while (y0 < y1) {
-        if (d <= 0) {
-            d = d + incrS; /* Choose S */
-        } else {
-            d = d + incrSE; /* Choose SE */
-            x0++;
-        }
-        y0++;
-        step_idx++;
-
-        if (steps != 0) {
-            r0 = r_init + (int64_t)dr_full * step_idx / steps;
-            g0 = g_init + (int64_t)dg_full * step_idx / steps;
-            b0 = b_init + (int64_t)db_full * step_idx / steps;
-        }
-
-        if ((x0 >= drawX) && (x0 < drawW) && (y0 >= drawY) && (y0 < drawH)) {
-            PixelWriter<false, GPU::Shading::Flat, WriteMode::Default>::scalar(rs, &vram16[(y0 << 10) + x0],
-                             (uint16_t)(((r0 >> 9) & 0x7c00) | ((g0 >> 14) & 0x03e0) | ((b0 >> 19) & 0x001f)));
-        }
-    }
-}
-
-///////////////////////////////////////////////////////////////////////
-
-void PCSX::SoftGPU::SoftRenderer::line_N_NE_Shade(int x0, int y0, int x1, int y1, uint32_t rgb0, uint32_t rgb1) {
-    int dx, dy, incrN, incrNE, d;
-    uint32_t r0, g0, b0, r1, g1, b1;
-
-    const auto drawX = m_drawX;
-    const auto drawY = m_drawY;
-    const auto drawH = m_drawH;
-    const auto drawW = m_drawW;
-
-    r0 = (rgb0 & 0x00ff0000);
-    g0 = (rgb0 & 0x0000ff00) << 8;
-    b0 = (rgb0 & 0x000000ff) << 16;
-    r1 = (rgb1 & 0x00ff0000);
-    g1 = (rgb1 & 0x0000ff00) << 8;
-    b1 = (rgb1 & 0x000000ff) << 16;
-
-    dx = x1 - x0;
-    dy = -(y1 - y0);
-
-    const uint32_t r_init = r0, g_init = g0, b_init = b0;
-    const int32_t dr_full = (int32_t)r1 - (int32_t)r0;
-    const int32_t dg_full = (int32_t)g1 - (int32_t)g0;
-    const int32_t db_full = (int32_t)b1 - (int32_t)b0;
-    const int steps = dy;
-
-    d = 2 * dx - dy;        /* Initial value of d */
-    incrN = 2 * dx;         /* incr. used for move to N */
-    incrNE = 2 * (dx - dy); /* incr. used for move to NE */
-
-    const auto vram16 = m_vram16;
-
-    RasterState rs = makeBaseRasterState();
-
-    if ((x0 >= drawX) && (x0 < drawW) && (y0 >= drawY) && (y0 < drawH)) {
-        PixelWriter<false, GPU::Shading::Flat, WriteMode::Default>::scalar(rs, &vram16[(y0 << 10) + x0],
-                         (uint16_t)(((r0 >> 9) & 0x7c00) | ((g0 >> 14) & 0x03e0) | ((b0 >> 19) & 0x001f)));
-    }
-
-    int step_idx = 0;
-    while (y0 > y1) {
-        if (d <= 0) {
-            d = d + incrN; /* Choose N */
-        } else {
-            d = d + incrNE; /* Choose NE */
-            x0++;
-        }
-        y0--;
-        step_idx++;
-
-        if (steps != 0) {
-            r0 = r_init + (int64_t)dr_full * step_idx / steps;
-            g0 = g_init + (int64_t)dg_full * step_idx / steps;
-            b0 = b_init + (int64_t)db_full * step_idx / steps;
-        }
-
-        if ((x0 >= drawX) && (x0 < drawW) && (y0 >= drawY) && (y0 < drawH)) {
-            PixelWriter<false, GPU::Shading::Flat, WriteMode::Default>::scalar(rs, &vram16[(y0 << 10) + x0],
-                             (uint16_t)(((r0 >> 9) & 0x7c00) | ((g0 >> 14) & 0x03e0) | ((b0 >> 19) & 0x001f)));
-        }
-    }
-}
-
-///////////////////////////////////////////////////////////////////////
-
-void PCSX::SoftGPU::SoftRenderer::line_E_NE_Shade(int x0, int y0, int x1, int y1, uint32_t rgb0, uint32_t rgb1) {
-    int dx, dy, incrE, incrNE, d;
-    uint32_t r0, g0, b0, r1, g1, b1;
-
-    const auto drawX = m_drawX;
-    const auto drawY = m_drawY;
-    const auto drawH = m_drawH;
-    const auto drawW = m_drawW;
-
-    r0 = (rgb0 & 0x00ff0000);
-    g0 = (rgb0 & 0x0000ff00) << 8;
-    b0 = (rgb0 & 0x000000ff) << 16;
-    r1 = (rgb1 & 0x00ff0000);
-    g1 = (rgb1 & 0x0000ff00) << 8;
-    b1 = (rgb1 & 0x000000ff) << 16;
-
-    dx = x1 - x0;
-    dy = -(y1 - y0);
-
-    const uint32_t r_init = r0, g_init = g0, b_init = b0;
-    const int32_t dr_full = (int32_t)r1 - (int32_t)r0;
-    const int32_t dg_full = (int32_t)g1 - (int32_t)g0;
-    const int32_t db_full = (int32_t)b1 - (int32_t)b0;
-    const int steps = dx;
-
-    /* Pixel-center bias: see matching note in line_E_SE_Flat. */
-    d = 3 * dy - dx;        /* Initial value of d (hardware-biased) */
-    incrE = 2 * dy;         /* incr. used for move to E */
-    incrNE = 2 * (dy - dx); /* incr. used for move to NE */
-
-    const auto vram16 = m_vram16;
-
-    RasterState rs = makeBaseRasterState();
-
-    if ((x0 >= drawX) && (x0 < drawW) && (y0 >= drawY) && (y0 < drawH)) {
-        PixelWriter<false, GPU::Shading::Flat, WriteMode::Default>::scalar(rs, &vram16[(y0 << 10) + x0],
-                         (uint16_t)(((r0 >> 9) & 0x7c00) | ((g0 >> 14) & 0x03e0) | ((b0 >> 19) & 0x001f)));
-    }
-
-    int step_idx = 0;
-    while (x0 < x1) {
-        if (d <= 0) {
-            d = d + incrE; /* Choose E */
-        } else {
-            d = d + incrNE; /* Choose NE */
-            y0--;
-        }
-        x0++;
-        step_idx++;
-
-        if (steps != 0) {
-            r0 = r_init + (int64_t)dr_full * step_idx / steps;
-            g0 = g_init + (int64_t)dg_full * step_idx / steps;
-            b0 = b_init + (int64_t)db_full * step_idx / steps;
-        }
-
-        if ((x0 >= drawX) && (x0 < drawW) && (y0 >= drawY) && (y0 < drawH)) {
-            PixelWriter<false, GPU::Shading::Flat, WriteMode::Default>::scalar(rs, &vram16[(y0 << 10) + x0],
-                             (uint16_t)(((r0 >> 9) & 0x7c00) | ((g0 >> 14) & 0x03e0) | ((b0 >> 19) & 0x001f)));
-        }
+        plot(stepper.x(), stepper.y());
     }
 }
 
@@ -2658,173 +2557,28 @@ void PCSX::SoftGPU::SoftRenderer::horzLineShade(int y, int x0, int x1, uint32_t 
 
 ///////////////////////////////////////////////////////////////////////
 
-void PCSX::SoftGPU::SoftRenderer::line_E_SE_Flat(int x0, int y0, int x1, int y1, uint16_t color) {
-    int dx, dy, incrE, incrSE, d, x, y;
-
+template <PCSX::SoftGPU::Line::Axis MajorAxis, PCSX::SoftGPU::Line::MajorSign MaSign,
+          PCSX::SoftGPU::Line::MinorSign MiSign, PCSX::SoftGPU::Line::Bias B>
+void PCSX::SoftGPU::SoftRenderer::drawLineOctantFlat(int x0, int y0, int x1, int y1, uint16_t color) {
     const auto drawX = m_drawX;
     const auto drawY = m_drawY;
     const auto drawH = m_drawH;
     const auto drawW = m_drawW;
-
-    dx = x1 - x0;
-    dy = y1 - y0;
-    /* Pixel-center bias: shallow-axis Bresenham steps the minor axis at the
-       half-pixel crossing rather than the corner. Adding dy to the standard
-       (2*dy - dx) initial makes the minor-axis step decision match hardware
-       for shallow lines with slope < 1. */
-    d = 3 * dy - dx;        /* Initial value of d (hardware-biased) */
-    incrE = 2 * dy;         /* incr. used for move to E */
-    incrSE = 2 * (dy - dx); /* incr. used for move to SE */
-    x = x0;
-    y = y0;
-
     const auto vram16 = m_vram16;
 
+    LineStepper<MajorAxis, MaSign, MiSign, B> stepper(x0, y0, x1, y1);
     RasterState rs = makeBaseRasterState();
 
-    if ((x >= drawX) && (x < drawW) && (y >= drawY) && (y < drawH)) {
-        PixelWriter<false, GPU::Shading::Flat, WriteMode::Default>::scalar(rs, &vram16[(y << 10) + x], color);
-    }
-
-    while (x < x1) {
-        if (d <= 0) {
-            d = d + incrE; /* Choose E */
-            x++;
-        } else {
-            d = d + incrSE; /* Choose SE */
-            x++;
-            y++;
-        }
+    auto plot = [&](int x, int y) {
         if ((x >= drawX) && (x < drawW) && (y >= drawY) && (y < drawH)) {
             PixelWriter<false, GPU::Shading::Flat, WriteMode::Default>::scalar(rs, &vram16[(y << 10) + x], color);
         }
-    }
-}
+    };
 
-///////////////////////////////////////////////////////////////////////
-
-void PCSX::SoftGPU::SoftRenderer::line_S_SE_Flat(int x0, int y0, int x1, int y1, uint16_t color) {
-    int dx, dy, incrS, incrSE, d, x, y;
-
-    const auto drawX = m_drawX;
-    const auto drawY = m_drawY;
-    const auto drawH = m_drawH;
-    const auto drawW = m_drawW;
-
-    dx = x1 - x0;
-    dy = y1 - y0;
-    d = 2 * dx - dy;        /* Initial value of d */
-    incrS = 2 * dx;         /* incr. used for move to S */
-    incrSE = 2 * (dx - dy); /* incr. used for move to SE */
-    x = x0;
-    y = y0;
-
-    const auto vram16 = m_vram16;
-
-    RasterState rs = makeBaseRasterState();
-
-    if ((x >= drawX) && (x < drawW) && (y >= drawY) && (y < drawH)) {
-        PixelWriter<false, GPU::Shading::Flat, WriteMode::Default>::scalar(rs, &vram16[(y << 10) + x], color);
-    }
-
-    while (y < y1) {
-        if (d <= 0) {
-            d = d + incrS; /* Choose S */
-            y++;
-        } else {
-            d = d + incrSE; /* Choose SE */
-            x++;
-            y++;
-        }
-        if ((x >= drawX) && (x < drawW) && (y >= drawY) && (y < drawH)) {
-            PixelWriter<false, GPU::Shading::Flat, WriteMode::Default>::scalar(rs, &vram16[(y << 10) + x], color);
-        }
-    }
-}
-
-///////////////////////////////////////////////////////////////////////
-
-void PCSX::SoftGPU::SoftRenderer::line_N_NE_Flat(int x0, int y0, int x1, int y1, uint16_t color) {
-    int dx, dy, incrN, incrNE, d, x, y;
-
-    const auto drawX = m_drawX;
-    const auto drawY = m_drawY;
-    const auto drawH = m_drawH;
-    const auto drawW = m_drawW;
-
-    dx = x1 - x0;
-    dy = -(y1 - y0);
-    d = 2 * dx - dy;        /* Initial value of d */
-    incrN = 2 * dx;         /* incr. used for move to N */
-    incrNE = 2 * (dx - dy); /* incr. used for move to NE */
-    x = x0;
-    y = y0;
-
-    const auto vram16 = m_vram16;
-
-    RasterState rs = makeBaseRasterState();
-
-    if ((x >= drawX) && (x < drawW) && (y >= drawY) && (y < drawH)) {
-        PixelWriter<false, GPU::Shading::Flat, WriteMode::Default>::scalar(rs, &vram16[(y << 10) + x], color);
-    }
-
-    while (y > y1) {
-        if (d <= 0) {
-            d = d + incrN; /* Choose N */
-            y--;
-        } else {
-            d = d + incrNE; /* Choose NE */
-            x++;
-            y--;
-        }
-        if ((x >= drawX) && (x < drawW) && (y >= drawY) && (y < drawH)) {
-            PixelWriter<false, GPU::Shading::Flat, WriteMode::Default>::scalar(rs, &vram16[(y << 10) + x], color);
-        }
-    }
-}
-
-///////////////////////////////////////////////////////////////////////
-
-void PCSX::SoftGPU::SoftRenderer::line_E_NE_Flat(int x0, int y0, int x1, int y1, uint16_t color) {
-    int dx, dy, incrE, incrNE, d, x, y;
-
-    const auto drawX = m_drawX;
-    const auto drawY = m_drawY;
-    const auto drawH = m_drawH;
-    const auto drawW = m_drawW;
-
-    dx = x1 - x0;
-    dy = -(y1 - y0);
-    /* Pixel-center bias: shallow-axis Bresenham steps the minor axis at the
-       half-pixel crossing rather than the corner. Adding dy to the standard
-       (2*dy - dx) initial makes the minor-axis step decision match hardware
-       for shallow lines with slope > -1. */
-    d = 3 * dy - dx;        /* Initial value of d (hardware-biased) */
-    incrE = 2 * dy;         /* incr. used for move to E */
-    incrNE = 2 * (dy - dx); /* incr. used for move to NE */
-    x = x0;
-    y = y0;
-
-    const auto vram16 = m_vram16;
-
-    RasterState rs = makeBaseRasterState();
-
-    if ((x >= drawX) && (x < drawW) && (y >= drawY) && (y < drawH)) {
-        PixelWriter<false, GPU::Shading::Flat, WriteMode::Default>::scalar(rs, &vram16[(y << 10) + x], color);
-    }
-
-    while (x < x1) {
-        if (d <= 0) {
-            d = d + incrE; /* Choose E */
-            x++;
-        } else {
-            d = d + incrNE; /* Choose NE */
-            x++;
-            y--;
-        }
-        if ((x >= drawX) && (x < drawW) && (y >= drawY) && (y < drawH)) {
-            PixelWriter<false, GPU::Shading::Flat, WriteMode::Default>::scalar(rs, &vram16[(y << 10) + x], color);
-        }
+    plot(stepper.x(), stepper.y());
+    while (stepper.more()) {
+        stepper.advance();
+        plot(stepper.x(), stepper.y());
     }
 }
 
@@ -2925,14 +2679,18 @@ void PCSX::SoftGPU::SoftRenderer::drawSoftwareLineShade(int32_t rgb0, int32_t rg
 
         if (m >= 0) {
             if (m > 1) {
-                line_S_SE_Shade(x0, y0, x1, y1, rgb0, rgb1);
+                drawLineOctantShade<Line::Axis::Y, Line::MajorSign::Plus, Line::MinorSign::Plus,
+                                    Line::Bias::Steep>(x0, y0, x1, y1, rgb0, rgb1);
             } else {
-                line_E_SE_Shade(x0, y0, x1, y1, rgb0, rgb1);
+                drawLineOctantShade<Line::Axis::X, Line::MajorSign::Plus, Line::MinorSign::Plus,
+                                    Line::Bias::Shallow>(x0, y0, x1, y1, rgb0, rgb1);
             }
         } else if (m < -1) {
-            line_N_NE_Shade(x0, y0, x1, y1, rgb0, rgb1);
+            drawLineOctantShade<Line::Axis::Y, Line::MajorSign::Minus, Line::MinorSign::Plus,
+                                Line::Bias::Steep>(x0, y0, x1, y1, rgb0, rgb1);
         } else {
-            line_E_NE_Shade(x0, y0, x1, y1, rgb0, rgb1);
+            drawLineOctantShade<Line::Axis::X, Line::MajorSign::Plus, Line::MinorSign::Minus,
+                                Line::Bias::Shallow>(x0, y0, x1, y1, rgb0, rgb1);
         }
     }
 }
@@ -2998,14 +2756,18 @@ void PCSX::SoftGPU::SoftRenderer::drawSoftwareLineFlat(int32_t rgb) {
 
         if (m >= 0) {
             if (m > 1) {
-                line_S_SE_Flat(x0, y0, x1, y1, color);
+                drawLineOctantFlat<Line::Axis::Y, Line::MajorSign::Plus, Line::MinorSign::Plus,
+                                   Line::Bias::Steep>(x0, y0, x1, y1, color);
             } else {
-                line_E_SE_Flat(x0, y0, x1, y1, color);
+                drawLineOctantFlat<Line::Axis::X, Line::MajorSign::Plus, Line::MinorSign::Plus,
+                                   Line::Bias::Shallow>(x0, y0, x1, y1, color);
             }
         } else if (m < -1) {
-            line_N_NE_Flat(x0, y0, x1, y1, color);
+            drawLineOctantFlat<Line::Axis::Y, Line::MajorSign::Minus, Line::MinorSign::Plus,
+                               Line::Bias::Steep>(x0, y0, x1, y1, color);
         } else {
-            line_E_NE_Flat(x0, y0, x1, y1, color);
+            drawLineOctantFlat<Line::Axis::X, Line::MajorSign::Plus, Line::MinorSign::Minus,
+                               Line::Bias::Shallow>(x0, y0, x1, y1, color);
         }
     }
 }
