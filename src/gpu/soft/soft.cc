@@ -2242,19 +2242,38 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3TGEx4(int16_t x1, int16_t y1, int16_t
     }
 }
 
-void PCSX::SoftGPU::SoftRenderer::drawPoly4TGEx4(int16_t x1, int16_t y1, int16_t x2, int16_t y2, int16_t x3, int16_t y3,
-                                                 int16_t x4, int16_t y4, int16_t tx1, int16_t ty1, int16_t tx2,
-                                                 int16_t ty2, int16_t tx3, int16_t ty3, int16_t tx4, int16_t ty4,
-                                                 int16_t clX, int16_t clY, int32_t col1, int32_t col2, int32_t col3,
-                                                 int32_t col4) {
+// Unified 4-vertex gouraud-textured wrapper. Picks the cached-dither
+// template parameter once and emits the two PSX-ordered triangles
+// (vertices 2-3-4, then 1-2-4). Replaces drawPoly4TGEx4, drawPoly4TGEx8
+// and drawPoly4TGD, which were three near-identical bodies parameterised
+// only by which TexMode they routed to via the legacy i-suffix
+// intermediate (drawPoly3TGEx4i / drawPoly3TGEx8i / drawPoly3TGDi).
+// The new template calls drawPoly3TG<Tex, useCachedDither> directly;
+// the i-suffix intermediates stay for the matching 3-vert wrappers.
+template <PCSX::SoftGPU::TexMode Tex>
+void PCSX::SoftGPU::SoftRenderer::drawPoly4TG(int16_t x1, int16_t y1, int16_t x2, int16_t y2, int16_t x3, int16_t y3,
+                                              int16_t x4, int16_t y4, int16_t tx1, int16_t ty1, int16_t tx2,
+                                              int16_t ty2, int16_t tx3, int16_t ty3, int16_t tx4, int16_t ty4,
+                                              int16_t clX, int16_t clY, int32_t col1, int32_t col2, int32_t col3,
+                                              int32_t col4) {
     if (s_ditherLUT) {
-        drawPoly3TGEx4i<true>(x2, y2, x3, y3, x4, y4, tx2, ty2, tx3, ty3, tx4, ty4, clX, clY, col2, col4, col3);
-        drawPoly3TGEx4i<true>(x1, y1, x2, y2, x4, y4, tx1, ty1, tx2, ty2, tx4, ty4, clX, clY, col1, col2, col3);
+        drawPoly3TG<Tex, true>(x2, y2, x3, y3, x4, y4, tx2, ty2, tx3, ty3, tx4, ty4, clX, clY, col2, col4, col3);
+        drawPoly3TG<Tex, true>(x1, y1, x2, y2, x4, y4, tx1, ty1, tx2, ty2, tx4, ty4, clX, clY, col1, col2, col3);
     } else {
-        drawPoly3TGEx4i<false>(x2, y2, x3, y3, x4, y4, tx2, ty2, tx3, ty3, tx4, ty4, clX, clY, col2, col4, col3);
-        drawPoly3TGEx4i<false>(x1, y1, x2, y2, x4, y4, tx1, ty1, tx2, ty2, tx4, ty4, clX, clY, col1, col2, col3);
+        drawPoly3TG<Tex, false>(x2, y2, x3, y3, x4, y4, tx2, ty2, tx3, ty3, tx4, ty4, clX, clY, col2, col4, col3);
+        drawPoly3TG<Tex, false>(x1, y1, x2, y2, x4, y4, tx1, ty1, tx2, ty2, tx4, ty4, clX, clY, col1, col2, col3);
     }
 }
+
+template void PCSX::SoftGPU::SoftRenderer::drawPoly4TG<PCSX::SoftGPU::TexMode::Clut4>(
+    int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t,
+    int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int32_t, int32_t, int32_t, int32_t);
+template void PCSX::SoftGPU::SoftRenderer::drawPoly4TG<PCSX::SoftGPU::TexMode::Clut8>(
+    int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t,
+    int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int32_t, int32_t, int32_t, int32_t);
+template void PCSX::SoftGPU::SoftRenderer::drawPoly4TG<PCSX::SoftGPU::TexMode::Direct15>(
+    int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t,
+    int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int32_t, int32_t, int32_t, int32_t);
 
 ////////////////////////////////////////////////////////////////////////
 
@@ -2280,20 +2299,6 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3TGEx8(int16_t x1, int16_t y1, int16_t
     }
 }
 
-void PCSX::SoftGPU::SoftRenderer::drawPoly4TGEx8(int16_t x1, int16_t y1, int16_t x2, int16_t y2, int16_t x3, int16_t y3,
-                                                 int16_t x4, int16_t y4, int16_t tx1, int16_t ty1, int16_t tx2,
-                                                 int16_t ty2, int16_t tx3, int16_t ty3, int16_t tx4, int16_t ty4,
-                                                 int16_t clX, int16_t clY, int32_t col1, int32_t col2, int32_t col3,
-                                                 int32_t col4) {
-    if (s_ditherLUT) {
-        drawPoly3TGEx8i<true>(x2, y2, x3, y3, x4, y4, tx2, ty2, tx3, ty3, tx4, ty4, clX, clY, col2, col4, col3);
-        drawPoly3TGEx8i<true>(x1, y1, x2, y2, x4, y4, tx1, ty1, tx2, ty2, tx4, ty4, clX, clY, col1, col2, col3);
-    } else {
-        drawPoly3TGEx8i<false>(x2, y2, x3, y3, x4, y4, tx2, ty2, tx3, ty3, tx4, ty4, clX, clY, col2, col4, col3);
-        drawPoly3TGEx8i<false>(x1, y1, x2, y2, x4, y4, tx1, ty1, tx2, ty2, tx4, ty4, clX, clY, col1, col2, col3);
-    }
-}
-
 ////////////////////////////////////////////////////////////////////////
 
 template <bool useCachedDither>
@@ -2313,19 +2318,6 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3TGD(int16_t x1, int16_t y1, int16_t x
         drawPoly3TGDi<true>(x1, y1, x2, y2, x3, y3, tx1, ty1, tx2, ty2, tx3, ty3, col1, col2, col3);
     } else {
         drawPoly3TGDi<false>(x1, y1, x2, y2, x3, y3, tx1, ty1, tx2, ty2, tx3, ty3, col1, col2, col3);
-    }
-}
-
-void PCSX::SoftGPU::SoftRenderer::drawPoly4TGD(int16_t x1, int16_t y1, int16_t x2, int16_t y2, int16_t x3, int16_t y3,
-                                               int16_t x4, int16_t y4, int16_t tx1, int16_t ty1, int16_t tx2,
-                                               int16_t ty2, int16_t tx3, int16_t ty3, int16_t tx4, int16_t ty4,
-                                               int32_t col1, int32_t col2, int32_t col3, int32_t col4) {
-    if (s_ditherLUT) {
-        drawPoly3TGDi<true>(x2, y2, x3, y3, x4, y4, tx2, ty2, tx3, ty3, tx4, ty4, col2, col4, col3);
-        drawPoly3TGDi<true>(x1, y1, x2, y2, x4, y4, tx1, ty1, tx2, ty2, tx4, ty4, col1, col2, col3);
-    } else {
-        drawPoly3TGDi<false>(x2, y2, x3, y3, x4, y4, tx2, ty2, tx3, ty3, tx4, ty4, col2, col4, col3);
-        drawPoly3TGDi<false>(x1, y1, x2, y2, x4, y4, tx1, ty1, tx2, ty2, tx4, ty4, col1, col2, col3);
     }
 }
 

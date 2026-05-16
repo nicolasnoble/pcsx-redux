@@ -412,21 +412,22 @@ void PCSX::SoftGPU::impl::polyExec(Poly<shading, shape, textured, blend, modulat
                 if constexpr (shape == Shape::Quad) {
                     switch (m_globalTextTP) {
                         case GPU::TexDepth::Tex4Bits:
-                            drawPoly4TGEx4(m_x0, m_y0, m_x1, m_y1, m_x3, m_y3, m_x2, m_y2, prim->u[0], prim->v[0],
-                                           prim->u[1], prim->v[1], prim->u[3], prim->v[3], prim->u[2], prim->v[2],
-                                           prim->clutX(), prim->clutY(), prim->colors[0], prim->colors[1],
-                                           prim->colors[2], prim->colors[3]);
+                            drawPoly4TG<TexMode::Clut4>(
+                                m_x0, m_y0, m_x1, m_y1, m_x3, m_y3, m_x2, m_y2, prim->u[0], prim->v[0], prim->u[1],
+                                prim->v[1], prim->u[3], prim->v[3], prim->u[2], prim->v[2], prim->clutX(),
+                                prim->clutY(), prim->colors[0], prim->colors[1], prim->colors[2], prim->colors[3]);
                             break;
                         case GPU::TexDepth::Tex8Bits:
-                            drawPoly4TGEx8(m_x0, m_y0, m_x1, m_y1, m_x3, m_y3, m_x2, m_y2, prim->u[0], prim->v[0],
-                                           prim->u[1], prim->v[1], prim->u[3], prim->v[3], prim->u[2], prim->v[2],
-                                           prim->clutX(), prim->clutY(), prim->colors[0], prim->colors[1],
-                                           prim->colors[2], prim->colors[3]);
+                            drawPoly4TG<TexMode::Clut8>(
+                                m_x0, m_y0, m_x1, m_y1, m_x3, m_y3, m_x2, m_y2, prim->u[0], prim->v[0], prim->u[1],
+                                prim->v[1], prim->u[3], prim->v[3], prim->u[2], prim->v[2], prim->clutX(),
+                                prim->clutY(), prim->colors[0], prim->colors[1], prim->colors[2], prim->colors[3]);
                             break;
                         case GPU::TexDepth::Tex16Bits:
-                            drawPoly4TGD(m_x0, m_y0, m_x1, m_y1, m_x3, m_y3, m_x2, m_y2, prim->u[0], prim->v[0],
-                                         prim->u[1], prim->v[1], prim->u[3], prim->v[3], prim->u[2], prim->v[2],
-                                         prim->colors[0], prim->colors[1], prim->colors[2], prim->colors[3]);
+                            drawPoly4TG<TexMode::Direct15>(m_x0, m_y0, m_x1, m_y1, m_x3, m_y3, m_x2, m_y2, prim->u[0],
+                                                           prim->v[0], prim->u[1], prim->v[1], prim->u[3], prim->v[3],
+                                                           prim->u[2], prim->v[2], 0, 0, prim->colors[0],
+                                                           prim->colors[1], prim->colors[2], prim->colors[3]);
                             break;
                     }
                 } else {
