@@ -137,8 +137,6 @@ struct SoftRenderer {
                                     int16_t ty3, int16_t tx4, int16_t ty4);
     template <bool useCachedDither>
     void getShadeTransColDither(uint16_t *pdest, int32_t m1, int32_t m2, int32_t m3);
-    void getShadeTransCol(uint16_t *pdest, uint16_t color);
-    void getShadeTransCol32(uint32_t *pdest, uint32_t color);
     void getTextureTransColShade(uint16_t *pdest, uint16_t color);
     void getTextureTransColShadeSolid(uint16_t *pdest, uint16_t color);
     void getTextureTransColShadeSemi(uint16_t *pdest, uint16_t color);
