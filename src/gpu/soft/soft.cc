@@ -3335,18 +3335,35 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3TD(int16_t x1, int16_t y1, int16_t x2
         if (nextRowFlatTextured3()) return;
     }
 
+    RasterState rs{};
+    rs.vram = m_vram;
+    rs.vram16 = m_vram16;
+    rs.texWindowX0 = m_textureWindow.x0;
+    rs.texWindowY0 = m_textureWindow.y0;
+    rs.maskX = m_textureWindow.x1 - 1;
+    rs.maskY = m_textureWindow.y1 - 1;
+    rs.texBaseX = m_globalTextAddrX;
+    rs.texBaseY = m_globalTextAddrY;
+    rs.abr = m_globalTextABR;
+    rs.drawX = drawX;
+    rs.drawY = drawY;
+    rs.drawW = drawW;
+    rs.drawH = drawH;
+    rs.checkMask = m_checkMask;
+    rs.setMask16 = m_setMask16;
+    rs.setMask32 = m_setMask32;
+    rs.drawSemiTrans = m_drawSemiTrans;
+    rs.m1 = m_m1;
+    rs.m2 = m_m2;
+    rs.m3 = m_m3;
+    rs.clutP = 0;  // unused for Direct15
+    const int32_t yAdj = Sampler<TexMode::Direct15>::yAdjust(rs);
+    const auto vram16 = rs.vram16;
+
     difX = m_deltaRightU;
     difX2 = difX << 1;
     difY = m_deltaRightV;
     difY2 = difY << 1;
-
-    const auto vram = m_vram;
-    const auto vram16 = m_vram16;
-    const auto maskX = m_textureWindow.x1 - 1;
-    const auto maskY = m_textureWindow.y1 - 1;
-    const auto globalTextAddrX = m_globalTextAddrX;
-    const auto globalTextAddrY = m_globalTextAddrY;
-    const auto textureWindow = m_textureWindow;
 
     if (!m_checkMask && !m_drawSemiTrans) {
         for (i = ymin; i <= ymax; i++) {
@@ -3367,24 +3384,15 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3TD(int16_t x1, int16_t y1, int16_t x2
 
                 for (j = xmin; j < xmax; j += 2) {
                     uint32_t *pdest = (uint32_t *)&vram16[(i << 10) + j];
-                    auto upX = (((posX + difX) >> 16) & maskX) + globalTextAddrX + textureWindow.x0;
-                    auto upY = (((posY + difY) >> 16) & maskY) + globalTextAddrY + textureWindow.y0;
-                    auto dnX = ((posX >> 16) & maskX) + globalTextAddrX + textureWindow.x0;
-                    auto dnY = ((posY >> 16) & maskY) + globalTextAddrY + textureWindow.y0;
-                    uint32_t color = vram16[upX + (upY << 10)];
-                    color <<= 16;
-                    color |= vram16[dnX + (dnY << 10)];
+                    const uint32_t color = Sampler<TexMode::Direct15>::packed(rs, yAdj, posX, posY, difX, difY);
                     getTextureTransColShade32Solid(pdest, color);
 
                     posX += difX2;
                     posY += difY2;
                 }
                 if (j == xmax) {
-                    uint16_t *pdest = &vram16[(i << 10) + j];
-                    auto x = ((posX >> 16) & maskX) + globalTextAddrX + textureWindow.x0;
-                    auto y = ((posY >> 16) & maskY) + globalTextAddrY + textureWindow.y0;
-                    uint16_t color = vram16[x + (y << 10)];
-                    getTextureTransColShadeSolid(pdest, color);
+                    getTextureTransColShadeSolid(&vram16[(i << 10) + j],
+                                                 Sampler<TexMode::Direct15>::scalar(rs, yAdj, posX, posY));
                 }
             }
             if (nextRowFlatTextured3()) return;
@@ -3409,21 +3417,16 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3TD(int16_t x1, int16_t y1, int16_t x2
             }
 
             for (j = xmin; j < xmax; j += 2) {
-                getTextureTransColShade32(
-                    (uint32_t *)&vram16[(i << 10) + j],
-                    (((int32_t)vram16[(((((posY + difY) >> 16) & maskY) + globalTextAddrY + textureWindow.y0) << 10) +
-                                      (((posX + difX) >> 16) & maskX) + globalTextAddrX + textureWindow.x0])
-                     << 16) |
-                        vram16[((((posY >> 16) & maskY) + globalTextAddrY + textureWindow.y0) << 10) +
-                               (((posX) >> 16) & maskX) + globalTextAddrX + textureWindow.x0]);
+                uint32_t *pdest = (uint32_t *)&vram16[(i << 10) + j];
+                const uint32_t color = Sampler<TexMode::Direct15>::packed(rs, yAdj, posX, posY, difX, difY);
+                getTextureTransColShade32(pdest, color);
 
                 posX += difX2;
                 posY += difY2;
             }
             if (j == xmax) {
                 getTextureTransColShade(&vram16[(i << 10) + j],
-                                        vram16[((((posY >> 16) & maskY) + globalTextAddrY + textureWindow.y0) << 10) +
-                                               ((posX >> 16) & maskX) + globalTextAddrX + textureWindow.x0]);
+                                        Sampler<TexMode::Direct15>::scalar(rs, yAdj, posX, posY));
             }
         }
         if (nextRowFlatTextured3()) return;
