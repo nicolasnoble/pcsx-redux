@@ -63,6 +63,27 @@ struct PackedPair555 {
         if (c & 0x7fe0) c = 0x1f | (c & 0xffff0000);
         return c;
     }
+
+    // Compose the final BGR555 packed pair from three right-aligned
+    // channels. Each input is a 32-bit value carrying one 5-bit channel
+    // value in each halfword (bits 0..4). The output is two consecutive
+    // BGR555 pixels: R in bits 0..4, B in bits 5..9, G in bits 10..14.
+    static inline uint32_t packBGR(uint32_t r, uint32_t b, uint32_t g) {
+        return (g << 10) | (b << 5) | r;
+    }
+
+    // Lane preservation: "preserveLowHalf(dest, val)" returns the
+    // composition that keeps `dest`'s low halfword and takes `val`'s
+    // high halfword. preserveHighHalf is the mirror. Used at the end of
+    // the packed pixel writers, where a zero source halfword (transparent
+    // texel) or a set destination mask bit means the corresponding
+    // destination halfword survives unchanged.
+    static inline uint32_t preserveLowHalf(uint32_t dest, uint32_t val) {
+        return (dest & 0xffff) | (val & 0xffff0000);
+    }
+    static inline uint32_t preserveHighHalf(uint32_t dest, uint32_t val) {
+        return (val & 0xffff) | (dest & 0xffff0000);
+    }
 };
 
 // Native-position channel traits for the BGR555 layout.
@@ -145,16 +166,16 @@ struct PixelWriter<true, GPU::Shading::Flat, WriteMode::Solid> {
         b = PackedPair555::saturate5Pair(b);
         g = PackedPair555::saturate5Pair(g);
         const uint32_t flags = rs.setMask32 | (color & 0x80008000);
-        const uint32_t packed_rgb = (g << 10) | (b << 5) | r;
+        const uint32_t packed_rgb = PackedPair555::packBGR(r, b, g);
         // Zero-texel-half preservation: an entirely-zero halfword of the
         // source color means "transparent texel", and the destination
         // halfword keeps its prior value.
         if ((color & 0xffff) == 0) {
-            *pdest = (*pdest & 0xffff) | ((packed_rgb | flags) & 0xffff0000);
+            *pdest = PackedPair555::preserveLowHalf(*pdest, packed_rgb | flags);
             return;
         }
         if ((color & 0xffff0000) == 0) {
-            *pdest = (*pdest & 0xffff0000) | ((packed_rgb | flags) & 0xffff);
+            *pdest = PackedPair555::preserveHighHalf(*pdest, packed_rgb | flags);
             return;
         }
         *pdest = packed_rgb | flags;
@@ -294,22 +315,22 @@ struct PixelWriter<true, GPU::Shading::Flat, WriteMode::Default> {
         b = PackedPair555::saturate5Pair(b);
         g = PackedPair555::saturate5Pair(g);
 
-        const uint32_t packed_rgb = (g << 10) | (b << 5) | r;
+        const uint32_t packed_rgb = PackedPair555::packBGR(r, b, g);
         if (rs.checkMask) {
             const uint32_t ma = *pdest;
             *pdest = packed_rgb | l;
-            if ((color & 0xffff) == 0) *pdest = (ma & 0xffff) | (*pdest & 0xffff0000);
-            if ((color & 0xffff0000) == 0) *pdest = (ma & 0xffff0000) | (*pdest & 0xffff);
-            if (ma & 0x80000000) *pdest = (ma & 0xffff0000) | (*pdest & 0xffff);
-            if (ma & 0x00008000) *pdest = (ma & 0xffff) | (*pdest & 0xffff0000);
+            if ((color & 0xffff) == 0) *pdest = PackedPair555::preserveHighHalf(*pdest, ma);
+            if ((color & 0xffff0000) == 0) *pdest = PackedPair555::preserveLowHalf(*pdest, ma);
+            if (ma & 0x80000000) *pdest = PackedPair555::preserveLowHalf(*pdest, ma);
+            if (ma & 0x00008000) *pdest = PackedPair555::preserveHighHalf(*pdest, ma);
             return;
         }
         if ((color & 0xffff) == 0) {
-            *pdest = (*pdest & 0xffff) | ((packed_rgb | l) & 0xffff0000);
+            *pdest = PackedPair555::preserveLowHalf(*pdest, packed_rgb | l);
             return;
         }
         if ((color & 0xffff0000) == 0) {
-            *pdest = (*pdest & 0xffff0000) | ((packed_rgb | l) & 0xffff);
+            *pdest = PackedPair555::preserveHighHalf(*pdest, packed_rgb | l);
             return;
         }
         *pdest = packed_rgb | l;
@@ -354,13 +375,13 @@ struct PixelWriter<true, GPU::Shading::Gouraud, WriteMode::Solid> {
         b = PackedPair555::saturate5Pair(b);
         g = PackedPair555::saturate5Pair(g);
         const uint32_t flags = rs.setMask32 | (color & 0x80008000);
-        const uint32_t packed_rgb = (g << 10) | (b << 5) | r;
+        const uint32_t packed_rgb = PackedPair555::packBGR(r, b, g);
         if ((color & 0xffff) == 0) {
-            *pdest = (*pdest & 0xffff) | ((packed_rgb | flags) & 0xffff0000);
+            *pdest = PackedPair555::preserveLowHalf(*pdest, packed_rgb | flags);
             return;
         }
         if ((color & 0xffff0000) == 0) {
-            *pdest = (*pdest & 0xffff0000) | ((packed_rgb | flags) & 0xffff);
+            *pdest = PackedPair555::preserveHighHalf(*pdest, packed_rgb | flags);
             return;
         }
         *pdest = packed_rgb | flags;
@@ -548,12 +569,12 @@ struct PixelWriter<false, GPU::Shading::Flat, WriteMode::Default> {
             r = PackedPair555::saturate5Pair(r);
             b = PackedPair555::saturate5Pair(b);
             g = PackedPair555::saturate5Pair(g);
-            const uint32_t packed_rgb = (g << 10) | (b << 5) | r;
+            const uint32_t packed_rgb = PackedPair555::packBGR(r, b, g);
             if (rs.checkMask) {
                 const uint32_t ma = *pdest;
                 *pdest = packed_rgb | rs.setMask32;
-                if (ma & 0x80000000) *pdest = (ma & 0xffff0000) | (*pdest & 0xffff);
-                if (ma & 0x00008000) *pdest = (ma & 0xffff) | (*pdest & 0xffff0000);
+                if (ma & 0x80000000) *pdest = PackedPair555::preserveLowHalf(*pdest, ma);
+                if (ma & 0x00008000) *pdest = PackedPair555::preserveHighHalf(*pdest, ma);
                 return;
             }
             *pdest = packed_rgb | rs.setMask32;
@@ -561,8 +582,8 @@ struct PixelWriter<false, GPU::Shading::Flat, WriteMode::Default> {
             if (rs.checkMask) {
                 const uint32_t ma = *pdest;
                 *pdest = color | rs.setMask32;
-                if (ma & 0x80000000) *pdest = (ma & 0xffff0000) | (*pdest & 0xffff);
-                if (ma & 0x00008000) *pdest = (ma & 0xffff) | (*pdest & 0xffff0000);
+                if (ma & 0x80000000) *pdest = PackedPair555::preserveLowHalf(*pdest, ma);
+                if (ma & 0x00008000) *pdest = PackedPair555::preserveHighHalf(*pdest, ma);
                 return;
             }
             *pdest = color | rs.setMask32;
