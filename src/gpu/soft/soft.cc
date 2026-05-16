@@ -2338,16 +2338,7 @@ void PCSX::SoftGPU::SoftRenderer::line_E_SE_Shade(int x0, int y0, int x1, int y1
     incrE = 2 * dy;         /* incr. used for move to E */
     incrSE = 2 * (dy - dx); /* incr. used for move to SE */
 
-    const auto vram = m_vram;
     const auto vram16 = m_vram16;
-    const auto maskX = m_textureWindow.x1 - 1;
-    const auto maskY = m_textureWindow.y1 - 1;
-    const auto globalTextAddrX = m_globalTextAddrX;
-    const auto globalTextAddrY = m_globalTextAddrY;
-    const auto textureWindow = m_textureWindow;
-    const auto setMask16 = m_setMask16;
-    const auto setMask32 = m_setMask32;
-    const auto ditherMode = m_ditherMode;
 
     RasterState rs = makeBaseRasterState();
 
@@ -2411,16 +2402,7 @@ void PCSX::SoftGPU::SoftRenderer::line_S_SE_Shade(int x0, int y0, int x1, int y1
     incrS = 2 * dx;         /* incr. used for move to S */
     incrSE = 2 * (dx - dy); /* incr. used for move to SE */
 
-    const auto vram = m_vram;
     const auto vram16 = m_vram16;
-    const auto maskX = m_textureWindow.x1 - 1;
-    const auto maskY = m_textureWindow.y1 - 1;
-    const auto globalTextAddrX = m_globalTextAddrX;
-    const auto globalTextAddrY = m_globalTextAddrY;
-    const auto textureWindow = m_textureWindow;
-    const auto setMask16 = m_setMask16;
-    const auto setMask32 = m_setMask32;
-    const auto ditherMode = m_ditherMode;
 
     RasterState rs = makeBaseRasterState();
 
@@ -2484,16 +2466,7 @@ void PCSX::SoftGPU::SoftRenderer::line_N_NE_Shade(int x0, int y0, int x1, int y1
     incrN = 2 * dx;         /* incr. used for move to N */
     incrNE = 2 * (dx - dy); /* incr. used for move to NE */
 
-    const auto vram = m_vram;
     const auto vram16 = m_vram16;
-    const auto maskX = m_textureWindow.x1 - 1;
-    const auto maskY = m_textureWindow.y1 - 1;
-    const auto globalTextAddrX = m_globalTextAddrX;
-    const auto globalTextAddrY = m_globalTextAddrY;
-    const auto textureWindow = m_textureWindow;
-    const auto setMask16 = m_setMask16;
-    const auto setMask32 = m_setMask32;
-    const auto ditherMode = m_ditherMode;
 
     RasterState rs = makeBaseRasterState();
 
@@ -2558,16 +2531,7 @@ void PCSX::SoftGPU::SoftRenderer::line_E_NE_Shade(int x0, int y0, int x1, int y1
     incrE = 2 * dy;         /* incr. used for move to E */
     incrNE = 2 * (dy - dx); /* incr. used for move to NE */
 
-    const auto vram = m_vram;
     const auto vram16 = m_vram16;
-    const auto maskX = m_textureWindow.x1 - 1;
-    const auto maskY = m_textureWindow.y1 - 1;
-    const auto globalTextAddrX = m_globalTextAddrX;
-    const auto globalTextAddrY = m_globalTextAddrY;
-    const auto textureWindow = m_textureWindow;
-    const auto setMask16 = m_setMask16;
-    const auto setMask32 = m_setMask32;
-    const auto ditherMode = m_ditherMode;
 
     RasterState rs = makeBaseRasterState();
 
@@ -2630,16 +2594,7 @@ void PCSX::SoftGPU::SoftRenderer::vertLineShade(int x, int y0, int y1, uint32_t 
     if (y0 < m_drawY) y0 = m_drawY;
     if (y1 > m_drawH) y1 = m_drawH;
 
-    const auto vram = m_vram;
     const auto vram16 = m_vram16;
-    const auto maskX = m_textureWindow.x1 - 1;
-    const auto maskY = m_textureWindow.y1 - 1;
-    const auto globalTextAddrX = m_globalTextAddrX;
-    const auto globalTextAddrY = m_globalTextAddrY;
-    const auto textureWindow = m_textureWindow;
-    const auto setMask16 = m_setMask16;
-    const auto setMask32 = m_setMask32;
-    const auto ditherMode = m_ditherMode;
 
     RasterState rs = makeBaseRasterState();
 
@@ -2685,16 +2640,7 @@ void PCSX::SoftGPU::SoftRenderer::horzLineShade(int y, int x0, int x1, uint32_t 
     if (x0 < m_drawX) x0 = m_drawX;
     if (x1 > m_drawW) x1 = m_drawW;
 
-    const auto vram = m_vram;
     const auto vram16 = m_vram16;
-    const auto maskX = m_textureWindow.x1 - 1;
-    const auto maskY = m_textureWindow.y1 - 1;
-    const auto globalTextAddrX = m_globalTextAddrX;
-    const auto globalTextAddrY = m_globalTextAddrY;
-    const auto textureWindow = m_textureWindow;
-    const auto setMask16 = m_setMask16;
-    const auto setMask32 = m_setMask32;
-    const auto ditherMode = m_ditherMode;
 
     RasterState rs = makeBaseRasterState();
 
@@ -2732,16 +2678,7 @@ void PCSX::SoftGPU::SoftRenderer::line_E_SE_Flat(int x0, int y0, int x1, int y1,
     x = x0;
     y = y0;
 
-    const auto vram = m_vram;
     const auto vram16 = m_vram16;
-    const auto maskX = m_textureWindow.x1 - 1;
-    const auto maskY = m_textureWindow.y1 - 1;
-    const auto globalTextAddrX = m_globalTextAddrX;
-    const auto globalTextAddrY = m_globalTextAddrY;
-    const auto textureWindow = m_textureWindow;
-    const auto setMask16 = m_setMask16;
-    const auto setMask32 = m_setMask32;
-    const auto ditherMode = m_ditherMode;
 
     RasterState rs = makeBaseRasterState();
 
@@ -2782,16 +2719,7 @@ void PCSX::SoftGPU::SoftRenderer::line_S_SE_Flat(int x0, int y0, int x1, int y1,
     x = x0;
     y = y0;
 
-    const auto vram = m_vram;
     const auto vram16 = m_vram16;
-    const auto maskX = m_textureWindow.x1 - 1;
-    const auto maskY = m_textureWindow.y1 - 1;
-    const auto globalTextAddrX = m_globalTextAddrX;
-    const auto globalTextAddrY = m_globalTextAddrY;
-    const auto textureWindow = m_textureWindow;
-    const auto setMask16 = m_setMask16;
-    const auto setMask32 = m_setMask32;
-    const auto ditherMode = m_ditherMode;
 
     RasterState rs = makeBaseRasterState();
 
@@ -2832,16 +2760,7 @@ void PCSX::SoftGPU::SoftRenderer::line_N_NE_Flat(int x0, int y0, int x1, int y1,
     x = x0;
     y = y0;
 
-    const auto vram = m_vram;
     const auto vram16 = m_vram16;
-    const auto maskX = m_textureWindow.x1 - 1;
-    const auto maskY = m_textureWindow.y1 - 1;
-    const auto globalTextAddrX = m_globalTextAddrX;
-    const auto globalTextAddrY = m_globalTextAddrY;
-    const auto textureWindow = m_textureWindow;
-    const auto setMask16 = m_setMask16;
-    const auto setMask32 = m_setMask32;
-    const auto ditherMode = m_ditherMode;
 
     RasterState rs = makeBaseRasterState();
 
@@ -2886,16 +2805,7 @@ void PCSX::SoftGPU::SoftRenderer::line_E_NE_Flat(int x0, int y0, int x1, int y1,
     x = x0;
     y = y0;
 
-    const auto vram = m_vram;
     const auto vram16 = m_vram16;
-    const auto maskX = m_textureWindow.x1 - 1;
-    const auto maskY = m_textureWindow.y1 - 1;
-    const auto globalTextAddrX = m_globalTextAddrX;
-    const auto globalTextAddrY = m_globalTextAddrY;
-    const auto textureWindow = m_textureWindow;
-    const auto setMask16 = m_setMask16;
-    const auto setMask32 = m_setMask32;
-    const auto ditherMode = m_ditherMode;
 
     RasterState rs = makeBaseRasterState();
 
