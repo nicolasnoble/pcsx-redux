@@ -132,8 +132,6 @@ struct SoftRenderer {
     int16_t m_yMin;
     int16_t m_yMax;
 
-    bool setupSectionsFlat4(int16_t x1, int16_t y1, int16_t x2, int16_t y2, int16_t x3, int16_t y3, int16_t x4,
-                            int16_t y4);
     bool setupSectionsFlatTextured4(int16_t x1, int16_t y1, int16_t x2, int16_t y2, int16_t x3, int16_t y3, int16_t x4,
                                     int16_t y4, int16_t tx1, int16_t ty1, int16_t tx2, int16_t ty2, int16_t tx3,
                                     int16_t ty3, int16_t tx4, int16_t ty4);
@@ -245,8 +243,6 @@ struct SoftRenderer {
     template <bool HasUV, bool HasRGB>
     bool nextRow3();
 
-    int rightSectionFlat4();
-    int leftSectionFlat4();
     int rightSectionFlatTextured4();
     int leftSectionFlatTextured4();
     bool nextRowFlatTextured4();
