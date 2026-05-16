@@ -28,6 +28,11 @@ namespace PCSX {
 
 namespace SoftGPU {
 
+// Forward declaration: WriteMode's full definition lives in pixel-writer.h.
+// The 4-vert texture-poly template below uses it as a template parameter
+// type but doesn't need the enumerator values at declaration time.
+enum class WriteMode;
+
 struct SoftRenderer {
     ~SoftRenderer();
     inline void resetRenderer() {
@@ -161,24 +166,16 @@ struct SoftRenderer {
     void drawPoly3TG(int16_t x1, int16_t y1, int16_t x2, int16_t y2, int16_t x3, int16_t y3, int16_t tx1, int16_t ty1,
                      int16_t tx2, int16_t ty2, int16_t tx3, int16_t ty3, int16_t clX, int16_t clY, int32_t col1,
                      int32_t col2, int32_t col3);
-    void drawPoly4TEx4(int16_t x1, int16_t y1, int16_t x2, int16_t y2, int16_t x3, int16_t y3, int16_t x4, int16_t y4,
-                       int16_t tx1, int16_t ty1, int16_t tx2, int16_t ty2, int16_t tx3, int16_t ty3, int16_t tx4,
-                       int16_t ty4, int16_t clX, int16_t clY);
-    void drawPoly4TEx4_S(int16_t x1, int16_t y1, int16_t x2, int16_t y2, int16_t x3, int16_t y3, int16_t x4, int16_t y4,
-                         int16_t tx1, int16_t ty1, int16_t tx2, int16_t ty2, int16_t tx3, int16_t ty3, int16_t tx4,
-                         int16_t ty4, int16_t clX, int16_t clY);
-    void drawPoly4TEx8(int16_t x1, int16_t y1, int16_t x2, int16_t y2, int16_t x3, int16_t y3, int16_t x4, int16_t y4,
-                       int16_t tx1, int16_t ty1, int16_t tx2, int16_t ty2, int16_t tx3, int16_t ty3, int16_t tx4,
-                       int16_t ty4, int16_t clX, int16_t clY);
-    void drawPoly4TEx8_S(int16_t x1, int16_t y1, int16_t x2, int16_t y2, int16_t x3, int16_t y3, int16_t x4, int16_t y4,
-                         int16_t tx1, int16_t ty1, int16_t tx2, int16_t ty2, int16_t tx3, int16_t ty3, int16_t tx4,
-                         int16_t ty4, int16_t clX, int16_t clY);
-    void drawPoly4TD(int16_t x1, int16_t y1, int16_t x2, int16_t y2, int16_t x3, int16_t y3, int16_t x4, int16_t y4,
-                     int16_t tx1, int16_t ty1, int16_t tx2, int16_t ty2, int16_t tx3, int16_t ty3, int16_t tx4,
-                     int16_t ty4);
-    void drawPoly4TD_S(int16_t x1, int16_t y1, int16_t x2, int16_t y2, int16_t x3, int16_t y3, int16_t x4, int16_t y4,
-                       int16_t tx1, int16_t ty1, int16_t tx2, int16_t ty2, int16_t tx3, int16_t ty3, int16_t tx4,
-                       int16_t ty4);
+    // Unified 4-vertex flat-textured rasterizer. SlowMode is Default
+    // (poly path: honours m_checkMask and the full abr blend ladder)
+    // or Semi (sprite path: ignores m_checkMask, semi-trans only).
+    // The fast path (`!m_checkMask && !m_drawSemiTrans`) is shared
+    // and uses PixelWriter<true, Flat, Solid>. See soft.cc for the
+    // body comment.
+    template <TexMode Tex, WriteMode SlowMode>
+    void drawPoly4T(int16_t x1, int16_t y1, int16_t x2, int16_t y2, int16_t x3, int16_t y3, int16_t x4, int16_t y4,
+                    int16_t tx1, int16_t ty1, int16_t tx2, int16_t ty2, int16_t tx3, int16_t ty3, int16_t tx4,
+                    int16_t ty4, int16_t clX, int16_t clY);
     template <bool useCachedDither>
     void drawPoly3Gi(int16_t x1, int16_t y1, int16_t x2, int16_t y2, int16_t x3, int16_t y3, int32_t rgb1, int32_t rgb2,
                      int32_t rgb3);

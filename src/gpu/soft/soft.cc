@@ -1710,567 +1710,36 @@ template void PCSX::SoftGPU::SoftRenderer::drawPoly3T<PCSX::SoftGPU::TexMode::Di
 
 ////////////////////////////////////////////////////////////////////////
 
-void PCSX::SoftGPU::SoftRenderer::drawPoly4TEx4(int16_t x1, int16_t y1, int16_t x2, int16_t y2, int16_t x3, int16_t y3,
-                                                int16_t x4, int16_t y4, int16_t tx1, int16_t ty1, int16_t tx2,
-                                                int16_t ty2, int16_t tx3, int16_t ty3, int16_t tx4, int16_t ty4,
-                                                int16_t clX, int16_t clY) {
-    int32_t num;
-    int32_t i, j, xmin, xmax, ymin, ymax;
-    int32_t difX, difY, difX2, difY2;
-    int32_t posX, posY, YAdjust, clutP, XAdjust;
-    int16_t tC1, tC2;
+// 4-vertex flat-textured rasterizer. Collapses the legacy six-function
+// matrix (drawPoly4TEx4 / _S / TEx8 / _S / TD / _S) into a single body
+// parameterised on TexMode and the slow-path WriteMode.
+//
+// SlowMode is Default or Semi:
+//   - Default matches the legacy non-`_S` shape: poly path that honours
+//     m_checkMask and the standard m_drawSemiTrans+abr blend ladder.
+//     The "slow" path uses PixelWriter<true, Flat, WriteMode::Default>.
+//   - Semi matches the legacy `_S` shape: sprite path that does NOT
+//     honour m_checkMask and uses the dedicated semi-only writer
+//     (getTextureTransColG32Semi / getTextureTransColShadeSemi) when
+//     drawSemiTrans is set. Those bodies have no PixelWriter
+//     counterpart yet, so the Semi slow path still calls the legacy
+//     member helpers; migrating that family is its own follow-up.
+//
+// The fast path (!m_checkMask && !m_drawSemiTrans) is shared between
+// both SlowMode instantiations and uses PixelWriter<true, Flat, Solid>.
+//
+// Texture-window addressing here uses the legacy `.x0/.x1/.y0/.y1`
+// wrap representation (NOT Sampler<TexMode>'s bit-substitution).
+// Migrating sampler policy is the Phase D2 follow-up; preserving the
+// legacy wrap math here keeps D1 bit-exact against the harness.
+template <PCSX::SoftGPU::TexMode Tex, PCSX::SoftGPU::WriteMode SlowMode>
+void PCSX::SoftGPU::SoftRenderer::drawPoly4T(int16_t x1, int16_t y1, int16_t x2, int16_t y2, int16_t x3, int16_t y3,
+                                             int16_t x4, int16_t y4, int16_t tx1, int16_t ty1, int16_t tx2,
+                                             int16_t ty2, int16_t tx3, int16_t ty3, int16_t tx4, int16_t ty4,
+                                             int16_t clX, int16_t clY) {
+    static_assert(SlowMode == WriteMode::Default || SlowMode == WriteMode::Semi,
+                  "drawPoly4T SlowMode must be Default (poly) or Semi (sprite)");
 
-    const auto drawX = m_drawX;
-    const auto drawY = m_drawY;
-    const auto drawH = m_drawH;
-    const auto drawW = m_drawW;
-
-    if (x1 > drawW && x2 > drawW && x3 > drawW && x4 > drawW) return;
-    if (y1 > drawH && y2 > drawH && y3 > drawH && y4 > drawH) return;
-    if (x1 < drawX && x2 < drawX && x3 < drawX && x4 < drawX) return;
-    if (y1 < drawY && y2 < drawY && y3 < drawY && y4 < drawY) return;
-    if (drawY >= drawH) return;
-    if (drawX >= drawW) return;
-
-    if (!setupSectionsFlatTextured4(x1, y1, x2, y2, x3, y3, x4, y4, tx1, ty1, tx2, ty2, tx3, ty3, tx4, ty4)) return;
-
-    ymax = m_yMax;
-
-    for (ymin = m_yMin; ymin < drawY; ymin++) {
-        if (nextRowFlatTextured4()) return;
-    }
-
-    clutP = (clY << 10) + clX;
-
-    YAdjust = ((m_globalTextAddrY) << 11) + (m_globalTextAddrX << 1);
-    YAdjust += (m_textureWindow.y0 << 11) + (m_textureWindow.x0 >> 1);
-
-    const auto vram = m_vram;
-    const auto vram16 = m_vram16;
-    const auto maskX = m_textureWindow.x1 - 1;
-    const auto maskY = m_textureWindow.y1 - 1;
-
-    if (!m_checkMask && !m_drawSemiTrans) {
-        for (i = ymin; i <= ymax; i++) {
-            xmin = (m_leftX + 0xFFFF) >> 16;
-            xmax = (m_rightX >> 16);
-
-            if (xmax >= xmin) {
-                num = m_rightX - m_leftX;
-                if (num == 0) num = 1;
-                difX = (int64_t)(m_rightU - m_leftU) * 65536 / num;
-                difY = (int64_t)(m_rightV - m_leftV) * 65536 / num;
-                posX = m_leftU +
-                       (int32_t)(((int64_t)(((int32_t)xmin << 16) + 0x8000 - m_leftX) * difX) >> 16);
-                posY = m_leftV +
-                       (int32_t)(((int64_t)(((int32_t)xmin << 16) + 0x8000 - m_leftX) * difY) >> 16);
-                difX2 = difX << 1;
-                difY2 = difY << 1;
-
-                if (xmin < drawX) {
-                    j = drawX - xmin;
-                    xmin = drawX;
-                    posX += j * difX;
-                    posY += j * difY;
-                }
-                xmax = (m_rightX - 1) >> 16;
-                if (drawW < xmax) xmax = drawW;
-
-                for (j = xmin; j < xmax; j += 2) {
-                    XAdjust = (posX >> 16) & maskX;
-                    tC1 = vram[static_cast<int32_t>((((posY >> 16) & maskY) << 11) + YAdjust + (XAdjust >> 1))];
-                    tC1 = (tC1 >> ((XAdjust & 1) << 2)) & 0xf;
-                    XAdjust = ((posX + difX) >> 16) & maskX;
-                    tC2 =
-                        vram[static_cast<int32_t>(((((posY + difY) >> 16) & maskY) << 11) + YAdjust + (XAdjust >> 1))];
-                    tC2 = (tC2 >> ((XAdjust & 1) << 2)) & 0xf;
-
-                    uint32_t *pdest = (uint32_t *)&vram16[(i << 10) + j];
-                    uint32_t color = vram16[clutP + tC1] | ((int32_t)vram16[clutP + tC2]) << 16;
-                    getTextureTransColShade32Solid(pdest, color);
-                    posX += difX2;
-                    posY += difY2;
-                }
-                if (j == xmax) {
-                    XAdjust = (posX >> 16) & maskX;
-                    tC1 = vram[static_cast<int32_t>((((posY >> 16) & maskY) << 11) + YAdjust + (XAdjust >> 1))];
-                    tC1 = (tC1 >> ((XAdjust & 1) << 2)) & 0xf;
-                    getTextureTransColShadeSolid(&vram16[(i << 10) + j], vram16[clutP + tC1]);
-                }
-            }
-            if (nextRowFlatTextured4()) return;
-        }
-        return;
-    }
-
-    for (i = ymin; i <= ymax; i++) {
-        xmin = (m_leftX + 0xFFFF) >> 16;
-        xmax = (m_rightX >> 16);
-
-        if (xmax >= xmin) {
-            num = m_rightX - m_leftX;
-            if (num == 0) num = 1;
-            difX = (int64_t)(m_rightU - m_leftU) * 65536 / num;
-            difY = (int64_t)(m_rightV - m_leftV) * 65536 / num;
-            posX = m_leftU +
-                   (int32_t)(((int64_t)(((int32_t)xmin << 16) + 0x8000 - m_leftX) * difX) >> 16);
-            posY = m_leftV +
-                   (int32_t)(((int64_t)(((int32_t)xmin << 16) + 0x8000 - m_leftX) * difY) >> 16);
-            difX2 = difX << 1;
-            difY2 = difY << 1;
-
-            if (xmin < drawX) {
-                j = drawX - xmin;
-                xmin = drawX;
-                posX += j * difX;
-                posY += j * difY;
-            }
-            xmax = (m_rightX - 1) >> 16;
-            if (drawW < xmax) xmax = drawW;
-
-            for (j = xmin; j < xmax; j += 2) {
-                XAdjust = (posX >> 16) & maskX;
-                tC1 = vram[static_cast<int32_t>((((posY >> 16) & maskY) << 11) + YAdjust + (XAdjust >> 1))];
-                tC1 = (tC1 >> ((XAdjust & 1) << 2)) & 0xf;
-                XAdjust = ((posX + difX) >> 16) & maskX;
-                tC2 = vram[static_cast<int32_t>(((((posY + difY) >> 16) & maskY) << 11) + YAdjust + (XAdjust >> 1))];
-                tC2 = (tC2 >> ((XAdjust & 1) << 2)) & 0xf;
-
-                uint32_t *pdest = (uint32_t *)&vram16[(i << 10) + j];
-                uint32_t color = vram16[clutP + tC1] | ((int32_t)vram16[clutP + tC2]) << 16;
-                getTextureTransColShade32(pdest, color);
-                posX += difX2;
-                posY += difY2;
-            }
-            if (j == xmax) {
-                XAdjust = (posX >> 16) & maskX;
-                tC1 = vram[static_cast<int32_t>((((posY >> 16) & maskY) << 11) + YAdjust + (XAdjust >> 1))];
-                tC1 = (tC1 >> ((XAdjust & 1) << 2)) & 0xf;
-                getTextureTransColShade(&vram16[(i << 10) + j], vram16[clutP + tC1]);
-            }
-        }
-        if (nextRowFlatTextured4()) return;
-    }
-}
-
-////////////////////////////////////////////////////////////////////////
-
-void PCSX::SoftGPU::SoftRenderer::drawPoly4TEx4_S(int16_t x1, int16_t y1, int16_t x2, int16_t y2, int16_t x3,
-                                                  int16_t y3, int16_t x4, int16_t y4, int16_t tx1, int16_t ty1,
-                                                  int16_t tx2, int16_t ty2, int16_t tx3, int16_t ty3, int16_t tx4,
-                                                  int16_t ty4, int16_t clX, int16_t clY) {
-    int32_t num;
-    int32_t i, j, xmin, xmax, ymin, ymax;
-    int32_t difX, difY, difX2, difY2;
-    int32_t posX, posY, YAdjust, clutP, XAdjust;
-    int16_t tC1, tC2;
-
-    const auto drawX = m_drawX;
-    const auto drawY = m_drawY;
-    const auto drawH = m_drawH;
-    const auto drawW = m_drawW;
-
-    if (x1 > drawW && x2 > drawW && x3 > drawW && x4 > drawW) return;
-    if (y1 > drawH && y2 > drawH && y3 > drawH && y4 > drawH) return;
-    if (x1 < drawX && x2 < drawX && x3 < drawX && x4 < drawX) return;
-    if (y1 < drawY && y2 < drawY && y3 < drawY && y4 < drawY) return;
-    if (drawY >= drawH) return;
-    if (drawX >= drawW) return;
-
-    if (!setupSectionsFlatTextured4(x1, y1, x2, y2, x3, y3, x4, y4, tx1, ty1, tx2, ty2, tx3, ty3, tx4, ty4)) return;
-
-    ymax = m_yMax;
-
-    for (ymin = m_yMin; ymin < drawY; ymin++) {
-        if (nextRowFlatTextured4()) return;
-    }
-
-    clutP = (clY << 10) + clX;
-
-    YAdjust = ((m_globalTextAddrY) << 11) + (m_globalTextAddrX << 1);
-    YAdjust += (m_textureWindow.y0 << 11) + (m_textureWindow.x0 >> 1);
-
-    const auto vram = m_vram;
-    const auto vram16 = m_vram16;
-    const auto maskX = m_textureWindow.x1 - 1;
-    const auto maskY = m_textureWindow.y1 - 1;
-
-    if (!m_checkMask && !m_drawSemiTrans) {
-        for (i = ymin; i <= ymax; i++) {
-            xmin = (m_leftX + 0xFFFF) >> 16;
-            xmax = (m_rightX >> 16);
-
-            if (xmax >= xmin) {
-                num = m_rightX - m_leftX;
-                if (num == 0) num = 1;
-                difX = (int64_t)(m_rightU - m_leftU) * 65536 / num;
-                difY = (int64_t)(m_rightV - m_leftV) * 65536 / num;
-                posX = m_leftU +
-                       (int32_t)(((int64_t)(((int32_t)xmin << 16) + 0x8000 - m_leftX) * difX) >> 16);
-                posY = m_leftV +
-                       (int32_t)(((int64_t)(((int32_t)xmin << 16) + 0x8000 - m_leftX) * difY) >> 16);
-                difX2 = difX << 1;
-                difY2 = difY << 1;
-
-                if (xmin < drawX) {
-                    j = drawX - xmin;
-                    xmin = drawX;
-                    posX += j * difX;
-                    posY += j * difY;
-                }
-                xmax = (m_rightX - 1) >> 16;
-                if (drawW < xmax) xmax = drawW;
-
-                for (j = xmin; j < xmax; j += 2) {
-                    XAdjust = (posX >> 16) & maskX;
-                    tC1 = vram[static_cast<int32_t>((((posY >> 16) & maskY) << 11) + YAdjust + (XAdjust >> 1))];
-                    tC1 = (tC1 >> ((XAdjust & 1) << 2)) & 0xf;
-                    XAdjust = ((posX + difX) >> 16) & maskX;
-                    tC2 =
-                        vram[static_cast<int32_t>(((((posY + difY) >> 16) & maskY) << 11) + YAdjust + (XAdjust >> 1))];
-                    tC2 = (tC2 >> ((XAdjust & 1) << 2)) & 0xf;
-
-                    uint32_t *pdest = (uint32_t *)&vram16[(i << 10) + j];
-                    uint32_t color = vram16[clutP + tC1] | ((int32_t)vram16[clutP + tC2]) << 16;
-                    getTextureTransColShade32Solid(pdest, color);
-                    posX += difX2;
-                    posY += difY2;
-                }
-                if (j == xmax) {
-                    XAdjust = (posX >> 16) & maskX;
-                    tC1 = vram[static_cast<int32_t>((((posY >> 16) & maskY) << 11) + YAdjust + (XAdjust >> 1))];
-                    tC1 = (tC1 >> ((XAdjust & 1) << 2)) & 0xf;
-                    getTextureTransColShadeSolid(&vram16[(i << 10) + j], vram16[clutP + tC1]);
-                }
-            }
-            if (nextRowFlatTextured4()) return;
-        }
-        return;
-    }
-
-    for (i = ymin; i <= ymax; i++) {
-        xmin = (m_leftX + 0xFFFF) >> 16;
-        xmax = (m_rightX >> 16);
-
-        if (xmax >= xmin) {
-            num = m_rightX - m_leftX;
-            if (num == 0) num = 1;
-            difX = (int64_t)(m_rightU - m_leftU) * 65536 / num;
-            difY = (int64_t)(m_rightV - m_leftV) * 65536 / num;
-            posX = m_leftU +
-                   (int32_t)(((int64_t)(((int32_t)xmin << 16) + 0x8000 - m_leftX) * difX) >> 16);
-            posY = m_leftV +
-                   (int32_t)(((int64_t)(((int32_t)xmin << 16) + 0x8000 - m_leftX) * difY) >> 16);
-            difX2 = difX << 1;
-            difY2 = difY << 1;
-
-            if (xmin < drawX) {
-                j = drawX - xmin;
-                xmin = drawX;
-                posX += j * difX;
-                posY += j * difY;
-            }
-            xmax = (m_rightX - 1) >> 16;
-            if (drawW < xmax) xmax = drawW;
-
-            for (j = xmin; j < xmax; j += 2) {
-                XAdjust = (posX >> 16) & maskX;
-                tC1 = vram[static_cast<int32_t>((((posY >> 16) & maskY) << 11) + YAdjust + (XAdjust >> 1))];
-                tC1 = (tC1 >> ((XAdjust & 1) << 2)) & 0xf;
-                XAdjust = ((posX + difX) >> 16) & maskX;
-                tC2 = vram[static_cast<int32_t>(((((posY + difY) >> 16) & maskY) << 11) + YAdjust + (XAdjust >> 1))];
-                tC2 = (tC2 >> ((XAdjust & 1) << 2)) & 0xf;
-
-                uint32_t *pdest = (uint32_t *)&vram16[(i << 10) + j];
-                uint32_t color = vram16[clutP + tC1] | ((int32_t)vram16[clutP + tC2]) << 16;
-                getTextureTransColG32Semi(pdest, color);
-                posX += difX2;
-                posY += difY2;
-            }
-            if (j == xmax) {
-                XAdjust = (posX >> 16) & maskX;
-                tC1 = vram[static_cast<int32_t>((((posY >> 16) & maskY) << 11) + YAdjust + (XAdjust >> 1))];
-                tC1 = (tC1 >> ((XAdjust & 1) << 2)) & 0xf;
-                getTextureTransColShadeSemi(&vram16[(i << 10) + j], vram16[clutP + tC1]);
-            }
-        }
-        if (nextRowFlatTextured4()) return;
-    }
-}
-
-////////////////////////////////////////////////////////////////////////
-
-void PCSX::SoftGPU::SoftRenderer::drawPoly4TEx8(int16_t x1, int16_t y1, int16_t x2, int16_t y2, int16_t x3, int16_t y3,
-                                                int16_t x4, int16_t y4, int16_t tx1, int16_t ty1, int16_t tx2,
-                                                int16_t ty2, int16_t tx3, int16_t ty3, int16_t tx4, int16_t ty4,
-                                                int16_t clX, int16_t clY) {
-    int32_t num;
-    int32_t i, j, xmin, xmax, ymin, ymax;
-    int32_t difX, difY, difX2, difY2;
-    int32_t posX, posY, YAdjust, clutP;
-    int16_t tC1, tC2;
-
-    const auto drawX = m_drawX;
-    const auto drawY = m_drawY;
-    const auto drawH = m_drawH;
-    const auto drawW = m_drawW;
-
-    if (x1 > drawW && x2 > drawW && x3 > drawW && x4 > drawW) return;
-    if (y1 > drawH && y2 > drawH && y3 > drawH && y4 > drawH) return;
-    if (x1 < drawX && x2 < drawX && x3 < drawX && x4 < drawX) return;
-    if (y1 < drawY && y2 < drawY && y3 < drawY && y4 < drawY) return;
-    if (drawY >= drawH) return;
-    if (drawX >= drawW) return;
-
-    if (!setupSectionsFlatTextured4(x1, y1, x2, y2, x3, y3, x4, y4, tx1, ty1, tx2, ty2, tx3, ty3, tx4, ty4)) return;
-
-    ymax = m_yMax;
-
-    for (ymin = m_yMin; ymin < drawY; ymin++) {
-        if (nextRowFlatTextured4()) return;
-    }
-
-    clutP = (clY << 10) + clX;
-
-    YAdjust = ((m_globalTextAddrY) << 11) + (m_globalTextAddrX << 1);
-    YAdjust += (m_textureWindow.y0 << 11) + (m_textureWindow.x0);
-
-    const auto vram = m_vram;
-    const auto vram16 = m_vram16;
-    const auto maskX = m_textureWindow.x1 - 1;
-    const auto maskY = m_textureWindow.y1 - 1;
-
-    if (!m_checkMask && !m_drawSemiTrans) {
-        for (i = ymin; i <= ymax; i++) {
-            xmin = (m_leftX + 0xFFFF) >> 16;
-            xmax = (m_rightX >> 16);
-
-            if (xmax >= xmin) {
-                num = m_rightX - m_leftX;
-                if (num == 0) num = 1;
-                difX = (int64_t)(m_rightU - m_leftU) * 65536 / num;
-                difY = (int64_t)(m_rightV - m_leftV) * 65536 / num;
-                posX = m_leftU +
-                       (int32_t)(((int64_t)(((int32_t)xmin << 16) + 0x8000 - m_leftX) * difX) >> 16);
-                posY = m_leftV +
-                       (int32_t)(((int64_t)(((int32_t)xmin << 16) + 0x8000 - m_leftX) * difY) >> 16);
-                difX2 = difX << 1;
-                difY2 = difY << 1;
-
-                if (xmin < drawX) {
-                    j = drawX - xmin;
-                    xmin = drawX;
-                    posX += j * difX;
-                    posY += j * difY;
-                }
-                xmax = (m_rightX - 1) >> 16;
-                if (drawW < xmax) xmax = drawW;
-
-                for (j = xmin; j < xmax; j += 2) {
-                    tC1 = vram[static_cast<int32_t>((((posY >> 16) & maskY) << 11) + YAdjust + ((posX >> 16) & maskX))];
-                    tC2 = vram[static_cast<int32_t>(((((posY + difY) >> 16) & maskY) << 11) + YAdjust +
-                                                    (((posX + difX) >> 16) & maskX))];
-                    uint32_t *pdest = (uint32_t *)&vram16[(i << 10) + j];
-                    uint32_t color = vram16[clutP + tC1] | ((int32_t)vram16[clutP + tC2]) << 16;
-                    getTextureTransColShade32Solid(pdest, color);
-                    posX += difX2;
-                    posY += difY2;
-                }
-                if (j == xmax) {
-                    tC1 = vram[static_cast<int32_t>(((((posY + difY) >> 16) & maskY) << 11) + YAdjust +
-                                                    ((posX >> 16) & maskX))];
-                    getTextureTransColShadeSolid(&vram16[(i << 10) + j], vram16[clutP + tC1]);
-                }
-            }
-            if (nextRowFlatTextured4()) return;
-        }
-        return;
-    }
-
-    for (i = ymin; i <= ymax; i++) {
-        xmin = (m_leftX + 0xFFFF) >> 16;
-        xmax = (m_rightX >> 16);
-
-        if (xmax >= xmin) {
-            num = m_rightX - m_leftX;
-            if (num == 0) num = 1;
-            difX = (int64_t)(m_rightU - m_leftU) * 65536 / num;
-            difY = (int64_t)(m_rightV - m_leftV) * 65536 / num;
-            posX = m_leftU +
-                   (int32_t)(((int64_t)(((int32_t)xmin << 16) + 0x8000 - m_leftX) * difX) >> 16);
-            posY = m_leftV +
-                   (int32_t)(((int64_t)(((int32_t)xmin << 16) + 0x8000 - m_leftX) * difY) >> 16);
-            difX2 = difX << 1;
-            difY2 = difY << 1;
-
-            if (xmin < drawX) {
-                j = drawX - xmin;
-                xmin = drawX;
-                posX += j * difX;
-                posY += j * difY;
-            }
-            xmax = (m_rightX - 1) >> 16;
-            if (drawW < xmax) xmax = drawW;
-
-            for (j = xmin; j < xmax; j += 2) {
-                tC1 = vram[static_cast<int32_t>((((posY >> 16) & maskY) << 11) + YAdjust + ((posX >> 16) & maskX))];
-                tC2 = vram[static_cast<int32_t>(((((posY + difY) >> 16) & maskY) << 11) + YAdjust +
-                                                (((posX + difX) >> 16) & maskX))];
-                uint32_t *pdest = (uint32_t *)&vram16[(i << 10) + j];
-                uint32_t color = vram16[clutP + tC1] | ((int32_t)vram16[clutP + tC2]) << 16;
-                getTextureTransColShade32(pdest, color);
-                posX += difX2;
-                posY += difY2;
-            }
-            if (j == xmax) {
-                tC1 = vram[static_cast<int32_t>(((((posY + difY) >> 16) & maskY) << 11) + YAdjust +
-                                                ((posX >> 16) & maskX))];
-                getTextureTransColShade(&vram16[(i << 10) + j], vram16[clutP + tC1]);
-            }
-        }
-        if (nextRowFlatTextured4()) return;
-    }
-}
-
-////////////////////////////////////////////////////////////////////////
-
-void PCSX::SoftGPU::SoftRenderer::drawPoly4TEx8_S(int16_t x1, int16_t y1, int16_t x2, int16_t y2, int16_t x3,
-                                                  int16_t y3, int16_t x4, int16_t y4, int16_t tx1, int16_t ty1,
-                                                  int16_t tx2, int16_t ty2, int16_t tx3, int16_t ty3, int16_t tx4,
-                                                  int16_t ty4, int16_t clX, int16_t clY) {
-    int32_t num;
-    int32_t i, j, xmin, xmax, ymin, ymax;
-    int32_t difX, difY, difX2, difY2;
-    int32_t posX, posY, YAdjust, clutP;
-    int16_t tC1, tC2;
-
-    const auto drawX = m_drawX;
-    const auto drawY = m_drawY;
-    const auto drawH = m_drawH;
-    const auto drawW = m_drawW;
-
-    if (x1 > drawW && x2 > drawW && x3 > drawW && x4 > drawW) return;
-    if (y1 > drawH && y2 > drawH && y3 > drawH && y4 > drawH) return;
-    if (x1 < drawX && x2 < drawX && x3 < drawX && x4 < drawX) return;
-    if (y1 < drawY && y2 < drawY && y3 < drawY && y4 < drawY) return;
-    if (drawY >= drawH) return;
-    if (drawX >= drawW) return;
-
-    if (!setupSectionsFlatTextured4(x1, y1, x2, y2, x3, y3, x4, y4, tx1, ty1, tx2, ty2, tx3, ty3, tx4, ty4)) return;
-
-    ymax = m_yMax;
-
-    for (ymin = m_yMin; ymin < drawY; ymin++) {
-        if (nextRowFlatTextured4()) return;
-    }
-
-    clutP = (clY << 10) + clX;
-
-    YAdjust = ((m_globalTextAddrY) << 11) + (m_globalTextAddrX << 1);
-    YAdjust += (m_textureWindow.y0 << 11) + (m_textureWindow.x0);
-
-    const auto vram = m_vram;
-    const auto vram16 = m_vram16;
-    const auto maskX = m_textureWindow.x1 - 1;
-    const auto maskY = m_textureWindow.y1 - 1;
-
-    if (!m_checkMask && !m_drawSemiTrans) {
-        for (i = ymin; i <= ymax; i++) {
-            xmin = (m_leftX + 0xFFFF) >> 16;
-            xmax = (m_rightX >> 16);
-
-            if (xmax >= xmin) {
-                num = m_rightX - m_leftX;
-                if (num == 0) num = 1;
-                difX = (int64_t)(m_rightU - m_leftU) * 65536 / num;
-                difY = (int64_t)(m_rightV - m_leftV) * 65536 / num;
-                posX = m_leftU +
-                       (int32_t)(((int64_t)(((int32_t)xmin << 16) + 0x8000 - m_leftX) * difX) >> 16);
-                posY = m_leftV +
-                       (int32_t)(((int64_t)(((int32_t)xmin << 16) + 0x8000 - m_leftX) * difY) >> 16);
-                difX2 = difX << 1;
-                difY2 = difY << 1;
-
-                if (xmin < drawX) {
-                    j = drawX - xmin;
-                    xmin = drawX;
-                    posX += j * difX;
-                    posY += j * difY;
-                }
-                xmax = (m_rightX - 1) >> 16;
-                if (drawW < xmax) xmax = drawW;
-
-                for (j = xmin; j < xmax; j += 2) {
-                    tC1 = vram[static_cast<int32_t>((((posY >> 16) & maskY) << 11) + YAdjust + ((posX >> 16) & maskX))];
-                    tC2 = vram[static_cast<int32_t>(((((posY + difY) >> 16) & maskY) << 11) + YAdjust +
-                                                    (((posX + difX) >> 16) & maskX))];
-                    uint32_t *pdest = (uint32_t *)&vram16[(i << 10) + j];
-                    uint32_t color = vram16[clutP + tC1] | ((int32_t)vram16[clutP + tC2]) << 16;
-                    getTextureTransColShade32Solid(pdest, color);
-                    posX += difX2;
-                    posY += difY2;
-                }
-                if (j == xmax) {
-                    tC1 = vram[static_cast<int32_t>(((((posY + difY) >> 16) & maskY) << 11) + YAdjust +
-                                                    ((posX >> 16) & maskX))];
-                    getTextureTransColShadeSolid(&vram16[(i << 10) + j], vram16[clutP + tC1]);
-                }
-            }
-            if (nextRowFlatTextured4()) return;
-        }
-        return;
-    }
-
-    for (i = ymin; i <= ymax; i++) {
-        xmin = (m_leftX + 0xFFFF) >> 16;
-        xmax = (m_rightX >> 16);
-
-        if (xmax >= xmin) {
-            num = m_rightX - m_leftX;
-            if (num == 0) num = 1;
-            difX = (int64_t)(m_rightU - m_leftU) * 65536 / num;
-            difY = (int64_t)(m_rightV - m_leftV) * 65536 / num;
-            posX = m_leftU +
-                   (int32_t)(((int64_t)(((int32_t)xmin << 16) + 0x8000 - m_leftX) * difX) >> 16);
-            posY = m_leftV +
-                   (int32_t)(((int64_t)(((int32_t)xmin << 16) + 0x8000 - m_leftX) * difY) >> 16);
-            difX2 = difX << 1;
-            difY2 = difY << 1;
-
-            if (xmin < drawX) {
-                j = drawX - xmin;
-                xmin = drawX;
-                posX += j * difX;
-                posY += j * difY;
-            }
-            xmax = (m_rightX - 1) >> 16;
-            if (drawW < xmax) xmax = drawW;
-
-            for (j = xmin; j < xmax; j += 2) {
-                tC1 = vram[static_cast<int32_t>((((posY >> 16) & maskY) << 11) + YAdjust + ((posX >> 16) & maskX))];
-                tC2 = vram[static_cast<int32_t>(((((posY + difY) >> 16) & maskY) << 11) + YAdjust +
-                                                (((posX + difX) >> 16) & maskX))];
-                uint32_t *pdest = (uint32_t *)&vram16[(i << 10) + j];
-                uint32_t color = vram16[clutP + tC1] | ((int32_t)vram16[clutP + tC2]) << 16;
-                getTextureTransColG32Semi(pdest, color);
-                posX += difX2;
-                posY += difY2;
-            }
-            if (j == xmax) {
-                tC1 = vram[static_cast<int32_t>(((((posY + difY) >> 16) & maskY) << 11) + YAdjust +
-                                                ((posX >> 16) & maskX))];
-                getTextureTransColShadeSemi(&vram16[(i << 10) + j], vram16[clutP + tC1]);
-            }
-        }
-        if (nextRowFlatTextured4()) return;
-    }
-}
-
-////////////////////////////////////////////////////////////////////////
-
-void PCSX::SoftGPU::SoftRenderer::drawPoly4TD(int16_t x1, int16_t y1, int16_t x2, int16_t y2, int16_t x3, int16_t y3,
-                                              int16_t x4, int16_t y4, int16_t tx1, int16_t ty1, int16_t tx2,
-                                              int16_t ty2, int16_t tx3, int16_t ty3, int16_t tx4, int16_t ty4) {
     int32_t num;
     int32_t i, j, xmin, xmax, ymin, ymax;
     int32_t difX, difY, difX2, difY2;
@@ -2296,6 +1765,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly4TD(int16_t x1, int16_t y1, int16_t x2
         if (nextRowFlatTextured4()) return;
     }
 
+    RasterState rs = makeTexturedRasterState<Tex>(drawX, drawY, drawW, drawH, clX, clY);
     const auto vram = m_vram;
     const auto vram16 = m_vram16;
     const auto maskX = m_textureWindow.x1 - 1;
@@ -2304,7 +1774,47 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly4TD(int16_t x1, int16_t y1, int16_t x2
     const auto globalTextAddrY = m_globalTextAddrY;
     const auto textureWindow = m_textureWindow;
 
+    // Tex-specific address precomputation. The CLUT modes hoist the
+    // texture-page base and the texture-window y0/x0 contributions
+    // into a per-primitive YAdjust. Direct15 folds them inside every
+    // sample so there's nothing to precompute.
+    int32_t clutP = 0;
+    int32_t YAdjust = 0;
+    if constexpr (Tex == TexMode::Clut4) {
+        clutP = (clY << 10) + clX;
+        YAdjust = (globalTextAddrY << 11) + (globalTextAddrX << 1);
+        YAdjust += (textureWindow.y0 << 11) + (textureWindow.x0 >> 1);
+    } else if constexpr (Tex == TexMode::Clut8) {
+        clutP = (clY << 10) + clX;
+        YAdjust = (globalTextAddrY << 11) + (globalTextAddrX << 1);
+        YAdjust += (textureWindow.y0 << 11) + textureWindow.x0;
+    }
+
+    // Legacy wrap-aligned single-texel sample. Returns the final 16-bit
+    // BGR555 colour after the CLUT lookup (or the direct read for
+    // Direct15). Texel coordinates arrive in 16.16 fixed-point.
+    auto sampleScalar = [&](int32_t pX, int32_t pY) -> uint16_t {
+        if constexpr (Tex == TexMode::Clut4) {
+            int32_t XAdjust = (pX >> 16) & maskX;
+            int16_t tC = vram[static_cast<int32_t>((((pY >> 16) & maskY) << 11) + YAdjust + (XAdjust >> 1))];
+            tC = (tC >> ((XAdjust & 1) << 2)) & 0xf;
+            return vram16[clutP + tC];
+        } else if constexpr (Tex == TexMode::Clut8) {
+            int16_t tC = vram[static_cast<int32_t>((((pY >> 16) & maskY) << 11) + YAdjust + ((pX >> 16) & maskX))];
+            return vram16[clutP + tC];
+        } else {
+            return vram16[((((pY >> 16) & maskY) + globalTextAddrY + textureWindow.y0) << 10) +
+                          ((pX >> 16) & maskX) + globalTextAddrX + textureWindow.x0];
+        }
+    };
+
+    auto samplePair = [&](int32_t pX, int32_t pY, int32_t dX, int32_t dY) -> uint32_t {
+        return static_cast<uint32_t>(sampleScalar(pX, pY)) |
+               (static_cast<uint32_t>(sampleScalar(pX + dX, pY + dY)) << 16);
+    };
+
     if (!m_checkMask && !m_drawSemiTrans) {
+        // Solid fast path. Shared between Default and Semi SlowModes.
         for (i = ymin; i <= ymax; i++) {
             xmin = (m_leftX + 0xFFFF) >> 16;
             xmax = (m_rightX >> 16);
@@ -2314,10 +1824,8 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly4TD(int16_t x1, int16_t y1, int16_t x2
                 if (num == 0) num = 1;
                 difX = (int64_t)(m_rightU - m_leftU) * 65536 / num;
                 difY = (int64_t)(m_rightV - m_leftV) * 65536 / num;
-                posX = m_leftU +
-                       (int32_t)(((int64_t)(((int32_t)xmin << 16) + 0x8000 - m_leftX) * difX) >> 16);
-                posY = m_leftV +
-                       (int32_t)(((int64_t)(((int32_t)xmin << 16) + 0x8000 - m_leftX) * difY) >> 16);
+                posX = m_leftU + (int32_t)(((int64_t)(((int32_t)xmin << 16) + 0x8000 - m_leftX) * difX) >> 16);
+                posY = m_leftV + (int32_t)(((int64_t)(((int32_t)xmin << 16) + 0x8000 - m_leftX) * difY) >> 16);
                 difX2 = difX << 1;
                 difY2 = difY << 1;
 
@@ -2331,23 +1839,27 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly4TD(int16_t x1, int16_t y1, int16_t x2
                 if (drawW < xmax) xmax = drawW;
 
                 for (j = xmin; j < xmax; j += 2) {
-                    getTextureTransColShade32Solid(
-                        (uint32_t *)&vram16[(i << 10) + j],
-                        (((int32_t)
-                              vram16[(((((posY + difY) >> 16) & maskY) + globalTextAddrY + textureWindow.y0) << 10) +
-                                     (((posX + difX) >> 16) & maskX) + globalTextAddrX + textureWindow.x0])
-                         << 16) |
-                            vram16[((((posY >> 16) & maskY) + globalTextAddrY + textureWindow.y0) << 10) +
-                                   ((posX >> 16) & maskX) + globalTextAddrX + textureWindow.x0]);
-
+                    uint32_t *pdest = (uint32_t *)&vram16[(i << 10) + j];
+                    uint32_t color = samplePair(posX, posY, difX, difY);
+                    PixelWriter<true, GPU::Shading::Flat, WriteMode::Solid>::packed(rs, pdest, color);
                     posX += difX2;
                     posY += difY2;
                 }
                 if (j == xmax) {
-                    getTextureTransColShadeSolid(
-                        &vram16[(i << 10) + j],
-                        vram16[((((posY >> 16) & maskY) + globalTextAddrY + textureWindow.y0) << 10) +
-                               ((posX >> 16) & maskX) + globalTextAddrX + textureWindow.x0]);
+                    // Preserve the legacy Clut8 xmax-scalar quirk: the
+                    // Ex8 path sampled at (posX, posY+difY) while Ex4
+                    // and TD used (posX, posY). The asymmetry has been
+                    // there since the original soft GPU; phase-9
+                    // doesn't touch the xmax pixel directly so it's
+                    // never been hardware-characterised either way.
+                    uint16_t color;
+                    if constexpr (Tex == TexMode::Clut8) {
+                        color = sampleScalar(posX, posY + difY);
+                    } else {
+                        color = sampleScalar(posX, posY);
+                    }
+                    PixelWriter<true, GPU::Shading::Flat, WriteMode::Solid>::scalar(rs, &vram16[(i << 10) + j],
+                                                                                    color);
                 }
             }
             if (nextRowFlatTextured4()) return;
@@ -2355,6 +1867,8 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly4TD(int16_t x1, int16_t y1, int16_t x2
         return;
     }
 
+    // Slow path. Default = poly with full checkMask+abr blend handling;
+    // Semi = sprite with semi-transparency only.
     for (i = ymin; i <= ymax; i++) {
         xmin = (m_leftX + 0xFFFF) >> 16;
         xmax = (m_rightX >> 16);
@@ -2364,10 +1878,8 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly4TD(int16_t x1, int16_t y1, int16_t x2
             if (num == 0) num = 1;
             difX = (int64_t)(m_rightU - m_leftU) * 65536 / num;
             difY = (int64_t)(m_rightV - m_leftV) * 65536 / num;
-            posX = m_leftU +
-                   (int32_t)(((int64_t)(((int32_t)xmin << 16) + 0x8000 - m_leftX) * difX) >> 16);
-            posY = m_leftV +
-                   (int32_t)(((int64_t)(((int32_t)xmin << 16) + 0x8000 - m_leftX) * difY) >> 16);
+            posX = m_leftU + (int32_t)(((int64_t)(((int32_t)xmin << 16) + 0x8000 - m_leftX) * difX) >> 16);
+            posY = m_leftV + (int32_t)(((int64_t)(((int32_t)xmin << 16) + 0x8000 - m_leftX) * difY) >> 16);
             difX2 = difX << 1;
             difY2 = difY << 1;
 
@@ -2381,163 +1893,56 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly4TD(int16_t x1, int16_t y1, int16_t x2
             if (drawW < xmax) xmax = drawW;
 
             for (j = xmin; j < xmax; j += 2) {
-                getTextureTransColShade32(
-                    (uint32_t *)&vram16[(i << 10) + j],
-                    (((int32_t)vram16[(((((posY + difY) >> 16) & maskY) + globalTextAddrY + textureWindow.y0) << 10) +
-                                      (((posX + difX) >> 16) & maskX) + globalTextAddrX + textureWindow.x0])
-                     << 16) |
-                        vram16[((((posY >> 16) & maskY) + globalTextAddrY + textureWindow.y0) << 10) +
-                               ((posX >> 16) & maskX) + globalTextAddrX + textureWindow.x0]);
-
+                uint32_t *pdest = (uint32_t *)&vram16[(i << 10) + j];
+                uint32_t color = samplePair(posX, posY, difX, difY);
+                if constexpr (SlowMode == WriteMode::Default) {
+                    PixelWriter<true, GPU::Shading::Flat, WriteMode::Default>::packed(rs, pdest, color);
+                } else {
+                    getTextureTransColG32Semi(pdest, color);
+                }
                 posX += difX2;
                 posY += difY2;
             }
             if (j == xmax) {
-                getTextureTransColShade(&vram16[(i << 10) + j],
-                                        vram16[((((posY >> 16) & maskY) + globalTextAddrY + textureWindow.y0) << 10) +
-                                               ((posX >> 16) & maskX) + globalTextAddrX + textureWindow.x0]);
+                uint16_t color;
+                if constexpr (Tex == TexMode::Clut8) {
+                    color = sampleScalar(posX, posY + difY);
+                } else {
+                    color = sampleScalar(posX, posY);
+                }
+                if constexpr (SlowMode == WriteMode::Default) {
+                    PixelWriter<true, GPU::Shading::Flat, WriteMode::Default>::scalar(rs, &vram16[(i << 10) + j],
+                                                                                      color);
+                } else {
+                    getTextureTransColShadeSemi(&vram16[(i << 10) + j], color);
+                }
             }
         }
         if (nextRowFlatTextured4()) return;
     }
 }
 
-////////////////////////////////////////////////////////////////////////
-
-void PCSX::SoftGPU::SoftRenderer::drawPoly4TD_S(int16_t x1, int16_t y1, int16_t x2, int16_t y2, int16_t x3, int16_t y3,
-                                                int16_t x4, int16_t y4, int16_t tx1, int16_t ty1, int16_t tx2,
-                                                int16_t ty2, int16_t tx3, int16_t ty3, int16_t tx4, int16_t ty4) {
-    int32_t num;
-    int32_t i, j, xmin, xmax, ymin, ymax;
-    int32_t difX, difY, difX2, difY2;
-    int32_t posX, posY;
-
-    const auto drawX = m_drawX;
-    const auto drawY = m_drawY;
-    const auto drawH = m_drawH;
-    const auto drawW = m_drawW;
-
-    if (x1 > drawW && x2 > drawW && x3 > drawW && x4 > drawW) return;
-    if (y1 > drawH && y2 > drawH && y3 > drawH && y4 > drawH) return;
-    if (x1 < drawX && x2 < drawX && x3 < drawX && x4 < drawX) return;
-    if (y1 < drawY && y2 < drawY && y3 < drawY && y4 < drawY) return;
-    if (drawY >= drawH) return;
-    if (drawX >= drawW) return;
-
-    if (!setupSectionsFlatTextured4(x1, y1, x2, y2, x3, y3, x4, y4, tx1, ty1, tx2, ty2, tx3, ty3, tx4, ty4)) return;
-
-    ymax = m_yMax;
-
-    for (ymin = m_yMin; ymin < drawY; ymin++) {
-        if (nextRowFlatTextured4()) return;
-    }
-
-    const auto vram = m_vram;
-    const auto vram16 = m_vram16;
-    const auto maskX = m_textureWindow.x1 - 1;
-    const auto maskY = m_textureWindow.y1 - 1;
-    const auto globalTextAddrX = m_globalTextAddrX;
-    const auto globalTextAddrY = m_globalTextAddrY;
-    const auto textureWindow = m_textureWindow;
-
-    if (!m_checkMask && !m_drawSemiTrans) {
-        for (i = ymin; i <= ymax; i++) {
-            xmin = (m_leftX + 0xFFFF) >> 16;
-            xmax = (m_rightX >> 16);
-
-            if (xmax >= xmin) {
-                num = m_rightX - m_leftX;
-                if (num == 0) num = 1;
-                difX = (int64_t)(m_rightU - m_leftU) * 65536 / num;
-                difY = (int64_t)(m_rightV - m_leftV) * 65536 / num;
-                posX = m_leftU +
-                       (int32_t)(((int64_t)(((int32_t)xmin << 16) + 0x8000 - m_leftX) * difX) >> 16);
-                posY = m_leftV +
-                       (int32_t)(((int64_t)(((int32_t)xmin << 16) + 0x8000 - m_leftX) * difY) >> 16);
-                difX2 = difX << 1;
-                difY2 = difY << 1;
-
-                if (xmin < drawX) {
-                    j = drawX - xmin;
-                    xmin = drawX;
-                    posX += j * difX;
-                    posY += j * difY;
-                }
-                xmax = (m_rightX - 1) >> 16;
-                if (drawW < xmax) xmax = drawW;
-
-                for (j = xmin; j < xmax; j += 2) {
-                    getTextureTransColShade32Solid(
-                        (uint32_t *)&vram16[(i << 10) + j],
-                        (((int32_t)
-                              vram16[(((((posY + difY) >> 16) & maskY) + globalTextAddrY + textureWindow.y0) << 10) +
-                                     (((posX + difX) >> 16) & maskX) + globalTextAddrX + textureWindow.x0])
-                         << 16) |
-                            vram16[((((posY >> 16) & maskY) + globalTextAddrY + textureWindow.y0) << 10) +
-                                   ((posX >> 16) & maskX) + globalTextAddrX + textureWindow.x0]);
-
-                    posX += difX2;
-                    posY += difY2;
-                }
-                if (j == xmax) {
-                    getTextureTransColShadeSolid(
-                        &vram16[(i << 10) + j],
-                        vram16[((((posY >> 16) & maskY) + globalTextAddrY + textureWindow.y0) << 10) +
-                               ((posX >> 16) & maskX) + globalTextAddrX + textureWindow.x0]);
-                }
-            }
-            if (nextRowFlatTextured4()) return;
-        }
-        return;
-    }
-
-    for (i = ymin; i <= ymax; i++) {
-        xmin = (m_leftX + 0xFFFF) >> 16;
-        xmax = (m_rightX >> 16);
-
-        if (xmax >= xmin) {
-            num = m_rightX - m_leftX;
-            if (num == 0) num = 1;
-            difX = (int64_t)(m_rightU - m_leftU) * 65536 / num;
-            difY = (int64_t)(m_rightV - m_leftV) * 65536 / num;
-            posX = m_leftU +
-                   (int32_t)(((int64_t)(((int32_t)xmin << 16) + 0x8000 - m_leftX) * difX) >> 16);
-            posY = m_leftV +
-                   (int32_t)(((int64_t)(((int32_t)xmin << 16) + 0x8000 - m_leftX) * difY) >> 16);
-            difX2 = difX << 1;
-            difY2 = difY << 1;
-
-            if (xmin < drawX) {
-                j = drawX - xmin;
-                xmin = drawX;
-                posX += j * difX;
-                posY += j * difY;
-            }
-            xmax = (m_rightX - 1) >> 16;
-            if (drawW < xmax) xmax = drawW;
-
-            for (j = xmin; j < xmax; j += 2) {
-                getTextureTransColG32Semi(
-                    (uint32_t *)&vram16[(i << 10) + j],
-                    (((int32_t)vram16[(((((posY + difY) >> 16) & maskY) + globalTextAddrY + textureWindow.y0) << 10) +
-                                      (((posX + difX) >> 16) & maskX) + globalTextAddrX + textureWindow.x0])
-                     << 16) |
-                        vram16[((((posY >> 16) & maskY) + globalTextAddrY + textureWindow.y0) << 10) +
-                               ((posX >> 16) & maskX) + globalTextAddrX + textureWindow.x0]);
-
-                posX += difX2;
-                posY += difY2;
-            }
-            if (j == xmax) {
-                getTextureTransColShadeSemi(
-                    &vram16[(i << 10) + j],
-                    vram16[((((posY >> 16) & maskY) + globalTextAddrY + textureWindow.y0) << 10) +
-                           ((posX >> 16) & maskX) + globalTextAddrX + textureWindow.x0]);
-            }
-        }
-        if (nextRowFlatTextured4()) return;
-    }
-}
+// Explicit instantiations: 3 TexModes x 2 SlowModes = 6 forms.
+template void PCSX::SoftGPU::SoftRenderer::drawPoly4T<PCSX::SoftGPU::TexMode::Clut4, PCSX::SoftGPU::WriteMode::Default>(
+    int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t,
+    int16_t, int16_t, int16_t, int16_t, int16_t, int16_t);
+template void PCSX::SoftGPU::SoftRenderer::drawPoly4T<PCSX::SoftGPU::TexMode::Clut4, PCSX::SoftGPU::WriteMode::Semi>(
+    int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t,
+    int16_t, int16_t, int16_t, int16_t, int16_t, int16_t);
+template void PCSX::SoftGPU::SoftRenderer::drawPoly4T<PCSX::SoftGPU::TexMode::Clut8, PCSX::SoftGPU::WriteMode::Default>(
+    int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t,
+    int16_t, int16_t, int16_t, int16_t, int16_t, int16_t);
+template void PCSX::SoftGPU::SoftRenderer::drawPoly4T<PCSX::SoftGPU::TexMode::Clut8, PCSX::SoftGPU::WriteMode::Semi>(
+    int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t,
+    int16_t, int16_t, int16_t, int16_t, int16_t, int16_t);
+template void
+PCSX::SoftGPU::SoftRenderer::drawPoly4T<PCSX::SoftGPU::TexMode::Direct15, PCSX::SoftGPU::WriteMode::Default>(
+    int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t,
+    int16_t, int16_t, int16_t, int16_t, int16_t, int16_t);
+template void
+PCSX::SoftGPU::SoftRenderer::drawPoly4T<PCSX::SoftGPU::TexMode::Direct15, PCSX::SoftGPU::WriteMode::Semi>(
+    int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t,
+    int16_t, int16_t, int16_t, int16_t, int16_t, int16_t);
 
 ////////////////////////////////////////////////////////////////////////
 // POLY 3/4 G-SHADED
