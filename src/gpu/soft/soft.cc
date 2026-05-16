@@ -1066,6 +1066,15 @@ void PCSX::SoftGPU::SoftRenderer::fillSoftwareAreaTrans(int16_t x0, int16_t y0, 
         iCheat ^= 1;
     }
 
+    RasterState rs{};
+    rs.abr = m_globalTextABR;
+    rs.checkMask = m_checkMask;
+    rs.setMask16 = m_setMask16;
+    rs.setMask32 = m_setMask32;
+    rs.drawSemiTrans = m_drawSemiTrans;
+
+    using Writer = PixelWriter<false, GPU::Shading::Flat, WriteMode::Default>;
+
     if (dx & 1) {
         // slow fill
         uint16_t *DSTPtr;
@@ -1073,7 +1082,7 @@ void PCSX::SoftGPU::SoftRenderer::fillSoftwareAreaTrans(int16_t x0, int16_t y0, 
         DSTPtr = m_vram16 + (GPU_WIDTH * y0) + x0;
         LineOffset = GPU_WIDTH - dx;
         for (i = 0; i < dy; i++) {
-            for (j = 0; j < dx; j++) getShadeTransCol(DSTPtr++, col);
+            for (j = 0; j < dx; j++) Writer::scalar(rs, DSTPtr++, col);
             DSTPtr += LineOffset;
         }
     } else {
@@ -1092,7 +1101,7 @@ void PCSX::SoftGPU::SoftRenderer::fillSoftwareAreaTrans(int16_t x0, int16_t y0, 
             }
         } else {
             for (i = 0; i < dy; i++) {
-                for (j = 0; j < dx; j++) getShadeTransCol32(DSTPtr++, lcol);
+                for (j = 0; j < dx; j++) Writer::packed(rs, DSTPtr++, lcol);
                 DSTPtr += LineOffset;
             }
         }
