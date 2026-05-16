@@ -33,24 +33,6 @@
 #define XCOL2D(x) ((x >> 5) & 0x1f)
 #define XCOL3D(x) ((x >> 10) & 0x1f)
 
-#define X32TCOL1(x) ((x & 0x001f001f) << 7)
-#define X32TCOL2(x) ((x & 0x03e003e0) << 2)
-#define X32TCOL3(x) ((x & 0x7c007c00) >> 3)
-
-#define X32COL1(x) (x & 0x001f001f)
-#define X32COL2(x) ((x >> 5) & 0x001f001f)
-#define X32COL3(x) ((x >> 10) & 0x001f001f)
-
-#define X32ACOL1(x) (x & 0x001e001e)
-#define X32ACOL2(x) ((x >> 5) & 0x001e001e)
-#define X32ACOL3(x) ((x >> 10) & 0x001e001e)
-
-#define X32BCOL1(x) (x & 0x001c001c)
-#define X32BCOL2(x) ((x >> 5) & 0x001c001c)
-#define X32BCOL3(x) ((x >> 10) & 0x001c001c)
-
-#define X32PSXCOL(r, g, b) ((g << 10) | (b << 5) | r)
-
 #define XPSXCOL(r, g, b) ((g & 0x7c00) | (b & 0x3e0) | (r & 0x1f))
 
 static constexpr int CHKMAX_X = 1024;
@@ -531,56 +513,56 @@ void PCSX::SoftGPU::SoftRenderer::getTextureTransColShade32(uint32_t *pdest, uin
 
     if (m_drawSemiTrans && (color & 0x80008000)) {
         if (m_globalTextABR == GPU::BlendFunction::HalfBackAndHalfFront) {
-            r = ((((X32TCOL1(*pdest)) + ((X32COL1(color)) * m_m1)) & 0xff00ff00) >> 8);
-            b = ((((X32TCOL2(*pdest)) + ((X32COL2(color)) * m_m2)) & 0xff00ff00) >> 8);
-            g = ((((X32TCOL3(*pdest)) + ((X32COL3(color)) * m_m3)) & 0xff00ff00) >> 8);
+            r = ((((PackedPair555::alignRForHalfBlend(*pdest)) + ((PackedPair555::extractR(color)) * m_m1)) & 0xff00ff00) >> 8);
+            b = ((((PackedPair555::alignBForHalfBlend(*pdest)) + ((PackedPair555::extractB(color)) * m_m2)) & 0xff00ff00) >> 8);
+            g = ((((PackedPair555::alignGForHalfBlend(*pdest)) + ((PackedPair555::extractG(color)) * m_m3)) & 0xff00ff00) >> 8);
         } else if (m_globalTextABR == GPU::BlendFunction::FullBackAndFullFront) {
-            r = (X32COL1(*pdest)) + (((((X32COL1(color))) * m_m1) & 0xff80ff80) >> 7);
-            b = (X32COL2(*pdest)) + (((((X32COL2(color))) * m_m2) & 0xff80ff80) >> 7);
-            g = (X32COL3(*pdest)) + (((((X32COL3(color))) * m_m3) & 0xff80ff80) >> 7);
+            r = (PackedPair555::extractR(*pdest)) + (((((PackedPair555::extractR(color))) * m_m1) & 0xff80ff80) >> 7);
+            b = (PackedPair555::extractB(*pdest)) + (((((PackedPair555::extractB(color))) * m_m2) & 0xff80ff80) >> 7);
+            g = (PackedPair555::extractG(*pdest)) + (((((PackedPair555::extractG(color))) * m_m3) & 0xff80ff80) >> 7);
         } else if (m_globalTextABR == GPU::BlendFunction::FullBackSubFullFront) {
             int32_t t;
-            r = (((((X32COL1(color))) * m_m1) & 0xff80ff80) >> 7);
+            r = (((((PackedPair555::extractR(color))) * m_m1) & 0xff80ff80) >> 7);
             t = (*pdest & 0x001f0000) - (r & 0x003f0000);
             if (t & 0x80000000) t = 0;
             r = (*pdest & 0x0000001f) - (r & 0x0000003f);
             if (r & 0x80000000) r = 0;
             r |= t;
 
-            b = (((((X32COL2(color))) * m_m2) & 0xff80ff80) >> 7);
+            b = (((((PackedPair555::extractB(color))) * m_m2) & 0xff80ff80) >> 7);
             t = ((*pdest >> 5) & 0x001f0000) - (b & 0x003f0000);
             if (t & 0x80000000) t = 0;
             b = ((*pdest >> 5) & 0x0000001f) - (b & 0x0000003f);
             if (b & 0x80000000) b = 0;
             b |= t;
 
-            g = (((((X32COL3(color))) * m_m3) & 0xff80ff80) >> 7);
+            g = (((((PackedPair555::extractG(color))) * m_m3) & 0xff80ff80) >> 7);
             t = ((*pdest >> 10) & 0x001f0000) - (g & 0x003f0000);
             if (t & 0x80000000) t = 0;
             g = ((*pdest >> 10) & 0x0000001f) - (g & 0x0000003f);
             if (g & 0x80000000) g = 0;
             g |= t;
         } else {
-            r = (X32COL1(*pdest)) + (((((X32BCOL1(color)) >> 2) * m_m1) & 0xff80ff80) >> 7);
-            b = (X32COL2(*pdest)) + (((((X32BCOL2(color)) >> 2) * m_m2) & 0xff80ff80) >> 7);
-            g = (X32COL3(*pdest)) + (((((X32BCOL3(color)) >> 2) * m_m3) & 0xff80ff80) >> 7);
+            r = (PackedPair555::extractR(*pdest)) + (((((PackedPair555::extractRForQuarter(color)) >> 2) * m_m1) & 0xff80ff80) >> 7);
+            b = (PackedPair555::extractB(*pdest)) + (((((PackedPair555::extractBForQuarter(color)) >> 2) * m_m2) & 0xff80ff80) >> 7);
+            g = (PackedPair555::extractG(*pdest)) + (((((PackedPair555::extractGForQuarter(color)) >> 2) * m_m3) & 0xff80ff80) >> 7);
         }
 
         if (!(color & 0x8000)) {
-            r = (r & 0xffff0000) | ((((X32COL1(color)) * m_m1) & 0x0000ff80) >> 7);
-            b = (b & 0xffff0000) | ((((X32COL2(color)) * m_m2) & 0x0000ff80) >> 7);
-            g = (g & 0xffff0000) | ((((X32COL3(color)) * m_m3) & 0x0000ff80) >> 7);
+            r = (r & 0xffff0000) | ((((PackedPair555::extractR(color)) * m_m1) & 0x0000ff80) >> 7);
+            b = (b & 0xffff0000) | ((((PackedPair555::extractB(color)) * m_m2) & 0x0000ff80) >> 7);
+            g = (g & 0xffff0000) | ((((PackedPair555::extractG(color)) * m_m3) & 0x0000ff80) >> 7);
         }
         if (!(color & 0x80000000)) {
-            r = (r & 0xffff) | ((((X32COL1(color)) * m_m1) & 0xFF800000) >> 7);
-            b = (b & 0xffff) | ((((X32COL2(color)) * m_m2) & 0xFF800000) >> 7);
-            g = (g & 0xffff) | ((((X32COL3(color)) * m_m3) & 0xFF800000) >> 7);
+            r = (r & 0xffff) | ((((PackedPair555::extractR(color)) * m_m1) & 0xFF800000) >> 7);
+            b = (b & 0xffff) | ((((PackedPair555::extractB(color)) * m_m2) & 0xFF800000) >> 7);
+            g = (g & 0xffff) | ((((PackedPair555::extractG(color)) * m_m3) & 0xFF800000) >> 7);
         }
 
     } else {
-        r = (((X32COL1(color)) * m_m1) & 0xff80ff80) >> 7;
-        b = (((X32COL2(color)) * m_m2) & 0xff80ff80) >> 7;
-        g = (((X32COL3(color)) * m_m3) & 0xff80ff80) >> 7;
+        r = (((PackedPair555::extractR(color)) * m_m1) & 0xff80ff80) >> 7;
+        b = (((PackedPair555::extractB(color)) * m_m2) & 0xff80ff80) >> 7;
+        g = (((PackedPair555::extractG(color)) * m_m3) & 0xff80ff80) >> 7;
     }
 
     if (r & 0x7fe00000) r = 0x1f0000 | (r & 0xffff);
@@ -593,7 +575,7 @@ void PCSX::SoftGPU::SoftRenderer::getTextureTransColShade32(uint32_t *pdest, uin
     if (m_checkMask) {
         uint32_t ma = *pdest;
 
-        *pdest = (X32PSXCOL(r, g, b)) | l;
+        *pdest = (PackedPair555::packBGR(r, b, g)) | l;
 
         if ((color & 0xffff) == 0) *pdest = (ma & 0xffff) | (*pdest & 0xffff0000);
         if ((color & 0xffff0000) == 0) *pdest = (ma & 0xffff0000) | (*pdest & 0xffff);
@@ -603,15 +585,15 @@ void PCSX::SoftGPU::SoftRenderer::getTextureTransColShade32(uint32_t *pdest, uin
         return;
     }
     if ((color & 0xffff) == 0) {
-        *pdest = (*pdest & 0xffff) | (((X32PSXCOL(r, g, b)) | l) & 0xffff0000);
+        *pdest = (*pdest & 0xffff) | (((PackedPair555::packBGR(r, b, g)) | l) & 0xffff0000);
         return;
     }
     if ((color & 0xffff0000) == 0) {
-        *pdest = (*pdest & 0xffff0000) | (((X32PSXCOL(r, g, b)) | l) & 0xffff);
+        *pdest = (*pdest & 0xffff0000) | (((PackedPair555::packBGR(r, b, g)) | l) & 0xffff);
         return;
     }
 
-    *pdest = (X32PSXCOL(r, g, b)) | l;
+    *pdest = (PackedPair555::packBGR(r, b, g)) | l;
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -621,9 +603,9 @@ void PCSX::SoftGPU::SoftRenderer::getTextureTransColShade32Solid(uint32_t *pdest
 
     if (color == 0) return;
 
-    r = (((X32COL1(color)) * m_m1) & 0xff80ff80) >> 7;
-    b = (((X32COL2(color)) * m_m2) & 0xff80ff80) >> 7;
-    g = (((X32COL3(color)) * m_m3) & 0xff80ff80) >> 7;
+    r = (((PackedPair555::extractR(color)) * m_m1) & 0xff80ff80) >> 7;
+    b = (((PackedPair555::extractB(color)) * m_m2) & 0xff80ff80) >> 7;
+    g = (((PackedPair555::extractG(color)) * m_m3) & 0xff80ff80) >> 7;
 
     if (r & 0x7fe00000) r = 0x1f0000 | (r & 0xffff);
     if (r & 0x7fe0) r = 0x1f | (r & 0xffff0000);
@@ -633,15 +615,15 @@ void PCSX::SoftGPU::SoftRenderer::getTextureTransColShade32Solid(uint32_t *pdest
     if (g & 0x7fe0) g = 0x1f | (g & 0xffff0000);
 
     if ((color & 0xffff) == 0) {
-        *pdest = (*pdest & 0xffff) | (((X32PSXCOL(r, g, b)) | m_setMask32 | (color & 0x80008000)) & 0xffff0000);
+        *pdest = (*pdest & 0xffff) | (((PackedPair555::packBGR(r, b, g)) | m_setMask32 | (color & 0x80008000)) & 0xffff0000);
         return;
     }
     if ((color & 0xffff0000) == 0) {
-        *pdest = (*pdest & 0xffff0000) | (((X32PSXCOL(r, g, b)) | m_setMask32 | (color & 0x80008000)) & 0xffff);
+        *pdest = (*pdest & 0xffff0000) | (((PackedPair555::packBGR(r, b, g)) | m_setMask32 | (color & 0x80008000)) & 0xffff);
         return;
     }
 
-    *pdest = (X32PSXCOL(r, g, b)) | m_setMask32 | (color & 0x80008000);
+    *pdest = (PackedPair555::packBGR(r, b, g)) | m_setMask32 | (color & 0x80008000);
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -653,56 +635,56 @@ void PCSX::SoftGPU::SoftRenderer::getTextureTransColG32Semi(uint32_t *pdest, uin
 
     if (m_drawSemiTrans && (color & 0x80008000)) {
         if (m_globalTextABR == GPU::BlendFunction::HalfBackAndHalfFront) {
-            r = ((((X32TCOL1(*pdest)) + ((X32COL1(color)) * m_m1)) & 0xff00ff00) >> 8);
-            b = ((((X32TCOL2(*pdest)) + ((X32COL2(color)) * m_m2)) & 0xff00ff00) >> 8);
-            g = ((((X32TCOL3(*pdest)) + ((X32COL3(color)) * m_m3)) & 0xff00ff00) >> 8);
+            r = ((((PackedPair555::alignRForHalfBlend(*pdest)) + ((PackedPair555::extractR(color)) * m_m1)) & 0xff00ff00) >> 8);
+            b = ((((PackedPair555::alignBForHalfBlend(*pdest)) + ((PackedPair555::extractB(color)) * m_m2)) & 0xff00ff00) >> 8);
+            g = ((((PackedPair555::alignGForHalfBlend(*pdest)) + ((PackedPair555::extractG(color)) * m_m3)) & 0xff00ff00) >> 8);
         } else if (m_globalTextABR == GPU::BlendFunction::FullBackAndFullFront) {
-            r = (X32COL1(*pdest)) + (((((X32COL1(color))) * m_m1) & 0xff80ff80) >> 7);
-            b = (X32COL2(*pdest)) + (((((X32COL2(color))) * m_m2) & 0xff80ff80) >> 7);
-            g = (X32COL3(*pdest)) + (((((X32COL3(color))) * m_m3) & 0xff80ff80) >> 7);
+            r = (PackedPair555::extractR(*pdest)) + (((((PackedPair555::extractR(color))) * m_m1) & 0xff80ff80) >> 7);
+            b = (PackedPair555::extractB(*pdest)) + (((((PackedPair555::extractB(color))) * m_m2) & 0xff80ff80) >> 7);
+            g = (PackedPair555::extractG(*pdest)) + (((((PackedPair555::extractG(color))) * m_m3) & 0xff80ff80) >> 7);
         } else if (m_globalTextABR == GPU::BlendFunction::FullBackSubFullFront) {
             int32_t t;
-            r = (((((X32COL1(color))) * m_m1) & 0xff80ff80) >> 7);
+            r = (((((PackedPair555::extractR(color))) * m_m1) & 0xff80ff80) >> 7);
             t = (*pdest & 0x001f0000) - (r & 0x003f0000);
             if (t & 0x80000000) t = 0;
             r = (*pdest & 0x0000001f) - (r & 0x0000003f);
             if (r & 0x80000000) r = 0;
             r |= t;
 
-            b = (((((X32COL2(color))) * m_m2) & 0xff80ff80) >> 7);
+            b = (((((PackedPair555::extractB(color))) * m_m2) & 0xff80ff80) >> 7);
             t = ((*pdest >> 5) & 0x001f0000) - (b & 0x003f0000);
             if (t & 0x80000000) t = 0;
             b = ((*pdest >> 5) & 0x0000001f) - (b & 0x0000003f);
             if (b & 0x80000000) b = 0;
             b |= t;
 
-            g = (((((X32COL3(color))) * m_m3) & 0xff80ff80) >> 7);
+            g = (((((PackedPair555::extractG(color))) * m_m3) & 0xff80ff80) >> 7);
             t = ((*pdest >> 10) & 0x001f0000) - (g & 0x003f0000);
             if (t & 0x80000000) t = 0;
             g = ((*pdest >> 10) & 0x0000001f) - (g & 0x0000003f);
             if (g & 0x80000000) g = 0;
             g |= t;
         } else {
-            r = (X32COL1(*pdest)) + (((((X32BCOL1(color)) >> 2) * m_m1) & 0xff80ff80) >> 7);
-            b = (X32COL2(*pdest)) + (((((X32BCOL2(color)) >> 2) * m_m2) & 0xff80ff80) >> 7);
-            g = (X32COL3(*pdest)) + (((((X32BCOL3(color)) >> 2) * m_m3) & 0xff80ff80) >> 7);
+            r = (PackedPair555::extractR(*pdest)) + (((((PackedPair555::extractRForQuarter(color)) >> 2) * m_m1) & 0xff80ff80) >> 7);
+            b = (PackedPair555::extractB(*pdest)) + (((((PackedPair555::extractBForQuarter(color)) >> 2) * m_m2) & 0xff80ff80) >> 7);
+            g = (PackedPair555::extractG(*pdest)) + (((((PackedPair555::extractGForQuarter(color)) >> 2) * m_m3) & 0xff80ff80) >> 7);
         }
 
         if (!(color & 0x8000)) {
-            r = (r & 0xffff0000) | ((((X32COL1(color)) * m_m1) & 0x0000ff80) >> 7);
-            b = (b & 0xffff0000) | ((((X32COL2(color)) * m_m2) & 0x0000ff80) >> 7);
-            g = (g & 0xffff0000) | ((((X32COL3(color)) * m_m3) & 0x0000ff80) >> 7);
+            r = (r & 0xffff0000) | ((((PackedPair555::extractR(color)) * m_m1) & 0x0000ff80) >> 7);
+            b = (b & 0xffff0000) | ((((PackedPair555::extractB(color)) * m_m2) & 0x0000ff80) >> 7);
+            g = (g & 0xffff0000) | ((((PackedPair555::extractG(color)) * m_m3) & 0x0000ff80) >> 7);
         }
         if (!(color & 0x80000000)) {
-            r = (r & 0xffff) | ((((X32COL1(color)) * m_m1) & 0xFF800000) >> 7);
-            b = (b & 0xffff) | ((((X32COL2(color)) * m_m2) & 0xFF800000) >> 7);
-            g = (g & 0xffff) | ((((X32COL3(color)) * m_m3) & 0xFF800000) >> 7);
+            r = (r & 0xffff) | ((((PackedPair555::extractR(color)) * m_m1) & 0xFF800000) >> 7);
+            b = (b & 0xffff) | ((((PackedPair555::extractB(color)) * m_m2) & 0xFF800000) >> 7);
+            g = (g & 0xffff) | ((((PackedPair555::extractG(color)) * m_m3) & 0xFF800000) >> 7);
         }
 
     } else {
-        r = (((X32COL1(color)) * m_m1) & 0xff80ff80) >> 7;
-        b = (((X32COL2(color)) * m_m2) & 0xff80ff80) >> 7;
-        g = (((X32COL3(color)) * m_m3) & 0xff80ff80) >> 7;
+        r = (((PackedPair555::extractR(color)) * m_m1) & 0xff80ff80) >> 7;
+        b = (((PackedPair555::extractB(color)) * m_m2) & 0xff80ff80) >> 7;
+        g = (((PackedPair555::extractG(color)) * m_m3) & 0xff80ff80) >> 7;
     }
 
     if (r & 0x7fe00000) r = 0x1f0000 | (r & 0xffff);
@@ -715,7 +697,7 @@ void PCSX::SoftGPU::SoftRenderer::getTextureTransColG32Semi(uint32_t *pdest, uin
     if (m_checkMask) {
         uint32_t ma = *pdest;
 
-        *pdest = (X32PSXCOL(r, g, b)) | m_setMask32 | (color & 0x80008000);
+        *pdest = (PackedPair555::packBGR(r, b, g)) | m_setMask32 | (color & 0x80008000);
 
         if ((color & 0xffff) == 0) *pdest = (ma & 0xffff) | (*pdest & 0xffff0000);
         if ((color & 0xffff0000) == 0) *pdest = (ma & 0xffff0000) | (*pdest & 0xffff);
@@ -725,15 +707,15 @@ void PCSX::SoftGPU::SoftRenderer::getTextureTransColG32Semi(uint32_t *pdest, uin
         return;
     }
     if ((color & 0xffff) == 0) {
-        *pdest = (*pdest & 0xffff) | (((X32PSXCOL(r, g, b)) | m_setMask32 | (color & 0x80008000)) & 0xffff0000);
+        *pdest = (*pdest & 0xffff) | (((PackedPair555::packBGR(r, b, g)) | m_setMask32 | (color & 0x80008000)) & 0xffff0000);
         return;
     }
     if ((color & 0xffff0000) == 0) {
-        *pdest = (*pdest & 0xffff0000) | (((X32PSXCOL(r, g, b)) | m_setMask32 | (color & 0x80008000)) & 0xffff);
+        *pdest = (*pdest & 0xffff0000) | (((PackedPair555::packBGR(r, b, g)) | m_setMask32 | (color & 0x80008000)) & 0xffff);
         return;
     }
 
-    *pdest = (X32PSXCOL(r, g, b)) | m_setMask32 | (color & 0x80008000);
+    *pdest = (PackedPair555::packBGR(r, b, g)) | m_setMask32 | (color & 0x80008000);
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -877,9 +859,9 @@ inline void PCSX::SoftGPU::SoftRenderer::getTextureTransColShadeX32Solid(uint32_
 
     if (color == 0) return;
 
-    r = (((X32COL1(color)) * m1) & 0xff80ff80) >> 7;
-    b = (((X32COL2(color)) * m2) & 0xff80ff80) >> 7;
-    g = (((X32COL3(color)) * m3) & 0xff80ff80) >> 7;
+    r = (((PackedPair555::extractR(color)) * m1) & 0xff80ff80) >> 7;
+    b = (((PackedPair555::extractB(color)) * m2) & 0xff80ff80) >> 7;
+    g = (((PackedPair555::extractG(color)) * m3) & 0xff80ff80) >> 7;
 
     if (r & 0x7fe00000) r = 0x1f0000 | (r & 0xffff);
     if (r & 0x7fe0) r = 0x1f | (r & 0xffff0000);
@@ -889,15 +871,15 @@ inline void PCSX::SoftGPU::SoftRenderer::getTextureTransColShadeX32Solid(uint32_
     if (g & 0x7fe0) g = 0x1f | (g & 0xffff0000);
 
     if ((color & 0xffff) == 0) {
-        *pdest = (*pdest & 0xffff) | (((X32PSXCOL(r, g, b)) | m_setMask32 | (color & 0x80008000)) & 0xffff0000);
+        *pdest = (*pdest & 0xffff) | (((PackedPair555::packBGR(r, b, g)) | m_setMask32 | (color & 0x80008000)) & 0xffff0000);
         return;
     }
     if ((color & 0xffff0000) == 0) {
-        *pdest = (*pdest & 0xffff0000) | (((X32PSXCOL(r, g, b)) | m_setMask32 | (color & 0x80008000)) & 0xffff);
+        *pdest = (*pdest & 0xffff0000) | (((PackedPair555::packBGR(r, b, g)) | m_setMask32 | (color & 0x80008000)) & 0xffff);
         return;
     }
 
-    *pdest = (X32PSXCOL(r, g, b)) | m_setMask32 | (color & 0x80008000);
+    *pdest = (PackedPair555::packBGR(r, b, g)) | m_setMask32 | (color & 0x80008000);
 }
 
 ////////////////////////////////////////////////////////////////////////

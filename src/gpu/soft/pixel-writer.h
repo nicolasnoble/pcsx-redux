@@ -84,6 +84,31 @@ struct PackedPair555 {
     static inline uint32_t preserveHighHalf(uint32_t dest, uint32_t val) {
         return (val & 0xffff) | (dest & 0xffff0000);
     }
+
+    // Right-aligned channel extraction from a packed pair. Each helper
+    // returns a value whose two halfwords each carry the corresponding
+    // channel in bits 0..4. Replaces the legacy X32COL1/2/3 macros.
+    static inline uint32_t extractR(uint32_t c) { return c & 0x001f001f; }
+    static inline uint32_t extractB(uint32_t c) { return (c >> 5) & 0x001f001f; }
+    static inline uint32_t extractG(uint32_t c) { return (c >> 10) & 0x001f001f; }
+
+    // Right-aligned channel extract with bits 0..1 cleared per halfword.
+    // The HalfBackAndQuarter blend computes `(F >> 2)`; clearing the
+    // low two bits up front keeps the shift lossless. Replaces the
+    // legacy X32BCOL1/2/3 macros.
+    static inline uint32_t extractRForQuarter(uint32_t c) { return c & 0x001c001c; }
+    static inline uint32_t extractBForQuarter(uint32_t c) { return (c >> 5) & 0x001c001c; }
+    static inline uint32_t extractGForQuarter(uint32_t c) { return (c >> 10) & 0x001c001c; }
+
+    // Pre-aligned native-position channel for the HalfBackAndHalfFront
+    // carry-preserving blend reformulation. Each channel is shifted so
+    // the result lands at bits 7..11 of each halfword - the common
+    // position where the modulated source can be added in without
+    // losing the bit-0 carry that the historical `(B|F) & 0x7bde`
+    // shortcut dropped. Replaces the legacy X32TCOL1/2/3 macros.
+    static inline uint32_t alignRForHalfBlend(uint32_t c) { return (c & 0x001f001f) << 7; }
+    static inline uint32_t alignBForHalfBlend(uint32_t c) { return (c & 0x03e003e0) << 2; }
+    static inline uint32_t alignGForHalfBlend(uint32_t c) { return (c & 0x7c007c00) >> 3; }
 };
 
 // Native-position channel traits for the BGR555 layout.
