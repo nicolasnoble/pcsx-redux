@@ -1822,13 +1822,14 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly4TEx4(int16_t x1, int16_t y1, int16_t 
             xmax = (m_rightX >> 16);
 
             if (xmax >= xmin) {
-                posX = m_leftU;
-                posY = m_leftV;
-
-                num = (xmax - xmin);
+                num = m_rightX - m_leftX;
                 if (num == 0) num = 1;
-                difX = (m_rightU - posX) / num;
-                difY = (m_rightV - posY) / num;
+                difX = (int64_t)(m_rightU - m_leftU) * 65536 / num;
+                difY = (int64_t)(m_rightV - m_leftV) * 65536 / num;
+                posX = m_leftU +
+                       (int32_t)(((int64_t)(((int32_t)xmin << 16) + 0x8000 - m_leftX) * difX) >> 16);
+                posY = m_leftV +
+                       (int32_t)(((int64_t)(((int32_t)xmin << 16) + 0x8000 - m_leftX) * difY) >> 16);
                 difX2 = difX << 1;
                 difY2 = difY << 1;
 
@@ -1873,13 +1874,14 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly4TEx4(int16_t x1, int16_t y1, int16_t 
         xmax = (m_rightX >> 16);
 
         if (xmax >= xmin) {
-            posX = m_leftU;
-            posY = m_leftV;
-
-            num = (xmax - xmin);
+            num = m_rightX - m_leftX;
             if (num == 0) num = 1;
-            difX = (m_rightU - posX) / num;
-            difY = (m_rightV - posY) / num;
+            difX = (int64_t)(m_rightU - m_leftU) * 65536 / num;
+            difY = (int64_t)(m_rightV - m_leftV) * 65536 / num;
+            posX = m_leftU +
+                   (int32_t)(((int64_t)(((int32_t)xmin << 16) + 0x8000 - m_leftX) * difX) >> 16);
+            posY = m_leftV +
+                   (int32_t)(((int64_t)(((int32_t)xmin << 16) + 0x8000 - m_leftX) * difY) >> 16);
             difX2 = difX << 1;
             difY2 = difY << 1;
 
@@ -1965,13 +1967,14 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly4TEx4_S(int16_t x1, int16_t y1, int16_
             xmax = (m_rightX >> 16);
 
             if (xmax >= xmin) {
-                posX = m_leftU;
-                posY = m_leftV;
-
-                num = (xmax - xmin);
+                num = m_rightX - m_leftX;
                 if (num == 0) num = 1;
-                difX = (m_rightU - posX) / num;
-                difY = (m_rightV - posY) / num;
+                difX = (int64_t)(m_rightU - m_leftU) * 65536 / num;
+                difY = (int64_t)(m_rightV - m_leftV) * 65536 / num;
+                posX = m_leftU +
+                       (int32_t)(((int64_t)(((int32_t)xmin << 16) + 0x8000 - m_leftX) * difX) >> 16);
+                posY = m_leftV +
+                       (int32_t)(((int64_t)(((int32_t)xmin << 16) + 0x8000 - m_leftX) * difY) >> 16);
                 difX2 = difX << 1;
                 difY2 = difY << 1;
 
@@ -2016,13 +2019,14 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly4TEx4_S(int16_t x1, int16_t y1, int16_
         xmax = (m_rightX >> 16);
 
         if (xmax >= xmin) {
-            posX = m_leftU;
-            posY = m_leftV;
-
-            num = (xmax - xmin);
+            num = m_rightX - m_leftX;
             if (num == 0) num = 1;
-            difX = (m_rightU - posX) / num;
-            difY = (m_rightV - posY) / num;
+            difX = (int64_t)(m_rightU - m_leftU) * 65536 / num;
+            difY = (int64_t)(m_rightV - m_leftV) * 65536 / num;
+            posX = m_leftU +
+                   (int32_t)(((int64_t)(((int32_t)xmin << 16) + 0x8000 - m_leftX) * difX) >> 16);
+            posY = m_leftV +
+                   (int32_t)(((int64_t)(((int32_t)xmin << 16) + 0x8000 - m_leftX) * difY) >> 16);
             difX2 = difX << 1;
             difY2 = difY << 1;
 
@@ -2108,13 +2112,14 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly4TEx8(int16_t x1, int16_t y1, int16_t 
             xmax = (m_rightX >> 16);
 
             if (xmax >= xmin) {
-                posX = m_leftU;
-                posY = m_leftV;
-
-                num = (xmax - xmin);
+                num = m_rightX - m_leftX;
                 if (num == 0) num = 1;
-                difX = (m_rightU - posX) / num;
-                difY = (m_rightV - posY) / num;
+                difX = (int64_t)(m_rightU - m_leftU) * 65536 / num;
+                difY = (int64_t)(m_rightV - m_leftV) * 65536 / num;
+                posX = m_leftU +
+                       (int32_t)(((int64_t)(((int32_t)xmin << 16) + 0x8000 - m_leftX) * difX) >> 16);
+                posY = m_leftV +
+                       (int32_t)(((int64_t)(((int32_t)xmin << 16) + 0x8000 - m_leftX) * difY) >> 16);
                 difX2 = difX << 1;
                 difY2 = difY << 1;
 
@@ -2153,13 +2158,14 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly4TEx8(int16_t x1, int16_t y1, int16_t 
         xmax = (m_rightX >> 16);
 
         if (xmax >= xmin) {
-            posX = m_leftU;
-            posY = m_leftV;
-
-            num = (xmax - xmin);
+            num = m_rightX - m_leftX;
             if (num == 0) num = 1;
-            difX = (m_rightU - posX) / num;
-            difY = (m_rightV - posY) / num;
+            difX = (int64_t)(m_rightU - m_leftU) * 65536 / num;
+            difY = (int64_t)(m_rightV - m_leftV) * 65536 / num;
+            posX = m_leftU +
+                   (int32_t)(((int64_t)(((int32_t)xmin << 16) + 0x8000 - m_leftX) * difX) >> 16);
+            posY = m_leftV +
+                   (int32_t)(((int64_t)(((int32_t)xmin << 16) + 0x8000 - m_leftX) * difY) >> 16);
             difX2 = difX << 1;
             difY2 = difY << 1;
 
@@ -2240,13 +2246,14 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly4TEx8_S(int16_t x1, int16_t y1, int16_
             xmax = (m_rightX >> 16);
 
             if (xmax >= xmin) {
-                posX = m_leftU;
-                posY = m_leftV;
-
-                num = (xmax - xmin);
+                num = m_rightX - m_leftX;
                 if (num == 0) num = 1;
-                difX = (m_rightU - posX) / num;
-                difY = (m_rightV - posY) / num;
+                difX = (int64_t)(m_rightU - m_leftU) * 65536 / num;
+                difY = (int64_t)(m_rightV - m_leftV) * 65536 / num;
+                posX = m_leftU +
+                       (int32_t)(((int64_t)(((int32_t)xmin << 16) + 0x8000 - m_leftX) * difX) >> 16);
+                posY = m_leftV +
+                       (int32_t)(((int64_t)(((int32_t)xmin << 16) + 0x8000 - m_leftX) * difY) >> 16);
                 difX2 = difX << 1;
                 difY2 = difY << 1;
 
@@ -2285,13 +2292,14 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly4TEx8_S(int16_t x1, int16_t y1, int16_
         xmax = (m_rightX >> 16);
 
         if (xmax >= xmin) {
-            posX = m_leftU;
-            posY = m_leftV;
-
-            num = (xmax - xmin);
+            num = m_rightX - m_leftX;
             if (num == 0) num = 1;
-            difX = (m_rightU - posX) / num;
-            difY = (m_rightV - posY) / num;
+            difX = (int64_t)(m_rightU - m_leftU) * 65536 / num;
+            difY = (int64_t)(m_rightV - m_leftV) * 65536 / num;
+            posX = m_leftU +
+                   (int32_t)(((int64_t)(((int32_t)xmin << 16) + 0x8000 - m_leftX) * difX) >> 16);
+            posY = m_leftV +
+                   (int32_t)(((int64_t)(((int32_t)xmin << 16) + 0x8000 - m_leftX) * difY) >> 16);
             difX2 = difX << 1;
             difY2 = difY << 1;
 
@@ -2368,13 +2376,14 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly4TD(int16_t x1, int16_t y1, int16_t x2
             xmax = (m_rightX >> 16);
 
             if (xmax >= xmin) {
-                posX = m_leftU;
-                posY = m_leftV;
-
-                num = (xmax - xmin);
+                num = m_rightX - m_leftX;
                 if (num == 0) num = 1;
-                difX = (m_rightU - posX) / num;
-                difY = (m_rightV - posY) / num;
+                difX = (int64_t)(m_rightU - m_leftU) * 65536 / num;
+                difY = (int64_t)(m_rightV - m_leftV) * 65536 / num;
+                posX = m_leftU +
+                       (int32_t)(((int64_t)(((int32_t)xmin << 16) + 0x8000 - m_leftX) * difX) >> 16);
+                posY = m_leftV +
+                       (int32_t)(((int64_t)(((int32_t)xmin << 16) + 0x8000 - m_leftX) * difY) >> 16);
                 difX2 = difX << 1;
                 difY2 = difY << 1;
 
@@ -2417,13 +2426,14 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly4TD(int16_t x1, int16_t y1, int16_t x2
         xmax = (m_rightX >> 16);
 
         if (xmax >= xmin) {
-            posX = m_leftU;
-            posY = m_leftV;
-
-            num = (xmax - xmin);
+            num = m_rightX - m_leftX;
             if (num == 0) num = 1;
-            difX = (m_rightU - posX) / num;
-            difY = (m_rightV - posY) / num;
+            difX = (int64_t)(m_rightU - m_leftU) * 65536 / num;
+            difY = (int64_t)(m_rightV - m_leftV) * 65536 / num;
+            posX = m_leftU +
+                   (int32_t)(((int64_t)(((int32_t)xmin << 16) + 0x8000 - m_leftX) * difX) >> 16);
+            posY = m_leftV +
+                   (int32_t)(((int64_t)(((int32_t)xmin << 16) + 0x8000 - m_leftX) * difY) >> 16);
             difX2 = difX << 1;
             difY2 = difY << 1;
 
@@ -2502,13 +2512,14 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly4TD_S(int16_t x1, int16_t y1, int16_t 
             xmax = (m_rightX >> 16);
 
             if (xmax >= xmin) {
-                posX = m_leftU;
-                posY = m_leftV;
-
-                num = (xmax - xmin);
+                num = m_rightX - m_leftX;
                 if (num == 0) num = 1;
-                difX = (m_rightU - posX) / num;
-                difY = (m_rightV - posY) / num;
+                difX = (int64_t)(m_rightU - m_leftU) * 65536 / num;
+                difY = (int64_t)(m_rightV - m_leftV) * 65536 / num;
+                posX = m_leftU +
+                       (int32_t)(((int64_t)(((int32_t)xmin << 16) + 0x8000 - m_leftX) * difX) >> 16);
+                posY = m_leftV +
+                       (int32_t)(((int64_t)(((int32_t)xmin << 16) + 0x8000 - m_leftX) * difY) >> 16);
                 difX2 = difX << 1;
                 difY2 = difY << 1;
 
@@ -2551,13 +2562,14 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly4TD_S(int16_t x1, int16_t y1, int16_t 
         xmax = (m_rightX >> 16);
 
         if (xmax >= xmin) {
-            posX = m_leftU;
-            posY = m_leftV;
-
-            num = (xmax - xmin);
+            num = m_rightX - m_leftX;
             if (num == 0) num = 1;
-            difX = (m_rightU - posX) / num;
-            difY = (m_rightV - posY) / num;
+            difX = (int64_t)(m_rightU - m_leftU) * 65536 / num;
+            difY = (int64_t)(m_rightV - m_leftV) * 65536 / num;
+            posX = m_leftU +
+                   (int32_t)(((int64_t)(((int32_t)xmin << 16) + 0x8000 - m_leftX) * difX) >> 16);
+            posY = m_leftV +
+                   (int32_t)(((int64_t)(((int32_t)xmin << 16) + 0x8000 - m_leftX) * difY) >> 16);
             difX2 = difX << 1;
             difY2 = difY << 1;
 
