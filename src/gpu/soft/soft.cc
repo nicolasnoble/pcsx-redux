@@ -1510,12 +1510,9 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3Fi(int16_t x1, int16_t y1, int16_t x2
     const auto drawW = m_drawW;
     const auto drawH = m_drawH;
 
-    if (x1 > drawW && x2 > drawW && x3 > drawW) return;
-    if (y1 > drawH && y2 > drawH && y3 > drawH) return;
-    if (x1 < drawX && x2 < drawX && x3 < drawX) return;
-    if (y1 < drawY && y2 < drawY && y3 < drawY) return;
-    if (drawY >= drawH) return;
-    if (drawX >= drawW) return;
+    const int16_t rejXs[3] = {x1, x2, x3};
+    const int16_t rejYs[3] = {y1, y2, y3};
+    if (primitiveOutsideDrawArea(rejXs, rejYs)) return;
 
     if (!setupSections3<false, false>(TriInput{{x1, x2, x3}, {y1, y2, y3}})) return;
 
@@ -1603,12 +1600,9 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3T(int16_t x1, int16_t y1, int16_t x2,
     const auto drawW = m_drawW;
     const auto drawH = m_drawH;
 
-    if (x1 > drawW && x2 > drawW && x3 > drawW) return;
-    if (y1 > drawH && y2 > drawH && y3 > drawH) return;
-    if (x1 < drawX && x2 < drawX && x3 < drawX) return;
-    if (y1 < drawY && y2 < drawY && y3 < drawY) return;
-    if (drawY >= drawH) return;
-    if (drawX >= drawW) return;
+    const int16_t rejXs[3] = {x1, x2, x3};
+    const int16_t rejYs[3] = {y1, y2, y3};
+    if (primitiveOutsideDrawArea(rejXs, rejYs)) return;
 
     if (!setupSections3<true, false>(TriInput{{x1, x2, x3}, {y1, y2, y3}, {tx1, tx2, tx3}, {ty1, ty2, ty3}})) return;
 
@@ -1753,12 +1747,9 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly4T(int16_t x1, int16_t y1, int16_t x2,
     const auto drawH = m_drawH;
     const auto drawW = m_drawW;
 
-    if (x1 > drawW && x2 > drawW && x3 > drawW && x4 > drawW) return;
-    if (y1 > drawH && y2 > drawH && y3 > drawH && y4 > drawH) return;
-    if (x1 < drawX && x2 < drawX && x3 < drawX && x4 < drawX) return;
-    if (y1 < drawY && y2 < drawY && y3 < drawY && y4 < drawY) return;
-    if (drawY >= drawH) return;
-    if (drawX >= drawW) return;
+    const int16_t rejXs[4] = {x1, x2, x3, x4};
+    const int16_t rejYs[4] = {y1, y2, y3, y4};
+    if (primitiveOutsideDrawArea(rejXs, rejYs)) return;
 
     if (!setupSectionsFlatTextured4(x1, y1, x2, y2, x3, y3, x4, y4, tx1, ty1, tx2, ty2, tx3, ty3, tx4, ty4)) return;
 
@@ -1902,12 +1893,9 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3Gi(int16_t x1, int16_t y1, int16_t x2
     const auto drawH = m_drawH;
     const auto drawW = m_drawW;
 
-    if (x1 > drawW && x2 > drawW && x3 > drawW) return;
-    if (y1 > drawH && y2 > drawH && y3 > drawH) return;
-    if (x1 < drawX && x2 < drawX && x3 < drawX) return;
-    if (y1 < drawY && y2 < drawY && y3 < drawY) return;
-    if (drawY >= drawH) return;
-    if (drawX >= drawW) return;
+    const int16_t rejXs[3] = {x1, x2, x3};
+    const int16_t rejYs[3] = {y1, y2, y3};
+    if (primitiveOutsideDrawArea(rejXs, rejYs)) return;
 
     if (!setupSections3<false, true>(TriInput{{x1, x2, x3}, {y1, y2, y3}, {}, {}, {rgb1, rgb2, rgb3}})) return;
 
@@ -2098,12 +2086,9 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3TG(int16_t x1, int16_t y1, int16_t x2
     const auto drawH = m_drawH;
     const auto drawW = m_drawW;
 
-    if (x1 > drawW && x2 > drawW && x3 > drawW) return;
-    if (y1 > drawH && y2 > drawH && y3 > drawH) return;
-    if (x1 < drawX && x2 < drawX && x3 < drawX) return;
-    if (y1 < drawY && y2 < drawY && y3 < drawY) return;
-    if (drawY >= drawH) return;
-    if (drawX >= drawW) return;
+    const int16_t rejXs[3] = {x1, x2, x3};
+    const int16_t rejYs[3] = {y1, y2, y3};
+    if (primitiveOutsideDrawArea(rejXs, rejYs)) return;
 
     if (!setupSections3<true, true>(
             TriInput{{x1, x2, x3}, {y1, y2, y3}, {tx1, tx2, tx3}, {ty1, ty2, ty3}, {col1, col2, col3}}))

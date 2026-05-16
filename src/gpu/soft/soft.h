@@ -224,6 +224,28 @@ struct SoftRenderer {
     void disableCachedDithering();
 
   private:
+    // Primitive draw-area rejection. Returns true when the primitive should
+    // be skipped: either every vertex sits past one edge of the draw rect
+    // (so nothing inside the rect can be covered), or the rect itself is
+    // degenerate. The caller passes parallel arrays of the primitive's
+    // vertex x and y coordinates; N is the vertex count (3 for triangles,
+    // 4 for quads). The comparisons use the renderer's m_drawX/Y/W/H rect
+    // members directly - the per-primitive bodies that captured these into
+    // locals are unaffected because the compiler folds the loads back.
+    template <size_t N>
+    inline bool primitiveOutsideDrawArea(const int16_t (&xs)[N], const int16_t (&ys)[N]) const {
+        if (m_drawY >= m_drawH) return true;
+        if (m_drawX >= m_drawW) return true;
+        bool allR = true, allD = true, allL = true, allA = true;
+        for (size_t i = 0; i < N; i++) {
+            if (xs[i] <= m_drawW) allR = false;
+            if (ys[i] <= m_drawH) allD = false;
+            if (xs[i] >= m_drawX) allL = false;
+            if (ys[i] >= m_drawY) allA = false;
+        }
+        return allR || allD || allL || allA;
+    }
+
     // RasterState builders: capture the renderer's stable per-primitive state
     // into a value type so the inner loops read from a single struct instead
     // of repeatedly dereferencing renderer members.
