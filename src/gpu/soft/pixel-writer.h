@@ -259,6 +259,60 @@ struct PixelWriter<true, GPU::Shading::Flat, WriteMode::Default> {
     }
 };
 
+// Textured, gouraud-shaded, Solid (!checkMask && !drawSemiTrans && !ditherMode).
+//
+// Matches the legacy `getTextureTransColShadeXSolid` (scalar) and
+// `getTextureTransColShadeX32Solid` (pair) member helpers bit for bit.
+// The "X" suffix in the legacy names is the family marker for "modulation
+// passed per-call as int16_t m1/m2/m3 args" rather than from
+// RasterState.m1/m2/m3 - that's what makes this the Gouraud specialization.
+//
+// The packed entry takes m1/m2/m3 as int16_t parameters; callers pack the
+// gouraud-interpolated integer parts of two consecutive pixels via
+// `(c >> 16) | ((c + dif) & 0xff0000)`. Sign-extension during the int16_t
+// promotion drops the high half, so both pixels of a packed pair end up
+// using the first pixel's modulation - a documented PS1-emulation
+// approximation also present in the legacy helpers.
+template <>
+struct PixelWriter<true, GPU::Shading::Gouraud, WriteMode::Solid> {
+    static inline void scalar(const RasterState &rs, uint16_t *pdest, uint16_t color, int16_t m1, int16_t m2,
+                              int16_t m3) {
+        if (color == 0) return;
+        int32_t r = ((color & 0x1f) * m1) >> 7;
+        int32_t b = ((color & 0x3e0) * m2) >> 7;
+        int32_t g = ((color & 0x7c00) * m3) >> 7;
+        if (r & 0x7fffffe0) r = 0x1f;
+        if (b & 0x7ffffc00) b = 0x3e0;
+        if (g & 0x7fff8000) g = 0x7c00;
+        *pdest = ((g & 0x7c00) | (b & 0x3e0) | (r & 0x1f)) | rs.setMask16 | (color & 0x8000);
+    }
+
+    static inline void packed(const RasterState &rs, uint32_t *pdest, uint32_t color, int16_t m1, int16_t m2,
+                              int16_t m3) {
+        if (color == 0) return;
+        int32_t r = (((color & 0x001f001f) * m1) & 0xff80ff80) >> 7;
+        int32_t b = ((((color >> 5) & 0x001f001f) * m2) & 0xff80ff80) >> 7;
+        int32_t g = ((((color >> 10) & 0x001f001f) * m3) & 0xff80ff80) >> 7;
+        if (r & 0x7fe00000) r = 0x1f0000 | (r & 0xffff);
+        if (r & 0x7fe0) r = 0x1f | (r & 0xffff0000);
+        if (b & 0x7fe00000) b = 0x1f0000 | (b & 0xffff);
+        if (b & 0x7fe0) b = 0x1f | (b & 0xffff0000);
+        if (g & 0x7fe00000) g = 0x1f0000 | (g & 0xffff);
+        if (g & 0x7fe0) g = 0x1f | (g & 0xffff0000);
+        const uint32_t flags = rs.setMask32 | (color & 0x80008000);
+        const uint32_t packed_rgb = (g << 10) | (b << 5) | r;
+        if ((color & 0xffff) == 0) {
+            *pdest = (*pdest & 0xffff) | ((packed_rgb | flags) & 0xffff0000);
+            return;
+        }
+        if ((color & 0xffff0000) == 0) {
+            *pdest = (*pdest & 0xffff0000) | ((packed_rgb | flags) & 0xffff);
+            return;
+        }
+        *pdest = packed_rgb | flags;
+    }
+};
+
 }  // namespace SoftGPU
 
 }  // namespace PCSX
