@@ -1728,10 +1728,13 @@ template void PCSX::SoftGPU::SoftRenderer::drawPoly3T<PCSX::SoftGPU::TexMode::Di
 // The fast path (!m_checkMask && !m_drawSemiTrans) is shared between
 // both SlowMode instantiations and uses PixelWriter<true, Flat, Solid>.
 //
-// Texture-window addressing here uses the legacy `.x0/.x1/.y0/.y1`
-// wrap representation (NOT Sampler<TexMode>'s bit-substitution).
-// Migrating sampler policy is the Phase D2 follow-up; preserving the
-// legacy wrap math here keeps D1 bit-exact against the harness.
+// Texture sampling routes through Sampler<TexMode>, which applies the
+// hardware-verified bit-substitution texture window
+// (`filtered = (raw & ~mask) | offset`, per the SCPH-5501
+// phase-15 characterisation). Phase D1 carried the legacy
+// `.x0/.x1/.y0/.y1` wrap math inline for bit-exact preservation; D2
+// (this body) deliberately swaps to the Sampler<TexMode> policy so
+// the 4-vert paths agree with the 3-vert template and the hardware.
 template <PCSX::SoftGPU::TexMode Tex, PCSX::SoftGPU::WriteMode SlowMode>
 void PCSX::SoftGPU::SoftRenderer::drawPoly4T(int16_t x1, int16_t y1, int16_t x2, int16_t y2, int16_t x3, int16_t y3,
                                              int16_t x4, int16_t y4, int16_t tx1, int16_t ty1, int16_t tx2,
@@ -1766,52 +1769,8 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly4T(int16_t x1, int16_t y1, int16_t x2,
     }
 
     RasterState rs = makeTexturedRasterState<Tex>(drawX, drawY, drawW, drawH, clX, clY);
-    const auto vram = m_vram;
-    const auto vram16 = m_vram16;
-    const auto maskX = m_textureWindow.x1 - 1;
-    const auto maskY = m_textureWindow.y1 - 1;
-    const auto globalTextAddrX = m_globalTextAddrX;
-    const auto globalTextAddrY = m_globalTextAddrY;
-    const auto textureWindow = m_textureWindow;
-
-    // Tex-specific address precomputation. The CLUT modes hoist the
-    // texture-page base and the texture-window y0/x0 contributions
-    // into a per-primitive YAdjust. Direct15 folds them inside every
-    // sample so there's nothing to precompute.
-    int32_t clutP = 0;
-    int32_t YAdjust = 0;
-    if constexpr (Tex == TexMode::Clut4) {
-        clutP = (clY << 10) + clX;
-        YAdjust = (globalTextAddrY << 11) + (globalTextAddrX << 1);
-        YAdjust += (textureWindow.y0 << 11) + (textureWindow.x0 >> 1);
-    } else if constexpr (Tex == TexMode::Clut8) {
-        clutP = (clY << 10) + clX;
-        YAdjust = (globalTextAddrY << 11) + (globalTextAddrX << 1);
-        YAdjust += (textureWindow.y0 << 11) + textureWindow.x0;
-    }
-
-    // Legacy wrap-aligned single-texel sample. Returns the final 16-bit
-    // BGR555 colour after the CLUT lookup (or the direct read for
-    // Direct15). Texel coordinates arrive in 16.16 fixed-point.
-    auto sampleScalar = [&](int32_t pX, int32_t pY) -> uint16_t {
-        if constexpr (Tex == TexMode::Clut4) {
-            int32_t XAdjust = (pX >> 16) & maskX;
-            int16_t tC = vram[static_cast<int32_t>((((pY >> 16) & maskY) << 11) + YAdjust + (XAdjust >> 1))];
-            tC = (tC >> ((XAdjust & 1) << 2)) & 0xf;
-            return vram16[clutP + tC];
-        } else if constexpr (Tex == TexMode::Clut8) {
-            int16_t tC = vram[static_cast<int32_t>((((pY >> 16) & maskY) << 11) + YAdjust + ((pX >> 16) & maskX))];
-            return vram16[clutP + tC];
-        } else {
-            return vram16[((((pY >> 16) & maskY) + globalTextAddrY + textureWindow.y0) << 10) +
-                          ((pX >> 16) & maskX) + globalTextAddrX + textureWindow.x0];
-        }
-    };
-
-    auto samplePair = [&](int32_t pX, int32_t pY, int32_t dX, int32_t dY) -> uint32_t {
-        return static_cast<uint32_t>(sampleScalar(pX, pY)) |
-               (static_cast<uint32_t>(sampleScalar(pX + dX, pY + dY)) << 16);
-    };
+    const int32_t yAdj = Sampler<Tex>::yAdjust(rs);
+    const auto vram16 = rs.vram16;
 
     if (!m_checkMask && !m_drawSemiTrans) {
         // Solid fast path. Shared between Default and Semi SlowModes.
@@ -1840,26 +1799,14 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly4T(int16_t x1, int16_t y1, int16_t x2,
 
                 for (j = xmin; j < xmax; j += 2) {
                     uint32_t *pdest = (uint32_t *)&vram16[(i << 10) + j];
-                    uint32_t color = samplePair(posX, posY, difX, difY);
+                    const uint32_t color = Sampler<Tex>::packed(rs, yAdj, posX, posY, difX, difY);
                     PixelWriter<true, GPU::Shading::Flat, WriteMode::Solid>::packed(rs, pdest, color);
                     posX += difX2;
                     posY += difY2;
                 }
                 if (j == xmax) {
-                    // Preserve the legacy Clut8 xmax-scalar quirk: the
-                    // Ex8 path sampled at (posX, posY+difY) while Ex4
-                    // and TD used (posX, posY). The asymmetry has been
-                    // there since the original soft GPU; phase-9
-                    // doesn't touch the xmax pixel directly so it's
-                    // never been hardware-characterised either way.
-                    uint16_t color;
-                    if constexpr (Tex == TexMode::Clut8) {
-                        color = sampleScalar(posX, posY + difY);
-                    } else {
-                        color = sampleScalar(posX, posY);
-                    }
-                    PixelWriter<true, GPU::Shading::Flat, WriteMode::Solid>::scalar(rs, &vram16[(i << 10) + j],
-                                                                                    color);
+                    PixelWriter<true, GPU::Shading::Flat, WriteMode::Solid>::scalar(
+                        rs, &vram16[(i << 10) + j], Sampler<Tex>::scalar(rs, yAdj, posX, posY));
                 }
             }
             if (nextRowFlatTextured4()) return;
@@ -1894,7 +1841,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly4T(int16_t x1, int16_t y1, int16_t x2,
 
             for (j = xmin; j < xmax; j += 2) {
                 uint32_t *pdest = (uint32_t *)&vram16[(i << 10) + j];
-                uint32_t color = samplePair(posX, posY, difX, difY);
+                const uint32_t color = Sampler<Tex>::packed(rs, yAdj, posX, posY, difX, difY);
                 if constexpr (SlowMode == WriteMode::Default) {
                     PixelWriter<true, GPU::Shading::Flat, WriteMode::Default>::packed(rs, pdest, color);
                 } else {
@@ -1904,12 +1851,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly4T(int16_t x1, int16_t y1, int16_t x2,
                 posY += difY2;
             }
             if (j == xmax) {
-                uint16_t color;
-                if constexpr (Tex == TexMode::Clut8) {
-                    color = sampleScalar(posX, posY + difY);
-                } else {
-                    color = sampleScalar(posX, posY);
-                }
+                const uint16_t color = Sampler<Tex>::scalar(rs, yAdj, posX, posY);
                 if constexpr (SlowMode == WriteMode::Default) {
                     PixelWriter<true, GPU::Shading::Flat, WriteMode::Default>::scalar(rs, &vram16[(i << 10) + j],
                                                                                       color);
