@@ -2612,14 +2612,14 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3TEx4(int16_t x1, int16_t y1, int16_t 
             for (j = xmin; j < xmax; j += 2) {
                 uint32_t *pdest = (uint32_t *)&vram16[(i << 10) + j];
                 const uint32_t color = Sampler<TexMode::Clut4>::packed(rs, yAdj, posX, posY, difX, difY);
-                getTextureTransColShade32(pdest, color);
+                PixelWriter<true, GPU::Shading::Flat, WriteMode::Default>::packed(rs, pdest, color);
 
                 posX += difX2;
                 posY += difY2;
             }
             if (j == xmax) {
-                getTextureTransColShade(&vram16[(i << 10) + j],
-                                        Sampler<TexMode::Clut4>::scalar(rs, yAdj, posX, posY));
+                PixelWriter<true, GPU::Shading::Flat, WriteMode::Default>::scalar(
+                    rs, &vram16[(i << 10) + j], Sampler<TexMode::Clut4>::scalar(rs, yAdj, posX, posY));
             }
         }
         if (nextRowFlatTextured3()) return;
@@ -3027,14 +3027,14 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3TEx8(int16_t x1, int16_t y1, int16_t 
             for (j = xmin; j < xmax; j += 2) {
                 uint32_t *pdest = (uint32_t *)&vram16[(i << 10) + j];
                 const uint32_t color = Sampler<TexMode::Clut8>::packed(rs, yAdj, posX, posY, difX, difY);
-                getTextureTransColShade32(pdest, color);
+                PixelWriter<true, GPU::Shading::Flat, WriteMode::Default>::packed(rs, pdest, color);
                 posX += difX2;
                 posY += difY2;
             }
 
             if (j == xmax) {
-                getTextureTransColShade(&vram16[(i << 10) + j],
-                                        Sampler<TexMode::Clut8>::scalar(rs, yAdj, posX, posY));
+                PixelWriter<true, GPU::Shading::Flat, WriteMode::Default>::scalar(
+                    rs, &vram16[(i << 10) + j], Sampler<TexMode::Clut8>::scalar(rs, yAdj, posX, posY));
             }
         }
         if (nextRowFlatTextured3()) return;
@@ -3420,14 +3420,14 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3TD(int16_t x1, int16_t y1, int16_t x2
             for (j = xmin; j < xmax; j += 2) {
                 uint32_t *pdest = (uint32_t *)&vram16[(i << 10) + j];
                 const uint32_t color = Sampler<TexMode::Direct15>::packed(rs, yAdj, posX, posY, difX, difY);
-                getTextureTransColShade32(pdest, color);
+                PixelWriter<true, GPU::Shading::Flat, WriteMode::Default>::packed(rs, pdest, color);
 
                 posX += difX2;
                 posY += difY2;
             }
             if (j == xmax) {
-                getTextureTransColShade(&vram16[(i << 10) + j],
-                                        Sampler<TexMode::Direct15>::scalar(rs, yAdj, posX, posY));
+                PixelWriter<true, GPU::Shading::Flat, WriteMode::Default>::scalar(
+                    rs, &vram16[(i << 10) + j], Sampler<TexMode::Direct15>::scalar(rs, yAdj, posX, posY));
             }
         }
         if (nextRowFlatTextured3()) return;
