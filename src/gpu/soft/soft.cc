@@ -3656,7 +3656,6 @@ void PCSX::SoftGPU::SoftRenderer::drawPolyShade4(int32_t rgb1, int32_t rgb2, int
 
 ////////////////////////////////////////////////////////////////////////
 
-template <bool useCachedDither>
 // Unified 3-vertex gouraud-textured rasterizer. Compile-time dispatch on
 // texture sampling mode + cached-dither template parameter collapses what
 // used to be three separate <useCachedDither>-templated functions
@@ -3836,6 +3835,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3TG(int16_t x1, int16_t y1, int16_t x2
 
 ////////////////////////////////////////////////////////////////////////
 
+template <bool useCachedDither>
 void PCSX::SoftGPU::SoftRenderer::drawPoly3TGEx4i(int16_t x1, int16_t y1, int16_t x2, int16_t y2, int16_t x3,
                                                   int16_t y3, int16_t tx1, int16_t ty1, int16_t tx2, int16_t ty2,
                                                   int16_t tx3, int16_t ty3, int16_t clX, int16_t clY, int32_t col1,
