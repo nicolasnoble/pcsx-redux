@@ -2473,6 +2473,13 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3Fi(int16_t x1, int16_t y1, int16_t x2
         return;
     }
 
+    RasterState rs{};
+    rs.abr = m_globalTextABR;
+    rs.checkMask = m_checkMask;
+    rs.setMask16 = m_setMask16;
+    rs.setMask32 = m_setMask32;
+    rs.drawSemiTrans = m_drawSemiTrans;
+
     for (i = ymin; i <= ymax; i++) {
         xmin = m_leftX >> 16;
         if (drawX > xmin) xmin = drawX;
@@ -2480,9 +2487,12 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3Fi(int16_t x1, int16_t y1, int16_t x2
         if (drawW < xmax) xmax = drawW;
 
         for (j = xmin; j < xmax; j += 2) {
-            getShadeTransCol32((uint32_t *)&vram16[(i << 10) + j], lcolor);
+            PixelWriter<false, GPU::Shading::Flat, WriteMode::Default>::packed(
+                rs, (uint32_t *)&vram16[(i << 10) + j], lcolor);
         }
-        if (j == xmax) getShadeTransCol(&vram16[(i << 10) + j], color);
+        if (j == xmax) {
+            PixelWriter<false, GPU::Shading::Flat, WriteMode::Default>::scalar(rs, &vram16[(i << 10) + j], color);
+        }
 
         if (nextRowFlat3()) return;
     }

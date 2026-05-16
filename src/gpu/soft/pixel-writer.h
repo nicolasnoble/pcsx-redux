@@ -367,6 +367,129 @@ struct PixelWriter<true, GPU::Shading::Gouraud, WriteMode::Default> {
     }
 };
 
+// Untextured, flat-shaded, Default (runtime checkMask + drawSemiTrans).
+//
+// Matches the legacy `getShadeTransCol` (scalar) and `getShadeTransCol32`
+// (pair) member helpers bit for bit. Used by the untextured paths -
+// drawPoly3Fi (flat triangle, slow path) and the line / fill / sprite
+// helpers - where there is no texture sampler and `color` is the
+// primitive's solid color, optionally blended with the destination on
+// drawSemiTrans.
+//
+// No Modulation here: untextured writes the color through unchanged
+// (modulation::On for an untextured primitive in the legacy code path
+// is a no-op; the primitive's color word IS the final color). No
+// modulation factors are consulted; the channel multiplies that the
+// textured writers do are absent.
+template <>
+struct PixelWriter<false, GPU::Shading::Flat, WriteMode::Default> {
+    static inline void scalar(const RasterState &rs, uint16_t *pdest, uint16_t color) {
+        if (rs.checkMask && *pdest & 0x8000) return;
+        if (rs.drawSemiTrans) {
+            int32_t r, g, b;
+            if (rs.abr == GPU::BlendFunction::HalfBackAndHalfFront) {
+                *pdest = ((((*pdest) & 0x7bde) >> 1) + ((color & 0x7bde) >> 1)) | rs.setMask16;
+                return;
+            } else if (rs.abr == GPU::BlendFunction::FullBackAndFullFront) {
+                r = (*pdest & 0x1f) + (color & 0x1f);
+                b = (*pdest & 0x3e0) + (color & 0x3e0);
+                g = (*pdest & 0x7c00) + (color & 0x7c00);
+            } else if (rs.abr == GPU::BlendFunction::FullBackSubFullFront) {
+                r = (*pdest & 0x1f) - (color & 0x1f);
+                b = (*pdest & 0x3e0) - (color & 0x3e0);
+                g = (*pdest & 0x7c00) - (color & 0x7c00);
+                if (r & 0x80000000) r = 0;
+                if (b & 0x80000000) b = 0;
+                if (g & 0x80000000) g = 0;
+            } else {
+                r = (*pdest & 0x1f) + ((color & 0x1f) >> 2);
+                b = (*pdest & 0x3e0) + ((color & 0x3e0) >> 2);
+                g = (*pdest & 0x7c00) + ((color & 0x7c00) >> 2);
+            }
+            if (r & 0x7fffffe0) r = 0x1f;
+            if (b & 0x7ffffc00) b = 0x3e0;
+            if (g & 0x7fff8000) g = 0x7c00;
+            *pdest = ((g & 0x7c00) | (b & 0x3e0) | (r & 0x1f)) | rs.setMask16;
+        } else {
+            *pdest = color | rs.setMask16;
+        }
+    }
+
+    static inline void packed(const RasterState &rs, uint32_t *pdest, uint32_t color) {
+        if (rs.drawSemiTrans) {
+            int32_t r, g, b;
+            if (rs.abr == GPU::BlendFunction::HalfBackAndHalfFront) {
+                if (!rs.checkMask) {
+                    *pdest = ((((*pdest) & 0x7bde7bde) >> 1) + ((color & 0x7bde7bde) >> 1)) | rs.setMask32;
+                    return;
+                }
+                // X32ACOL1 = (x & 0x001e001e); etc. Trailing low bit dropped so >> 1 stays lossless across both halves.
+                r = ((*pdest & 0x001e001e) >> 1) + ((color & 0x001e001e) >> 1);
+                b = (((*pdest >> 5) & 0x001e001e) >> 1) + (((color >> 5) & 0x001e001e) >> 1);
+                g = (((*pdest >> 10) & 0x001e001e) >> 1) + (((color >> 10) & 0x001e001e) >> 1);
+            } else if (rs.abr == GPU::BlendFunction::FullBackAndFullFront) {
+                r = (*pdest & 0x001f001f) + (color & 0x001f001f);
+                b = ((*pdest >> 5) & 0x001f001f) + ((color >> 5) & 0x001f001f);
+                g = ((*pdest >> 10) & 0x001f001f) + ((color >> 10) & 0x001f001f);
+            } else if (rs.abr == GPU::BlendFunction::FullBackSubFullFront) {
+                int32_t sr, sb, sg, src, sbc, sgc, c;
+                src = color & 0x1f;
+                sbc = color & 0x3e0;
+                sgc = color & 0x7c00;
+                c = (*pdest) >> 16;
+                sr = (c & 0x1f) - src;
+                if (sr & 0x8000) sr = 0;
+                sb = (c & 0x3e0) - sbc;
+                if (sb & 0x8000) sb = 0;
+                sg = (c & 0x7c00) - sgc;
+                if (sg & 0x8000) sg = 0;
+                r = ((int32_t)sr) << 16;
+                b = ((int32_t)sb) << 11;
+                g = ((int32_t)sg) << 6;
+                c = (*pdest) & 0xffff;
+                sr = (c & 0x1f) - src;
+                if (sr & 0x8000) sr = 0;
+                sb = (c & 0x3e0) - sbc;
+                if (sb & 0x8000) sb = 0;
+                sg = (c & 0x7c00) - sgc;
+                if (sg & 0x8000) sg = 0;
+                r |= sr;
+                b |= sb >> 5;
+                g |= sg >> 10;
+            } else {
+                // HalfBackAndQuarter: X32BCOL1 = (x & 0x001c001c). Drops bits 0-1 so >> 2 stays lossless.
+                r = (*pdest & 0x001f001f) + ((color & 0x001c001c) >> 2);
+                b = ((*pdest >> 5) & 0x001f001f) + (((color >> 5) & 0x001c001c) >> 2);
+                g = ((*pdest >> 10) & 0x001f001f) + (((color >> 10) & 0x001c001c) >> 2);
+            }
+            if (r & 0x7fe00000) r = 0x1f0000 | (r & 0xffff);
+            if (r & 0x7fe0) r = 0x1f | (r & 0xffff0000);
+            if (b & 0x7fe00000) b = 0x1f0000 | (b & 0xffff);
+            if (b & 0x7fe0) b = 0x1f | (b & 0xffff0000);
+            if (g & 0x7fe00000) g = 0x1f0000 | (g & 0xffff);
+            if (g & 0x7fe0) g = 0x1f | (g & 0xffff0000);
+            const uint32_t packed_rgb = (g << 10) | (b << 5) | r;
+            if (rs.checkMask) {
+                const uint32_t ma = *pdest;
+                *pdest = packed_rgb | rs.setMask32;
+                if (ma & 0x80000000) *pdest = (ma & 0xffff0000) | (*pdest & 0xffff);
+                if (ma & 0x00008000) *pdest = (ma & 0xffff) | (*pdest & 0xffff0000);
+                return;
+            }
+            *pdest = packed_rgb | rs.setMask32;
+        } else {
+            if (rs.checkMask) {
+                const uint32_t ma = *pdest;
+                *pdest = color | rs.setMask32;
+                if (ma & 0x80000000) *pdest = (ma & 0xffff0000) | (*pdest & 0xffff);
+                if (ma & 0x00008000) *pdest = (ma & 0xffff) | (*pdest & 0xffff0000);
+                return;
+            }
+            *pdest = color | rs.setMask32;
+        }
+    }
+};
+
 }  // namespace SoftGPU
 
 }  // namespace PCSX
