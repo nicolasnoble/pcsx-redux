@@ -135,11 +135,6 @@ struct SoftRenderer {
     bool setupSectionsFlatTextured4(int16_t x1, int16_t y1, int16_t x2, int16_t y2, int16_t x3, int16_t y3, int16_t x4,
                                     int16_t y4, int16_t tx1, int16_t ty1, int16_t tx2, int16_t ty2, int16_t tx3,
                                     int16_t ty3, int16_t tx4, int16_t ty4);
-    bool setupSectionsShadeTextured4(int16_t x1, int16_t y1, int16_t x2, int16_t y2, int16_t x3, int16_t y3, int16_t x4,
-                                     int16_t y4, int16_t tx1, int16_t ty1, int16_t tx2, int16_t ty2, int16_t tx3,
-                                     int16_t ty3, int16_t tx4, int16_t ty4, int32_t rgb1, int32_t rgb2, int32_t rgb3,
-                                     int32_t rgb4);
-
     template <bool useCachedDither>
     void getShadeTransColDither(uint16_t *pdest, int32_t m1, int32_t m2, int32_t m3);
     void getShadeTransCol(uint16_t *pdest, uint16_t color);
@@ -246,8 +241,6 @@ struct SoftRenderer {
     int rightSectionFlatTextured4();
     int leftSectionFlatTextured4();
     bool nextRowFlatTextured4();
-    int rightSectionShadeTextured4();
-    int leftSectionShadeTextured4();
     struct SoftVertex {
         int x, y;
         int u, v;
@@ -261,9 +254,9 @@ struct SoftRenderer {
     int m_leftX, m_deltaLeftX, m_rightX, m_deltaRightX;
     int m_leftU, m_deltaLeftU, m_leftV, m_deltaLeftV;
     int m_rightU, m_deltaRightU, m_rightV, m_deltaRightV;
-    int m_leftR, deltaLeftR, m_rightR, m_deltaRightR;
-    int m_leftG, m_deltaLeftG, m_rightG, m_deltaRightG;
-    int m_leftB, m_deltaLeftB, m_rightB, m_deltaRightB;
+    int m_leftR, deltaLeftR, m_deltaRightR;
+    int m_leftG, m_deltaLeftG, m_deltaRightG;
+    int m_leftB, m_deltaLeftB, m_deltaRightB;
 
     static constexpr inline int shl10idiv(int x, int y) {
         int64_t bi = x;
