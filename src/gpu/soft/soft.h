@@ -132,6 +132,15 @@ struct SoftRenderer {
     int16_t m_yMin;
     int16_t m_yMax;
 
+    // Tracks whether the edge walker has advanced past the apex row.
+    // setupSections3() clears it on every primitive entry; nextRow3()
+    // sets it to true on every row advance. Body scanline loops use it
+    // to apply hardware-correct apex-vs-mid-triangle xmax semantics:
+    // the apex row drops a zero-width / single-pixel span, subsequent
+    // rows preserve it. See the body comment in soft.cc above the 3-vert
+    // edge walker templates.
+    bool m_pastApex = false;
+
     bool setupSectionsFlat4(int16_t x1, int16_t y1, int16_t x2, int16_t y2, int16_t x3, int16_t y3, int16_t x4,
                             int16_t y4);
     bool setupSectionsFlatTextured4(int16_t x1, int16_t y1, int16_t x2, int16_t y2, int16_t x3, int16_t y3, int16_t x4,
