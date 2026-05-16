@@ -70,81 +70,36 @@ static constexpr int CHKMAX_Y = 512;
 //  . . .
 //   2___3
 
-bool PCSX::SoftGPU::SoftRenderer::checkCoord4() {
-    if (m_x0 < 0) {
-        if (((m_x1 - m_x0) > CHKMAX_X) || ((m_x2 - m_x0) > CHKMAX_X)) {
-            if (m_x3 < 0) {
-                if ((m_x1 - m_x3) > CHKMAX_X) return true;
-                if ((m_x2 - m_x3) > CHKMAX_X) return true;
-            }
-        }
-    }
-    if (m_x1 < 0) {
-        if ((m_x0 - m_x1) > CHKMAX_X) return true;
-        if ((m_x2 - m_x1) > CHKMAX_X) return true;
-        if ((m_x3 - m_x1) > CHKMAX_X) return true;
-    }
-    if (m_x2 < 0) {
-        if ((m_x0 - m_x2) > CHKMAX_X) return true;
-        if ((m_x1 - m_x2) > CHKMAX_X) return true;
-        if ((m_x3 - m_x2) > CHKMAX_X) return true;
-    }
-    if (m_x3 < 0) {
-        if (((m_x1 - m_x3) > CHKMAX_X) || ((m_x2 - m_x3) > CHKMAX_X)) {
-            if (m_x0 < 0) {
-                if ((m_x1 - m_x0) > CHKMAX_X) return true;
-                if ((m_x2 - m_x0) > CHKMAX_X) return true;
-            }
-        }
-    }
+// Hardware silently drops any polygon or line that has an edge longer than
+// 1023 pixels horizontally or 511 pixels vertically (verified on SCPH-5501
+// via gpu-raster-phase14). The drop is unconditional - it does NOT depend on
+// any vertex being off-screen. For quads, hardware applies the rule to the
+// original 4-vertex perimeter, not to the decomposed-triangle edges, so the
+// 4-vert check stays at this level rather than firing inside drawPolyXXX4.
+static inline bool edgeOverLimit(int x0, int y0, int x1, int y1) {
+    int dx = x1 - x0;
+    int dy = y1 - y0;
+    if (dx < 0) dx = -dx;
+    if (dy < 0) dy = -dy;
+    return dx >= CHKMAX_X || dy >= CHKMAX_Y;
+}
 
-    if (m_y0 < 0) {
-        if ((m_y1 - m_y0) > CHKMAX_Y) return true;
-        if ((m_y2 - m_y0) > CHKMAX_Y) return true;
-    }
-    if (m_y1 < 0) {
-        if ((m_y0 - m_y1) > CHKMAX_Y) return true;
-        if ((m_y2 - m_y1) > CHKMAX_Y) return true;
-        if ((m_y3 - m_y1) > CHKMAX_Y) return true;
-    }
-    if (m_y2 < 0) {
-        if ((m_y0 - m_y2) > CHKMAX_Y) return true;
-        if ((m_y1 - m_y2) > CHKMAX_Y) return true;
-        if ((m_y3 - m_y2) > CHKMAX_Y) return true;
-    }
-    if (m_y3 < 0) {
-        if ((m_y1 - m_y3) > CHKMAX_Y) return true;
-        if ((m_y2 - m_y3) > CHKMAX_Y) return true;
-    }
+bool PCSX::SoftGPU::SoftRenderer::checkCoord4() {
+    // Per-perimeter-edge over-limit cull. Quad perimeter (PSX vertex order)
+    // is v0->v1, v1->v3, v3->v2, v2->v0.
+    if (edgeOverLimit(m_x0, m_y0, m_x1, m_y1)) return true;
+    if (edgeOverLimit(m_x1, m_y1, m_x3, m_y3)) return true;
+    if (edgeOverLimit(m_x3, m_y3, m_x2, m_y2)) return true;
+    if (edgeOverLimit(m_x2, m_y2, m_x0, m_y0)) return true;
 
     return false;
 }
 
 bool PCSX::SoftGPU::SoftRenderer::checkCoord3() {
-    if (m_x0 < 0) {
-        if ((m_x1 - m_x0) > CHKMAX_X) return true;
-        if ((m_x2 - m_x0) > CHKMAX_X) return true;
-    }
-    if (m_x1 < 0) {
-        if ((m_x0 - m_x1) > CHKMAX_X) return true;
-        if ((m_x2 - m_x1) > CHKMAX_X) return true;
-    }
-    if (m_x2 < 0) {
-        if ((m_x0 - m_x2) > CHKMAX_X) return true;
-        if ((m_x1 - m_x2) > CHKMAX_X) return true;
-    }
-    if (m_y0 < 0) {
-        if ((m_y1 - m_y0) > CHKMAX_Y) return true;
-        if ((m_y2 - m_y0) > CHKMAX_Y) return true;
-    }
-    if (m_y1 < 0) {
-        if ((m_y0 - m_y1) > CHKMAX_Y) return true;
-        if ((m_y2 - m_y1) > CHKMAX_Y) return true;
-    }
-    if (m_y2 < 0) {
-        if ((m_y0 - m_y2) > CHKMAX_Y) return true;
-        if ((m_y1 - m_y2) > CHKMAX_Y) return true;
-    }
+    // Per-edge over-limit cull.
+    if (edgeOverLimit(m_x0, m_y0, m_x1, m_y1)) return true;
+    if (edgeOverLimit(m_x1, m_y1, m_x2, m_y2)) return true;
+    if (edgeOverLimit(m_x2, m_y2, m_x0, m_y0)) return true;
 
     return false;
 }

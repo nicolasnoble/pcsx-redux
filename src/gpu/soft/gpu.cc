@@ -448,21 +448,15 @@ void PCSX::SoftGPU::impl::polyExec(Poly<shading, shape, textured, blend, modulat
 static constexpr int CHKMAX_X = 1024;
 static constexpr int CHKMAX_Y = 512;
 
+// Hardware drops lines whose endpoint delta exceeds the same per-edge bounds
+// that gate polygons: |dx| <= 1023, |dy| <= 511 (verified on SCPH-5501 via
+// gpu-raster-phase14 ct_line_dx_1024_drop / ct_line_dx_2047_drop).
 static constexpr inline bool CheckCoordL(int16_t slx0, int16_t sly0, int16_t slx1, int16_t sly1) {
-    if (slx0 < 0) {
-        if ((slx1 - slx0) > CHKMAX_X) return true;
-    }
-    if (slx1 < 0) {
-        if ((slx0 - slx1) > CHKMAX_X) return true;
-    }
-    if (sly0 < 0) {
-        if ((sly1 - sly0) > CHKMAX_Y) return true;
-    }
-    if (sly1 < 0) {
-        if ((sly0 - sly1) > CHKMAX_Y) return true;
-    }
-
-    return false;
+    int dx = slx1 - slx0;
+    int dy = sly1 - sly0;
+    if (dx < 0) dx = -dx;
+    if (dy < 0) dy = -dy;
+    return dx >= CHKMAX_X || dy >= CHKMAX_Y;
 }
 
 template <PCSX::GPU::Shading shading, PCSX::GPU::LineType lineType, PCSX::GPU::Blend blend>
