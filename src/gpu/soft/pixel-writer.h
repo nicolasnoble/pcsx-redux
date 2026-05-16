@@ -43,6 +43,28 @@ namespace SoftGPU {
 //             `getTextureTransColShadeSemi` / `getTextureTransColG32Semi`.
 enum class WriteMode { Solid, Default, Semi };
 
+// Saturating helper for packed-pair 5-bit channels.
+//
+// The packed writers represent one color channel as an int32_t whose two
+// 16-bit halfwords each carry a 5-bit value in bits 0..4. The value
+// arrives there post-modulate, typically as
+//
+//     int32_t r = (((color & 0x001f001f) * factor) & 0xff80ff80) >> 7;
+//
+// which leaves each halfword in 0..0x3f. saturate5Pair clamps each
+// halfword to 31: if any of bits 5..14 of a halfword are set, that
+// halfword's low five bits become 0x1f. The opposite halfword is
+// preserved bit-for-bit. The two halves are tested independently so a
+// single helper covers both lanes; the carry behaviour is identical to
+// the open-coded six-line pattern this replaces.
+struct PackedPair555 {
+    static inline int32_t saturate5Pair(int32_t c) {
+        if (c & 0x7fe00000) c = 0x1f0000 | (c & 0xffff);
+        if (c & 0x7fe0) c = 0x1f | (c & 0xffff0000);
+        return c;
+    }
+};
+
 // Per-pixel writer policy. Each specialization owns both a scalar (one
 // 16-bit pixel) and a packed (a 32-bit pair, low halfword first) entry
 // point. The packed entry must produce bit-equivalent output to two
@@ -86,12 +108,9 @@ struct PixelWriter<true, GPU::Shading::Flat, WriteMode::Solid> {
         int32_t r = (((color & 0x001f001f) * rs.m1) & 0xff80ff80) >> 7;
         int32_t b = ((((color >> 5) & 0x001f001f) * rs.m2) & 0xff80ff80) >> 7;
         int32_t g = ((((color >> 10) & 0x001f001f) * rs.m3) & 0xff80ff80) >> 7;
-        if (r & 0x7fe00000) r = 0x1f0000 | (r & 0xffff);
-        if (r & 0x7fe0) r = 0x1f | (r & 0xffff0000);
-        if (b & 0x7fe00000) b = 0x1f0000 | (b & 0xffff);
-        if (b & 0x7fe0) b = 0x1f | (b & 0xffff0000);
-        if (g & 0x7fe00000) g = 0x1f0000 | (g & 0xffff);
-        if (g & 0x7fe0) g = 0x1f | (g & 0xffff0000);
+        r = PackedPair555::saturate5Pair(r);
+        b = PackedPair555::saturate5Pair(b);
+        g = PackedPair555::saturate5Pair(g);
         const uint32_t flags = rs.setMask32 | (color & 0x80008000);
         const uint32_t packed_rgb = (g << 10) | (b << 5) | r;
         // Zero-texel-half preservation: an entirely-zero halfword of the
@@ -238,12 +257,9 @@ struct PixelWriter<true, GPU::Shading::Flat, WriteMode::Default> {
             g = ((((color >> 10) & 0x001f001f) * rs.m3) & 0xff80ff80) >> 7;
         }
 
-        if (r & 0x7fe00000) r = 0x1f0000 | (r & 0xffff);
-        if (r & 0x7fe0) r = 0x1f | (r & 0xffff0000);
-        if (b & 0x7fe00000) b = 0x1f0000 | (b & 0xffff);
-        if (b & 0x7fe0) b = 0x1f | (b & 0xffff0000);
-        if (g & 0x7fe00000) g = 0x1f0000 | (g & 0xffff);
-        if (g & 0x7fe0) g = 0x1f | (g & 0xffff0000);
+        r = PackedPair555::saturate5Pair(r);
+        b = PackedPair555::saturate5Pair(b);
+        g = PackedPair555::saturate5Pair(g);
 
         const uint32_t packed_rgb = (g << 10) | (b << 5) | r;
         if (rs.checkMask) {
@@ -301,12 +317,9 @@ struct PixelWriter<true, GPU::Shading::Gouraud, WriteMode::Solid> {
         int32_t r = (((color & 0x001f001f) * m1) & 0xff80ff80) >> 7;
         int32_t b = ((((color >> 5) & 0x001f001f) * m2) & 0xff80ff80) >> 7;
         int32_t g = ((((color >> 10) & 0x001f001f) * m3) & 0xff80ff80) >> 7;
-        if (r & 0x7fe00000) r = 0x1f0000 | (r & 0xffff);
-        if (r & 0x7fe0) r = 0x1f | (r & 0xffff0000);
-        if (b & 0x7fe00000) b = 0x1f0000 | (b & 0xffff);
-        if (b & 0x7fe0) b = 0x1f | (b & 0xffff0000);
-        if (g & 0x7fe00000) g = 0x1f0000 | (g & 0xffff);
-        if (g & 0x7fe0) g = 0x1f | (g & 0xffff0000);
+        r = PackedPair555::saturate5Pair(r);
+        b = PackedPair555::saturate5Pair(b);
+        g = PackedPair555::saturate5Pair(g);
         const uint32_t flags = rs.setMask32 | (color & 0x80008000);
         const uint32_t packed_rgb = (g << 10) | (b << 5) | r;
         if ((color & 0xffff) == 0) {
@@ -499,12 +512,9 @@ struct PixelWriter<false, GPU::Shading::Flat, WriteMode::Default> {
                 b = ((*pdest >> 5) & 0x001f001f) + (((color >> 5) & 0x001c001c) >> 2);
                 g = ((*pdest >> 10) & 0x001f001f) + (((color >> 10) & 0x001c001c) >> 2);
             }
-            if (r & 0x7fe00000) r = 0x1f0000 | (r & 0xffff);
-            if (r & 0x7fe0) r = 0x1f | (r & 0xffff0000);
-            if (b & 0x7fe00000) b = 0x1f0000 | (b & 0xffff);
-            if (b & 0x7fe0) b = 0x1f | (b & 0xffff0000);
-            if (g & 0x7fe00000) g = 0x1f0000 | (g & 0xffff);
-            if (g & 0x7fe0) g = 0x1f | (g & 0xffff0000);
+            r = PackedPair555::saturate5Pair(r);
+            b = PackedPair555::saturate5Pair(b);
+            g = PackedPair555::saturate5Pair(g);
             const uint32_t packed_rgb = (g << 10) | (b << 5) | r;
             if (rs.checkMask) {
                 const uint32_t ma = *pdest;
