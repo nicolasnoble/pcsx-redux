@@ -1222,7 +1222,6 @@ int PCSX::SoftGPU::SoftRenderer::leftSection3() {
 
 template <bool HasUV, bool HasRGB>
 bool PCSX::SoftGPU::SoftRenderer::nextRow3() {
-    m_pastApex = true;
     if (--m_leftSectionHeight <= 0) {
         if (--m_leftSection <= 0) return true;
         if (leftSection3<HasUV, HasRGB>() <= 0) return true;
@@ -1250,7 +1249,6 @@ bool PCSX::SoftGPU::SoftRenderer::nextRow3() {
 
 template <bool HasUV, bool HasRGB>
 bool PCSX::SoftGPU::SoftRenderer::setupSections3(const TriInput &in) {
-    m_pastApex = false;
     SoftVertex *v1, *v2, *v3;
 
     v1 = m_vtx;
@@ -2082,8 +2080,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3Fi(int16_t x1, int16_t y1, int16_t x2
         for (i = ymin; i <= ymax; i++) {
             xmin = m_leftX >> 16;
             if (drawX > xmin) xmin = drawX;
-            xmax = (m_rightX >> 16);
-            if (!m_pastApex || xmax > xmin) xmax--;
+            xmax = (m_rightX - 1) >> 16;
             if (drawW < xmax) xmax = drawW;
 
             for (j = xmin; j < xmax; j += 2) {
@@ -2106,8 +2103,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3Fi(int16_t x1, int16_t y1, int16_t x2
     for (i = ymin; i <= ymax; i++) {
         xmin = m_leftX >> 16;
         if (drawX > xmin) xmin = drawX;
-        xmax = (m_rightX >> 16);
-        if (!m_pastApex || xmax > xmin) xmax--;
+        xmax = (m_rightX - 1) >> 16;
         if (drawW < xmax) xmax = drawW;
 
         for (j = xmin; j < xmax; j += 2) {
@@ -2137,14 +2133,12 @@ void PCSX::SoftGPU::SoftRenderer::drawPolyFlat4(int32_t rgb) {
 // texture sampling mode collapses what used to be three near-identical
 // functions (drawPoly3TEx4, drawPoly3TEx8, drawPoly3TD) into one body.
 //
-// xmax handling is apex-aware (HW_VERIFIED on SCPH-5501 via
-// gpu-raster-phase1/triangle-edges.c::triI_xmax_eq_xmin_pixel_0_0 plus
-// gpu-raster-phase3 SF2/LE/QS slope-fraction cases): at the apex row
-// (the first row, before any nextRow3 advance) the span is treated with
-// slow-path semantics so a zero-width / single-pixel apex is dropped.
-// Subsequent rows preserve single-pixel spans (legacy fast-path
-// semantics) because hardware draws sub-pixel-narrow rows past the
-// apex. m_pastApex is set false by setupSections3 and true by nextRow3.
+// xmax handling uses the inclusive-left / exclusive-right span
+// convention: xmax = (m_rightX - 1) >> 16. A column j is drawn when
+// leftX <= j*65536 < rightX, so the last drawn column is the integer
+// just less than rightX in real coordinates. See the body comment
+// above the 3-vert edge walker templates for the full derivation and
+// the HW_VERIFIED test citations.
 template <PCSX::SoftGPU::TexMode Tex>
 void PCSX::SoftGPU::SoftRenderer::drawPoly3T(int16_t x1, int16_t y1, int16_t x2, int16_t y2, int16_t x3, int16_t y3,
                                              int16_t tx1, int16_t ty1, int16_t tx2, int16_t ty2, int16_t tx3,
@@ -2210,8 +2204,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3T(int16_t x1, int16_t y1, int16_t x2,
     if (!m_checkMask && !m_drawSemiTrans) {
         for (i = ymin; i <= ymax; i++) {
             xmin = (m_leftX >> 16);
-            xmax = (m_rightX >> 16);
-            if (!m_pastApex || xmax > xmin) xmax--;
+            xmax = (m_rightX - 1) >> 16;
             if (drawW < xmax) xmax = drawW;
 
             if (xmax >= xmin) {
@@ -2245,8 +2238,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3T(int16_t x1, int16_t y1, int16_t x2,
 
     for (i = ymin; i <= ymax; i++) {
         xmin = (m_leftX >> 16);
-        xmax = (m_rightX >> 16);
-        if (!m_pastApex || xmax > xmin) xmax--;
+        xmax = (m_rightX - 1) >> 16;
         if (drawW < xmax) xmax = drawW;
 
         if (xmax >= xmin) {
@@ -3160,8 +3152,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3Gi(int16_t x1, int16_t y1, int16_t x2
     if (!m_checkMask && !m_drawSemiTrans && !m_ditherMode) {
         for (i = ymin; i <= ymax; i++) {
             xmin = (m_leftX >> 16);
-            xmax = (m_rightX >> 16);
-            if (!m_pastApex || xmax > xmin) xmax--;
+            xmax = (m_rightX - 1) >> 16;
             if (drawW < xmax) xmax = drawW;
 
             if (xmax >= xmin) {
@@ -3201,8 +3192,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3Gi(int16_t x1, int16_t y1, int16_t x2
     if (m_ditherMode) {
         for (i = ymin; i <= ymax; i++) {
             xmin = (m_leftX >> 16);
-            xmax = (m_rightX >> 16);
-            if (!m_pastApex || xmax > xmin) xmax--;
+            xmax = (m_rightX - 1) >> 16;
             if (drawW < xmax) xmax = drawW;
 
             if (xmax >= xmin) {
@@ -3232,8 +3222,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3Gi(int16_t x1, int16_t y1, int16_t x2
     } else {
         for (i = ymin; i <= ymax; i++) {
             xmin = (m_leftX >> 16);
-            xmax = (m_rightX >> 16);
-            if (!m_pastApex || xmax > xmin) xmax--;
+            xmax = (m_rightX - 1) >> 16;
             if (drawW < xmax) xmax = drawW;
 
             if (xmax >= xmin) {
@@ -3301,11 +3290,10 @@ void PCSX::SoftGPU::SoftRenderer::drawPolyShade4(int32_t rgb1, int32_t rgb2, int
 //     getTextureTransColShadeXDither<useCachedDither>, non-dither branch
 //     calls PixelWriter<true, Gouraud, Default>
 //
-// xmax handling matches the rest of the 3-vert family: apex-aware via
-// m_pastApex, with the apex row dropping zero-width / single-pixel
-// spans (slow-path semantics) and subsequent rows preserving them
-// (legacy fast-path semantics). HW_VERIFIED via gpu-raster-phase3
-// SF2/LE/QS cases on SCPH-5501.
+// xmax handling matches the rest of the 3-vert family: inclusive-left
+// / exclusive-right via `(m_rightX - 1) >> 16`. See the body comment
+// above the edge walker templates for the derivation. HW_VERIFIED via
+// gpu-raster-phase3 SF2/LE/QS cases on SCPH-5501.
 template <PCSX::SoftGPU::TexMode Tex, bool useCachedDither>
 void PCSX::SoftGPU::SoftRenderer::drawPoly3TG(int16_t x1, int16_t y1, int16_t x2, int16_t y2, int16_t x3, int16_t y3,
                                               int16_t tx1, int16_t ty1, int16_t tx2, int16_t ty2, int16_t tx3,
@@ -3382,8 +3370,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3TG(int16_t x1, int16_t y1, int16_t x2
     if (!m_checkMask && !m_drawSemiTrans && !m_ditherMode) {
         for (i = ymin; i <= ymax; i++) {
             xmin = (m_leftX >> 16);
-            xmax = (m_rightX >> 16);
-            if (!m_pastApex || xmax > xmin) xmax--;
+            xmax = (m_rightX - 1) >> 16;
             if (drawW < xmax) xmax = drawW;
 
             if (xmax >= xmin) {
@@ -3428,8 +3415,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3TG(int16_t x1, int16_t y1, int16_t x2
 
     for (i = ymin; i <= ymax; i++) {
         xmin = (m_leftX >> 16);
-        xmax = (m_rightX >> 16);
-        if (!m_pastApex || xmax > xmin) xmax--;
+        xmax = (m_rightX - 1) >> 16;
         if (drawW < xmax) xmax = drawW;
 
         if (xmax >= xmin) {
