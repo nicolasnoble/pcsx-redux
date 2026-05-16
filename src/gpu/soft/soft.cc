@@ -1582,7 +1582,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3Fi(int16_t x1, int16_t y1, int16_t x2
     if (!m_checkMask && !m_drawSemiTrans) {
         color |= m_setMask16;
         for (i = ymin; i <= ymax; i++) {
-            xmin = m_leftX >> 16;
+            xmin = (m_leftX + 0xFFFF) >> 16;
             if (drawX > xmin) xmin = drawX;
             xmax = (m_rightX - 1) >> 16;
             if (drawW < xmax) xmax = drawW;
@@ -1605,7 +1605,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3Fi(int16_t x1, int16_t y1, int16_t x2
     rs.drawSemiTrans = m_drawSemiTrans;
 
     for (i = ymin; i <= ymax; i++) {
-        xmin = m_leftX >> 16;
+        xmin = (m_leftX + 0xFFFF) >> 16;
         if (drawX > xmin) xmin = drawX;
         xmax = (m_rightX - 1) >> 16;
         if (drawW < xmax) xmax = drawW;
@@ -1707,7 +1707,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3T(int16_t x1, int16_t y1, int16_t x2,
 
     if (!m_checkMask && !m_drawSemiTrans) {
         for (i = ymin; i <= ymax; i++) {
-            xmin = (m_leftX >> 16);
+            xmin = (m_leftX + 0xFFFF) >> 16;
             xmax = (m_rightX - 1) >> 16;
             if (drawW < xmax) xmax = drawW;
 
@@ -1741,7 +1741,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3T(int16_t x1, int16_t y1, int16_t x2,
     }
 
     for (i = ymin; i <= ymax; i++) {
-        xmin = (m_leftX >> 16);
+        xmin = (m_leftX + 0xFFFF) >> 16;
         xmax = (m_rightX - 1) >> 16;
         if (drawW < xmax) xmax = drawW;
 
@@ -1830,7 +1830,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly4TEx4(int16_t x1, int16_t y1, int16_t 
 
     if (!m_checkMask && !m_drawSemiTrans) {
         for (i = ymin; i <= ymax; i++) {
-            xmin = (m_leftX >> 16);
+            xmin = (m_leftX + 0xFFFF) >> 16;
             xmax = (m_rightX >> 16);
 
             if (xmax >= xmin) {
@@ -1881,7 +1881,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly4TEx4(int16_t x1, int16_t y1, int16_t 
     }
 
     for (i = ymin; i <= ymax; i++) {
-        xmin = (m_leftX >> 16);
+        xmin = (m_leftX + 0xFFFF) >> 16;
         xmax = (m_rightX >> 16);
 
         if (xmax >= xmin) {
@@ -1973,7 +1973,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly4TEx4_S(int16_t x1, int16_t y1, int16_
 
     if (!m_checkMask && !m_drawSemiTrans) {
         for (i = ymin; i <= ymax; i++) {
-            xmin = (m_leftX >> 16);
+            xmin = (m_leftX + 0xFFFF) >> 16;
             xmax = (m_rightX >> 16);
 
             if (xmax >= xmin) {
@@ -2024,7 +2024,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly4TEx4_S(int16_t x1, int16_t y1, int16_
     }
 
     for (i = ymin; i <= ymax; i++) {
-        xmin = (m_leftX >> 16);
+        xmin = (m_leftX + 0xFFFF) >> 16;
         xmax = (m_rightX >> 16);
 
         if (xmax >= xmin) {
@@ -2116,7 +2116,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly4TEx8(int16_t x1, int16_t y1, int16_t 
 
     if (!m_checkMask && !m_drawSemiTrans) {
         for (i = ymin; i <= ymax; i++) {
-            xmin = (m_leftX >> 16);
+            xmin = (m_leftX + 0xFFFF) >> 16;
             xmax = (m_rightX >> 16);
 
             if (xmax >= xmin) {
@@ -2161,7 +2161,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly4TEx8(int16_t x1, int16_t y1, int16_t 
     }
 
     for (i = ymin; i <= ymax; i++) {
-        xmin = (m_leftX >> 16);
+        xmin = (m_leftX + 0xFFFF) >> 16;
         xmax = (m_rightX >> 16);
 
         if (xmax >= xmin) {
@@ -2248,7 +2248,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly4TEx8_S(int16_t x1, int16_t y1, int16_
 
     if (!m_checkMask && !m_drawSemiTrans) {
         for (i = ymin; i <= ymax; i++) {
-            xmin = (m_leftX >> 16);
+            xmin = (m_leftX + 0xFFFF) >> 16;
             xmax = (m_rightX >> 16);
 
             if (xmax >= xmin) {
@@ -2293,7 +2293,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly4TEx8_S(int16_t x1, int16_t y1, int16_
     }
 
     for (i = ymin; i <= ymax; i++) {
-        xmin = (m_leftX >> 16);
+        xmin = (m_leftX + 0xFFFF) >> 16;
         xmax = (m_rightX >> 16);
 
         if (xmax >= xmin) {
@@ -2376,7 +2376,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly4TD(int16_t x1, int16_t y1, int16_t x2
 
     if (!m_checkMask && !m_drawSemiTrans) {
         for (i = ymin; i <= ymax; i++) {
-            xmin = (m_leftX >> 16);
+            xmin = (m_leftX + 0xFFFF) >> 16;
             xmax = (m_rightX >> 16);
 
             if (xmax >= xmin) {
@@ -2425,7 +2425,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly4TD(int16_t x1, int16_t y1, int16_t x2
     }
 
     for (i = ymin; i <= ymax; i++) {
-        xmin = (m_leftX >> 16);
+        xmin = (m_leftX + 0xFFFF) >> 16;
         xmax = (m_rightX >> 16);
 
         if (xmax >= xmin) {
@@ -2510,7 +2510,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly4TD_S(int16_t x1, int16_t y1, int16_t 
 
     if (!m_checkMask && !m_drawSemiTrans) {
         for (i = ymin; i <= ymax; i++) {
-            xmin = (m_leftX >> 16);
+            xmin = (m_leftX + 0xFFFF) >> 16;
             xmax = (m_rightX >> 16);
 
             if (xmax >= xmin) {
@@ -2559,7 +2559,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly4TD_S(int16_t x1, int16_t y1, int16_t 
     }
 
     for (i = ymin; i <= ymax; i++) {
-        xmin = (m_leftX >> 16);
+        xmin = (m_leftX + 0xFFFF) >> 16;
         xmax = (m_rightX >> 16);
 
         if (xmax >= xmin) {
@@ -2655,7 +2655,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3Gi(int16_t x1, int16_t y1, int16_t x2
 
     if (!m_checkMask && !m_drawSemiTrans && !m_ditherMode) {
         for (i = ymin; i <= ymax; i++) {
-            xmin = (m_leftX >> 16);
+            xmin = (m_leftX + 0xFFFF) >> 16;
             xmax = (m_rightX - 1) >> 16;
             if (drawW < xmax) xmax = drawW;
 
@@ -2695,7 +2695,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3Gi(int16_t x1, int16_t y1, int16_t x2
 
     if (m_ditherMode) {
         for (i = ymin; i <= ymax; i++) {
-            xmin = (m_leftX >> 16);
+            xmin = (m_leftX + 0xFFFF) >> 16;
             xmax = (m_rightX - 1) >> 16;
             if (drawW < xmax) xmax = drawW;
 
@@ -2732,7 +2732,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3Gi(int16_t x1, int16_t y1, int16_t x2
         rs.drawSemiTrans = m_drawSemiTrans;
 
         for (i = ymin; i <= ymax; i++) {
-            xmin = (m_leftX >> 16);
+            xmin = (m_leftX + 0xFFFF) >> 16;
             xmax = (m_rightX - 1) >> 16;
             if (drawW < xmax) xmax = drawW;
 
@@ -2881,7 +2881,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3TG(int16_t x1, int16_t y1, int16_t x2
 
     if (!m_checkMask && !m_drawSemiTrans && !m_ditherMode) {
         for (i = ymin; i <= ymax; i++) {
-            xmin = (m_leftX >> 16);
+            xmin = (m_leftX + 0xFFFF) >> 16;
             xmax = (m_rightX - 1) >> 16;
             if (drawW < xmax) xmax = drawW;
 
@@ -2926,7 +2926,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3TG(int16_t x1, int16_t y1, int16_t x2
     }
 
     for (i = ymin; i <= ymax; i++) {
-        xmin = (m_leftX >> 16);
+        xmin = (m_leftX + 0xFFFF) >> 16;
         xmax = (m_rightX - 1) >> 16;
         if (drawW < xmax) xmax = drawW;
 
