@@ -26,7 +26,7 @@
 // junk on real silicon (and therefore can't be reproduced under
 // emulation) are skipped via CESTER_MAYBE_TEST; everything else
 // asserts. The software GPU is the only renderer being verified
-// here, so each phase only needs the interpreter pass.
+// here.
 
 #define GPU_RASTER_TEST(phase)                                                                            \
     TEST(GPURaster, Phase##phase) {                                                                       \

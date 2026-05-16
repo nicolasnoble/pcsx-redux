@@ -331,10 +331,10 @@ void PCSX::SoftGPU::impl::polyExec(Poly<shading, shape, textured, blend, modulat
         m_x3 = prim->x[3];
         m_y3 = prim->y[3];
         if (checkCoord4()) return;
-        applyOffset4();
+        applyOffset<4>();
     } else {
         if (checkCoord3()) return;
-        applyOffset3();
+        applyOffset<3>();
     }
 
     m_drawSemiTrans = blend == Blend::Semi;
@@ -495,7 +495,7 @@ void PCSX::SoftGPU::impl::lineExec(Line<shading, lineType, blend> *prim) {
         m_y1 = y1;
         m_x1 = x1;
 
-        applyOffset2();
+        applyOffset<2>();
         if constexpr (shading == Shading::Gouraud) {
             drawSoftwareLineShade(c0, c1);
         } else {

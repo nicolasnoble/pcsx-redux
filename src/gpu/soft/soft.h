@@ -154,9 +154,21 @@ struct SoftRenderer {
     uint8_t *m_vram;
     uint16_t *m_vram16;
 
-    void applyOffset2();
-    void applyOffset3();
-    void applyOffset4();
+    template <unsigned NumVerts>
+    void applyOffset() {
+        m_x0 += m_softDisplay.DrawOffset.x;
+        m_y0 += m_softDisplay.DrawOffset.y;
+        m_x1 += m_softDisplay.DrawOffset.x;
+        m_y1 += m_softDisplay.DrawOffset.y;
+        if constexpr (NumVerts > 2) {
+            m_x2 += m_softDisplay.DrawOffset.x;
+            m_y2 += m_softDisplay.DrawOffset.y;
+        }
+        if constexpr (NumVerts > 3) {
+            m_x3 += m_softDisplay.DrawOffset.x;
+            m_y3 += m_softDisplay.DrawOffset.y;
+        }
+    }
 
     void fillSoftwareAreaTrans(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint16_t col);
     void fillSoftwareArea(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint16_t col);
