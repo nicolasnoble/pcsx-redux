@@ -363,16 +363,18 @@ void PCSX::SoftGPU::impl::polyExec(Poly<shading, shape, textured, blend, modulat
                 } else {
                     switch (m_globalTextTP) {
                         case GPU::TexDepth::Tex4Bits:
-                            drawPoly3TEx4(m_x0, m_y0, m_x1, m_y1, m_x2, m_y2, prim->u[0], prim->v[0], prim->u[1],
-                                          prim->v[1], prim->u[2], prim->v[2], prim->clutX(), prim->clutY());
+                            drawPoly3T<TexMode::Clut4>(m_x0, m_y0, m_x1, m_y1, m_x2, m_y2, prim->u[0], prim->v[0],
+                                                       prim->u[1], prim->v[1], prim->u[2], prim->v[2], prim->clutX(),
+                                                       prim->clutY());
                             break;
                         case GPU::TexDepth::Tex8Bits:
-                            drawPoly3TEx8(m_x0, m_y0, m_x1, m_y1, m_x2, m_y2, prim->u[0], prim->v[0], prim->u[1],
-                                          prim->v[1], prim->u[2], prim->v[2], prim->clutX(), prim->clutY());
+                            drawPoly3T<TexMode::Clut8>(m_x0, m_y0, m_x1, m_y1, m_x2, m_y2, prim->u[0], prim->v[0],
+                                                       prim->u[1], prim->v[1], prim->u[2], prim->v[2], prim->clutX(),
+                                                       prim->clutY());
                             break;
                         case GPU::TexDepth::Tex16Bits:
-                            drawPoly3TD(m_x0, m_y0, m_x1, m_y1, m_x2, m_y2, prim->u[0], prim->v[0], prim->u[1],
-                                        prim->v[1], prim->u[2], prim->v[2]);
+                            drawPoly3T<TexMode::Direct15>(m_x0, m_y0, m_x1, m_y1, m_x2, m_y2, prim->u[0], prim->v[0],
+                                                          prim->u[1], prim->v[1], prim->u[2], prim->v[2], 0, 0);
                             break;
                     }
                 }

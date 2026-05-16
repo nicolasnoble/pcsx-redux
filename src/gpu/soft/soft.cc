@@ -2639,13 +2639,18 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3T(int16_t x1, int16_t y1, int16_t x2,
     }
 }
 
-////////////////////////////////////////////////////////////////////////
-
-void PCSX::SoftGPU::SoftRenderer::drawPoly3TEx4(int16_t x1, int16_t y1, int16_t x2, int16_t y2, int16_t x3, int16_t y3,
-                                                int16_t tx1, int16_t ty1, int16_t tx2, int16_t ty2, int16_t tx3,
-                                                int16_t ty3, int16_t clX, int16_t clY) {
-    drawPoly3T<TexMode::Clut4>(x1, y1, x2, y2, x3, y3, tx1, ty1, tx2, ty2, tx3, ty3, clX, clY);
-}
+// Explicit instantiations of drawPoly3T<TexMode> so polyExec in soft/gpu.cc
+// can link against the three TexMode forms without the template body
+// having to be visible in that translation unit.
+template void PCSX::SoftGPU::SoftRenderer::drawPoly3T<PCSX::SoftGPU::TexMode::Clut4>(
+    int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t,
+    int16_t, int16_t);
+template void PCSX::SoftGPU::SoftRenderer::drawPoly3T<PCSX::SoftGPU::TexMode::Clut8>(
+    int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t,
+    int16_t, int16_t);
+template void PCSX::SoftGPU::SoftRenderer::drawPoly3T<PCSX::SoftGPU::TexMode::Direct15>(
+    int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t,
+    int16_t, int16_t);
 
 ////////////////////////////////////////////////////////////////////////
 
@@ -2935,14 +2940,6 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly4TEx4_S(int16_t x1, int16_t y1, int16_
 
 ////////////////////////////////////////////////////////////////////////
 
-void PCSX::SoftGPU::SoftRenderer::drawPoly3TEx8(int16_t x1, int16_t y1, int16_t x2, int16_t y2, int16_t x3, int16_t y3,
-                                                int16_t tx1, int16_t ty1, int16_t tx2, int16_t ty2, int16_t tx3,
-                                                int16_t ty3, int16_t clX, int16_t clY) {
-    drawPoly3T<TexMode::Clut8>(x1, y1, x2, y2, x3, y3, tx1, ty1, tx2, ty2, tx3, ty3, clX, clY);
-}
-
-////////////////////////////////////////////////////////////////////////
-
 void PCSX::SoftGPU::SoftRenderer::drawPoly4TEx8(int16_t x1, int16_t y1, int16_t x2, int16_t y2, int16_t x3, int16_t y3,
                                                 int16_t x4, int16_t y4, int16_t tx1, int16_t ty1, int16_t tx2,
                                                 int16_t ty2, int16_t tx3, int16_t ty3, int16_t tx4, int16_t ty4,
@@ -3203,16 +3200,6 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly4TEx8_S(int16_t x1, int16_t y1, int16_
         }
         if (nextRowFlatTextured4()) return;
     }
-}
-
-////////////////////////////////////////////////////////////////////////
-// POLY 3 F-SHADED TEX 15 BIT
-////////////////////////////////////////////////////////////////////////
-
-void PCSX::SoftGPU::SoftRenderer::drawPoly3TD(int16_t x1, int16_t y1, int16_t x2, int16_t y2, int16_t x3, int16_t y3,
-                                              int16_t tx1, int16_t ty1, int16_t tx2, int16_t ty2, int16_t tx3,
-                                              int16_t ty3) {
-    drawPoly3T<TexMode::Direct15>(x1, y1, x2, y2, x3, y3, tx1, ty1, tx2, ty2, tx3, ty3, 0, 0);
 }
 
 ////////////////////////////////////////////////////////////////////////
