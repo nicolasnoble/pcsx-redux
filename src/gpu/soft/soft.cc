@@ -3806,8 +3806,8 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3TGEx4i(int16_t x1, int16_t y1, int16_
                     getTextureTransColShadeXDither<useCachedDither>(&vram16[(i << 10) + j], vram16[clutP + tC1],
                                                                     (cB1 >> 16), (cG1 >> 16), (cR1 >> 16));
                 } else {
-                    getTextureTransColShadeX(&vram16[(i << 10) + j], vram16[clutP + tC1], (cB1 >> 16), (cG1 >> 16),
-                                             (cR1 >> 16));
+                    PixelWriter<true, GPU::Shading::Gouraud, WriteMode::Default>::scalar(
+                        rs, &vram16[(i << 10) + j], vram16[clutP + tC1], (cB1 >> 16), (cG1 >> 16), (cR1 >> 16));
                 }
                 posX += difX;
                 posY += difY;
@@ -4006,8 +4006,8 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3TGEx8i(int16_t x1, int16_t y1, int16_
                     getTextureTransColShadeXDither<useCachedDither>(&vram16[(i << 10) + j], vram16[clutP + tC1],
                                                                     (cB1 >> 16), (cG1 >> 16), (cR1 >> 16));
                 } else {
-                    getTextureTransColShadeX(&vram16[(i << 10) + j], vram16[clutP + tC1], (cB1 >> 16), (cG1 >> 16),
-                                             (cR1 >> 16));
+                    PixelWriter<true, GPU::Shading::Gouraud, WriteMode::Default>::scalar(
+                        rs, &vram16[(i << 10) + j], vram16[clutP + tC1], (cB1 >> 16), (cG1 >> 16), (cR1 >> 16));
                 }
                 posX += difX;
                 posY += difY;
@@ -4201,8 +4201,8 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3TGDi(int16_t x1, int16_t y1, int16_t 
                                ((posX >> 16) & maskX) + globalTextAddrX + textureWindow.x0],
                         (cB1 >> 16), (cG1 >> 16), (cR1 >> 16));
                 } else {
-                    getTextureTransColShadeX(
-                        &vram16[(i << 10) + j],
+                    PixelWriter<true, GPU::Shading::Gouraud, WriteMode::Default>::scalar(
+                        rs, &vram16[(i << 10) + j],
                         vram16[((((posY >> 16) & maskY) + globalTextAddrY + textureWindow.y0) << 10) +
                                ((posX >> 16) & maskX) + globalTextAddrX + textureWindow.x0],
                         (cB1 >> 16), (cG1 >> 16), (cR1 >> 16));

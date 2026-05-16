@@ -313,6 +313,60 @@ struct PixelWriter<true, GPU::Shading::Gouraud, WriteMode::Solid> {
     }
 };
 
+// Textured, gouraud-shaded, Default (runtime checkMask + drawSemiTrans, no
+// dither). Matches the legacy `getTextureTransColShadeX` (scalar) member
+// helper bit for bit. Only a scalar entry point is provided because the
+// gouraud slow path iterates one pixel at a time (color interpolation
+// changes per pixel, the packed-pair fast path is unavailable for it).
+//
+// The dithered variant (matching `getTextureTransColShadeXDither`) lives in
+// a separate Dither specialization because it operates on a different
+// channel representation (right-aligned 8-bit channels via XCOL1D/2D/3D vs
+// the native-position channels here) and dispatches through
+// applyDither/applyDitherCached for the final write.
+template <>
+struct PixelWriter<true, GPU::Shading::Gouraud, WriteMode::Default> {
+    static inline void scalar(const RasterState &rs, uint16_t *pdest, uint16_t color, int16_t m1, int16_t m2,
+                              int16_t m3) {
+        if (color == 0) return;
+        if (rs.checkMask && *pdest & 0x8000) return;
+        const uint16_t l = rs.setMask16 | (color & 0x8000);
+        int32_t r, g, b;
+        if (rs.drawSemiTrans && (color & 0x8000)) {
+            if (rs.abr == GPU::BlendFunction::HalfBackAndHalfFront) {
+                const uint16_t d = ((*pdest) & 0x7bde) >> 1;
+                color = (color & 0x7bde) >> 1;
+                r = (d & 0x1f) + (((color & 0x1f) * m1) >> 7);
+                b = (d & 0x3e0) + (((color & 0x3e0) * m2) >> 7);
+                g = (d & 0x7c00) + (((color & 0x7c00) * m3) >> 7);
+            } else if (rs.abr == GPU::BlendFunction::FullBackAndFullFront) {
+                r = (*pdest & 0x1f) + (((color & 0x1f) * m1) >> 7);
+                b = (*pdest & 0x3e0) + (((color & 0x3e0) * m2) >> 7);
+                g = (*pdest & 0x7c00) + (((color & 0x7c00) * m3) >> 7);
+            } else if (rs.abr == GPU::BlendFunction::FullBackSubFullFront) {
+                r = (*pdest & 0x1f) - (((color & 0x1f) * m1) >> 7);
+                b = (*pdest & 0x3e0) - (((color & 0x3e0) * m2) >> 7);
+                g = (*pdest & 0x7c00) - (((color & 0x7c00) * m3) >> 7);
+                if (r & 0x80000000) r = 0;
+                if (b & 0x80000000) b = 0;
+                if (g & 0x80000000) g = 0;
+            } else {
+                r = (*pdest & 0x1f) + ((((color & 0x1f) >> 2) * m1) >> 7);
+                b = (*pdest & 0x3e0) + ((((color & 0x3e0) >> 2) * m2) >> 7);
+                g = (*pdest & 0x7c00) + ((((color & 0x7c00) >> 2) * m3) >> 7);
+            }
+        } else {
+            r = ((color & 0x1f) * m1) >> 7;
+            b = ((color & 0x3e0) * m2) >> 7;
+            g = ((color & 0x7c00) * m3) >> 7;
+        }
+        if (r & 0x7fffffe0) r = 0x1f;
+        if (b & 0x7ffffc00) b = 0x3e0;
+        if (g & 0x7fff8000) g = 0x7c00;
+        *pdest = ((g & 0x7c00) | (b & 0x3e0) | (r & 0x1f)) | l;
+    }
+};
+
 }  // namespace SoftGPU
 
 }  // namespace PCSX
