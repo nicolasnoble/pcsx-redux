@@ -29,15 +29,17 @@
 #include "support/imgui-helpers.h"
 #include "tracy/Tracy.hpp"
 
-#define GPUSTATUS_DMABITS 0x60000000
-#define GPUSTATUS_READYFORCOMMANDS 0x10000000
-#define GPUSTATUS_IDLE 0x04000000
-#define GPUSTATUS_DISPLAYDISABLED 0x00800000
-#define GPUSTATUS_INTERLACED 0x00400000
-#define GPUSTATUS_RGB24 0x00200000
-#define GPUSTATUS_PAL 0x00100000
-#define GPUSTATUS_DOUBLEHEIGHT 0x00080000
-#define GPUSTATUS_WIDTHBITS 0x00070000
+// GP1 status-register bit definitions. Names are protocol-visible and
+// must stay stable - logs and debugger expressions read them out.
+static constexpr uint32_t GPUSTATUS_DMABITS = 0x60000000;
+static constexpr uint32_t GPUSTATUS_READYFORCOMMANDS = 0x10000000;
+static constexpr uint32_t GPUSTATUS_IDLE = 0x04000000;
+static constexpr uint32_t GPUSTATUS_DISPLAYDISABLED = 0x00800000;
+static constexpr uint32_t GPUSTATUS_INTERLACED = 0x00400000;
+static constexpr uint32_t GPUSTATUS_RGB24 = 0x00200000;
+static constexpr uint32_t GPUSTATUS_PAL = 0x00100000;
+static constexpr uint32_t GPUSTATUS_DOUBLEHEIGHT = 0x00080000;
+static constexpr uint32_t GPUSTATUS_WIDTHBITS = 0x00070000;
 
 int32_t PCSX::SoftGPU::impl::initBackend(UI *ui) {
     m_ui = ui;
