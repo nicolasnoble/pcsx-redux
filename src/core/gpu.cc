@@ -765,7 +765,7 @@ void PCSX::GPU::Command::processWrite(Buffer &buf, Logged::Origin origin, uint32
         const uint8_t cmdType = value >> 29;           // 3 topmost bits = command "type"
         const uint8_t command = (value >> 24) & 0x1f;  // 5 next bits = "command", which may be a bitfield
 
-        const uint32_t packetInfo = value & 0xffffff;
+        const uint32_t packetInfo = value & kPacketInfoMask;
 
         switch (cmdType) {
             case 0:  // GPU command
@@ -1047,31 +1047,31 @@ PCSX::GPU::TPage::TPage(uint32_t value) {
 }
 
 PCSX::GPU::TWindow::TWindow(uint32_t value) {
-    x = value & 0x1f;
-    y = (value >> 5) & 0x1f;
-    w = (value >> 10) & 0x1f;
-    h = (value >> 15) & 0x1f;
+    x = value & kTWindowFieldMask;
+    y = (value >> 5) & kTWindowFieldMask;
+    w = (value >> 10) & kTWindowFieldMask;
+    h = (value >> 15) & kTWindowFieldMask;
 
     raw = value;
 }
 
 PCSX::GPU::DrawingAreaStart::DrawingAreaStart(uint32_t value) {
-    x = value & 0x3ff;
-    y = (value >> 10) & 0x1ff;
+    x = value & kCoord10Mask;
+    y = (value >> kDrawingAreaYShift) & kCoord9Mask;
 
     raw = value;
 }
 
 PCSX::GPU::DrawingAreaEnd::DrawingAreaEnd(uint32_t value) {
-    x = value & 0x3ff;
-    y = (value >> 10) & 0x1ff;
+    x = value & kCoord10Mask;
+    y = (value >> kDrawingAreaYShift) & kCoord9Mask;
 
     raw = value;
 }
 
 PCSX::GPU::DrawingOffset::DrawingOffset(uint32_t value) {
-    int ux = value & 0x7ff;
-    int uy = (value >> 11) & 0x7ff;
+    int ux = value & kCoord11Mask;
+    int uy = (value >> kDrawingOffsetYShift) & kCoord11Mask;
     x = signExtend<int, 11>(ux);
     y = signExtend<int, 11>(uy);
 

@@ -43,6 +43,44 @@ namespace PCSX {
 class UI;
 struct SaveStateWrapper;
 
+// GP0 / GP1 packet-layout constants. Each constant names the bit-field
+// width that the PSX protocol assigns to a particular packet payload
+// slot. The packet constructors and the GP0 command dispatcher decode
+// these slots with `value & mask` / `(value >> shift) & mask` shapes;
+// the constants below give those expressions hardware-anchored names
+// without changing the constructor logic. The raw env-packet preserve
+// sites (m_textureWindowRaw, m_drawingStartRaw, m_drawingEndRaw,
+// m_drawingOffsetRaw) keep their inline literals because they are
+// protocol-visible logging fields rather than decoded math.
+
+// GP0 command words carry the command byte in bits 24..28 and the
+// payload in bits 0..23. The 24-bit payload mask is the wire shape
+// shared by every env-class packet constructor.
+static constexpr uint32_t kPacketInfoMask = 0x00ffffff;
+
+// Coordinate field widths. PSX vertex coordinates pack as 11-bit
+// signed values (sign-extended after extraction); draw-area positions
+// pack as 10-bit X / 9-bit Y; horizontal display range as 12-bit X
+// pairs; CLUT selectors as 6-bit X / 9-bit Y; texture-window fields
+// as 5-bit selectors.
+static constexpr uint32_t kCoord9Mask = 0x1ff;
+static constexpr uint32_t kCoord10Mask = 0x3ff;
+static constexpr uint32_t kCoord11Mask = 0x7ff;
+static constexpr uint32_t kCoord12Mask = 0xfff;
+static constexpr uint32_t kClutXFieldMask = 0x3f;
+static constexpr uint32_t kClutYFieldMask = kCoord9Mask;
+static constexpr uint32_t kTWindowFieldMask = 0x1f;
+
+// Field shifts. The CLUT half-word packs X at bits 0..5 and Y at bits
+// 6..14. The DrawingOffset packs X at bits 0..10 and Y at bits 11..21.
+// The DrawingArea positions pack X at bits 0..9 and Y at bits 10..18.
+// The horizontal display range packs x0 at bits 0..11 and x1 at bits
+// 12..23.
+static constexpr int kClutYShift = 6;
+static constexpr int kDrawingOffsetYShift = 11;
+static constexpr int kDrawingAreaYShift = 10;
+static constexpr int kHorizDisplayRangeX1Shift = 12;
+
 class GPU {
   public:
     template <typename T, unsigned bits>
@@ -571,14 +609,14 @@ class GPU {
         DrawingOffset offset;
         TextureUnitType clutX() {
             if constexpr (textured == Textured::Yes) {
-                return (clutraw & 0x3f) * 16;
+                return (clutraw & kClutXFieldMask) * 16;
             } else {
                 return {};
             }
         }
         TextureUnitType clutY() {
             if constexpr (textured == Textured::Yes) {
-                return (clutraw >> 6) & 0x1ff;
+                return (clutraw >> kClutYShift) & kClutYFieldMask;
             } else {
                 return {};
             }
@@ -681,14 +719,14 @@ class GPU {
         DrawingOffset offset;
         TextureUnitType clutX() {
             if constexpr (textured == Textured::Yes) {
-                return (clutraw & 0x3f) * 16;
+                return (clutraw & kClutXFieldMask) * 16;
             } else {
                 return {};
             }
         }
         TextureUnitType clutY() {
             if constexpr (textured == Textured::Yes) {
-                return (clutraw >> 6) & 0x1ff;
+                return (clutraw >> kClutYShift) & kClutYFieldMask;
             } else {
                 return {};
             }
@@ -755,7 +793,7 @@ class GPU {
         void generateStatsInfo() override {}
         void cumulateStats(GPUStats *) override {}
         void getVertices(AddTri &&, PixelOp) override {}
-        CtrlDisplayStart(uint32_t value) : x(value & 0x3ff), y((value >> 10) & 0x1ff) {}
+        CtrlDisplayStart(uint32_t value) : x(value & kCoord10Mask), y((value >> kDrawingAreaYShift) & kCoord9Mask) {}
         CtrlDisplayStart(const CtrlDisplayStart &other) = default;
         CtrlDisplayStart(CtrlDisplayStart &&other) = default;
         CtrlDisplayStart &operator=(const CtrlDisplayStart &other) = default;
@@ -768,7 +806,8 @@ class GPU {
         void generateStatsInfo() override {}
         void cumulateStats(GPUStats *) override {}
         void getVertices(AddTri &&, PixelOp) override {}
-        CtrlHorizontalDisplayRange(uint32_t value) : x0(value & 0xfff), x1((value >> 12) & 0xfff) {}
+        CtrlHorizontalDisplayRange(uint32_t value)
+            : x0(value & kCoord12Mask), x1((value >> kHorizDisplayRangeX1Shift) & kCoord12Mask) {}
         CtrlHorizontalDisplayRange(const CtrlHorizontalDisplayRange &other) = default;
         CtrlHorizontalDisplayRange(CtrlHorizontalDisplayRange &&other) = default;
         CtrlHorizontalDisplayRange &operator=(const CtrlHorizontalDisplayRange &other) = default;
@@ -781,7 +820,8 @@ class GPU {
         void generateStatsInfo() override {}
         void cumulateStats(GPUStats *) override {}
         void getVertices(AddTri &&, PixelOp) override {}
-        CtrlVerticalDisplayRange(uint32_t value) : y0(value & 0x3ff), y1((value >> 10) & 0x3ff) {}
+        CtrlVerticalDisplayRange(uint32_t value)
+            : y0(value & kCoord10Mask), y1((value >> kDrawingAreaYShift) & kCoord10Mask) {}
         CtrlVerticalDisplayRange(const CtrlVerticalDisplayRange &other) = default;
         CtrlVerticalDisplayRange(CtrlVerticalDisplayRange &&other) = default;
         CtrlVerticalDisplayRange &operator=(const CtrlVerticalDisplayRange &other) = default;
