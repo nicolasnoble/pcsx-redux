@@ -1057,15 +1057,23 @@ void PCSX::SoftGPU::SoftRenderer::fillSoftwareArea(int16_t x0, int16_t y0, int16
 // 3-vert convention worth knowing before reading the body: the
 // m_deltaRight{U,V,R,G,B} members are the *X-direction span gradients*
 // computed once via shl10idiv against the longest edge. Per-row Y advance
-// on the right edge only carries m_deltaRightX. The left edge tracks full
-// X+U+V+R+G+B per-row in m_left*/deltaLeft*/m_deltaLeft*.
+// on the right edge only carries the m_rightStartX/m_rightDiffX recompute
+// pair. The left edge tracks full X+U+V+R+G+B per-row via m_leftStart{X,
+// U,V,R,G,B}/m_leftDiff{X,U,V,R,G,B}.
 //
-// The 4-vertex paths (setupSections{Flat4,FlatTextured4}) reuse the same
-// m_deltaRight{U,V,R,G,B} field names but populate them with per-row
-// Y-deltas, not span gradients - body code interpolates across each span
-// by (m_rightU - m_leftU) / spanWidth. The two schemes are not
-// interchangeable, which is why Phase 4 keeps 3-vert and 4-vert as
-// separate template families instead of one unified shape.
+// The 4-vertex paths (setupSections{Flat4,FlatTextured4}) carry per-row
+// Y-state in m_rightStart{X,U,V}/m_rightDiff{X,U,V} (and the matching left
+// fields). Body code interpolates across each span by
+// (m_rightU - m_leftU) / spanWidth. The 3-vert m_deltaRight{U,V,R,G,B}
+// span gradients are not touched by 4-vert paths.
+//
+// Per-row recompute. Each row computes its edge-state value from scratch
+// as start + (int64_t)diff * row / fullHeight, where row is the
+// section-relative row index derived from the down-counter. This is
+// bit-exact against hardware: hardware itself walks edges with full
+// precision, and the recompute formula reproduces that behaviour with one
+// truncation per row instead of accumulating an integer-divided quotient
+// that drifts after multiple rows.
 //
 // Bodies live in this TU only; all instantiations happen here, so no
 // explicit instantiation declarations are needed.
@@ -1077,9 +1085,11 @@ int PCSX::SoftGPU::SoftRenderer::rightSection3() {
 
     int height = v2->y - v1->y;
     if (height == 0) return 0;
-    m_deltaRightX = (v2->x - v1->x) / height;
+    m_rightStartX = v1->x;
+    m_rightDiffX = v2->x - v1->x;
     m_rightX = v1->x;
 
+    m_rightSectionFullHeight = height;
     m_rightSectionHeight = height;
     return height;
 }
@@ -1091,25 +1101,32 @@ int PCSX::SoftGPU::SoftRenderer::leftSection3() {
 
     int height = v2->y - v1->y;
     if (height == 0) return 0;
-    m_deltaLeftX = (v2->x - v1->x) / height;
+    m_leftStartX = v1->x;
+    m_leftDiffX = v2->x - v1->x;
     m_leftX = v1->x;
 
     if constexpr (HasUV) {
-        m_deltaLeftU = ((v2->u - v1->u)) / height;
+        m_leftStartU = v1->u;
+        m_leftDiffU = v2->u - v1->u;
         m_leftU = v1->u;
-        m_deltaLeftV = ((v2->v - v1->v)) / height;
+        m_leftStartV = v1->v;
+        m_leftDiffV = v2->v - v1->v;
         m_leftV = v1->v;
     }
 
     if constexpr (HasRGB) {
-        deltaLeftR = ((v2->R - v1->R)) / height;
+        m_leftStartR = v1->R;
+        m_leftDiffR = v2->R - v1->R;
         m_leftR = v1->R;
-        m_deltaLeftG = ((v2->G - v1->G)) / height;
+        m_leftStartG = v1->G;
+        m_leftDiffG = v2->G - v1->G;
         m_leftG = v1->G;
-        m_deltaLeftB = ((v2->B - v1->B)) / height;
+        m_leftStartB = v1->B;
+        m_leftDiffB = v2->B - v1->B;
         m_leftB = v1->B;
     }
 
+    m_leftSectionFullHeight = height;
     m_leftSectionHeight = height;
     return height;
 }
@@ -1120,15 +1137,17 @@ bool PCSX::SoftGPU::SoftRenderer::nextRow3() {
         if (--m_leftSection <= 0) return true;
         if (leftSection3<HasUV, HasRGB>() <= 0) return true;
     } else {
-        m_leftX += m_deltaLeftX;
+        const int row = m_leftSectionFullHeight - m_leftSectionHeight;
+        const int height = m_leftSectionFullHeight;
+        m_leftX = m_leftStartX + (int64_t)m_leftDiffX * row / height;
         if constexpr (HasUV) {
-            m_leftU += m_deltaLeftU;
-            m_leftV += m_deltaLeftV;
+            m_leftU = m_leftStartU + (int64_t)m_leftDiffU * row / height;
+            m_leftV = m_leftStartV + (int64_t)m_leftDiffV * row / height;
         }
         if constexpr (HasRGB) {
-            m_leftR += deltaLeftR;
-            m_leftG += m_deltaLeftG;
-            m_leftB += m_deltaLeftB;
+            m_leftR = m_leftStartR + (int64_t)m_leftDiffR * row / height;
+            m_leftG = m_leftStartG + (int64_t)m_leftDiffG * row / height;
+            m_leftB = m_leftStartB + (int64_t)m_leftDiffB * row / height;
         }
     }
 
@@ -1136,7 +1155,8 @@ bool PCSX::SoftGPU::SoftRenderer::nextRow3() {
         if (--m_rightSection <= 0) return true;
         if (rightSection3<HasUV, HasRGB>() <= 0) return true;
     } else {
-        m_rightX += m_deltaRightX;
+        const int row = m_rightSectionFullHeight - m_rightSectionHeight;
+        m_rightX = m_rightStartX + (int64_t)m_rightDiffX * row / m_rightSectionFullHeight;
     }
     return false;
 }
@@ -1273,14 +1293,18 @@ int PCSX::SoftGPU::SoftRenderer::rightSectionFlatTextured4() {
     SoftVertex *v2 = m_rightArray[m_rightSection - 1];
 
     int height = v2->y - v1->y;
+    m_rightSectionFullHeight = height;
     m_rightSectionHeight = height;
+    m_rightStartX = v1->x;
+    m_rightDiffX = v2->x - v1->x;
     m_rightX = v1->x;
+    m_rightStartU = v1->u;
+    m_rightDiffU = v2->u - v1->u;
     m_rightU = v1->u;
+    m_rightStartV = v1->v;
+    m_rightDiffV = v2->v - v1->v;
     m_rightV = v1->v;
     if (height == 0) return 0;
-    m_deltaRightX = (v2->x - v1->x) / height;
-    m_deltaRightU = (v2->u - v1->u) / height;
-    m_deltaRightV = (v2->v - v1->v) / height;
 
     return height;
 }
@@ -1292,14 +1316,18 @@ int PCSX::SoftGPU::SoftRenderer::leftSectionFlatTextured4() {
     SoftVertex *v2 = m_leftArray[m_leftSection - 1];
 
     int height = v2->y - v1->y;
+    m_leftSectionFullHeight = height;
     m_leftSectionHeight = height;
+    m_leftStartX = v1->x;
+    m_leftDiffX = v2->x - v1->x;
     m_leftX = v1->x;
+    m_leftStartU = v1->u;
+    m_leftDiffU = v2->u - v1->u;
     m_leftU = v1->u;
+    m_leftStartV = v1->v;
+    m_leftDiffV = v2->v - v1->v;
     m_leftV = v1->v;
     if (height == 0) return 0;
-    m_deltaLeftX = (v2->x - v1->x) / height;
-    m_deltaLeftU = (v2->u - v1->u) / height;
-    m_deltaLeftV = (v2->v - v1->v) / height;
 
     return height;
 }
@@ -1314,9 +1342,11 @@ bool PCSX::SoftGPU::SoftRenderer::nextRowFlatTextured4() {
             }
         }
     } else {
-        m_leftX += m_deltaLeftX;
-        m_leftU += m_deltaLeftU;
-        m_leftV += m_deltaLeftV;
+        const int row = m_leftSectionFullHeight - m_leftSectionHeight;
+        const int height = m_leftSectionFullHeight;
+        m_leftX = m_leftStartX + (int64_t)m_leftDiffX * row / height;
+        m_leftU = m_leftStartU + (int64_t)m_leftDiffU * row / height;
+        m_leftV = m_leftStartV + (int64_t)m_leftDiffV * row / height;
     }
 
     if (--m_rightSectionHeight <= 0) {
@@ -1326,9 +1356,11 @@ bool PCSX::SoftGPU::SoftRenderer::nextRowFlatTextured4() {
             }
         }
     } else {
-        m_rightX += m_deltaRightX;
-        m_rightU += m_deltaRightU;
-        m_rightV += m_deltaRightV;
+        const int row = m_rightSectionFullHeight - m_rightSectionHeight;
+        const int height = m_rightSectionFullHeight;
+        m_rightX = m_rightStartX + (int64_t)m_rightDiffX * row / height;
+        m_rightU = m_rightStartU + (int64_t)m_rightDiffU * row / height;
+        m_rightV = m_rightStartV + (int64_t)m_rightDiffV * row / height;
     }
     return false;
 }

@@ -248,13 +248,35 @@ struct SoftRenderer {
     SoftVertex m_vtx[4];
     SoftVertex *m_leftArray[4], *m_rightArray[4];
     int m_leftSection, m_rightSection;
-    int m_leftSectionHeight, m_rightSectionHeight;
-    int m_leftX, m_deltaLeftX, m_rightX, m_deltaRightX;
-    int m_leftU, m_deltaLeftU, m_leftV, m_deltaLeftV;
-    int m_rightU, m_deltaRightU, m_rightV, m_deltaRightV;
-    int m_leftR, deltaLeftR, m_deltaRightR;
-    int m_leftG, m_deltaLeftG, m_deltaRightG;
-    int m_leftB, m_deltaLeftB, m_deltaRightB;
+    // Per-section row counters. m_*SectionHeight is the down-counter starting
+    // at the section's full height; m_*SectionFullHeight is the constant
+    // divisor for the per-row recompute formula below.
+    int m_leftSectionHeight, m_leftSectionFullHeight;
+    int m_rightSectionHeight, m_rightSectionFullHeight;
+    // Per-row Y-axis edge state. The section-relative row index is
+    // (m_*SectionFullHeight - m_*SectionHeight) after the down-counter has
+    // been decremented in nextRow*. The current value is recomputed each row
+    // as m_*Start + (int64_t)m_*Diff * row / m_*SectionFullHeight, which is
+    // bit-exact against hardware (one truncation per row, no accumulator
+    // drift) instead of the legacy +=quotient stepper.
+    int m_leftX, m_leftStartX, m_leftDiffX;
+    int m_leftU, m_leftStartU, m_leftDiffU;
+    int m_leftV, m_leftStartV, m_leftDiffV;
+    int m_leftR, m_leftStartR, m_leftDiffR;
+    int m_leftG, m_leftStartG, m_leftDiffG;
+    int m_leftB, m_leftStartB, m_leftDiffB;
+    int m_rightX, m_rightStartX, m_rightDiffX;
+    // 4-vert flat-textured carries U/V per-row on the right edge too; 3-vert
+    // bodies use the m_deltaRight{U,V} X-direction span gradients below
+    // instead.
+    int m_rightU, m_rightStartU, m_rightDiffU;
+    int m_rightV, m_rightStartV, m_rightDiffV;
+    // 3-vert X-direction span gradients: set once by setupSections3 via
+    // shl10idiv, read by drawPoly3{T,Gi,TG} as the per-pixel-X stride for
+    // texture coordinates and gouraud channels. Distinct from the per-row
+    // Y-axis deltas above and not touched by 4-vert paths.
+    int m_deltaRightU, m_deltaRightV;
+    int m_deltaRightR, m_deltaRightG, m_deltaRightB;
 
     static constexpr inline int shl10idiv(int x, int y) {
         int64_t bi = x;
