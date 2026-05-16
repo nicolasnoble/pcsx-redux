@@ -892,11 +892,11 @@ void PCSX::SoftGPU::SoftRenderer::fillSoftwareAreaTrans(int16_t x0, int16_t y0, 
     x0 = std::max(x0, static_cast<int16_t>(m_drawX));
     y0 = std::max(y0, static_cast<int16_t>(m_drawY));
 
-    if (y0 >= GPU_HEIGHT) return;
-    if (x0 >= GPU_WIDTH) return;
+    if (y0 >= VRAM_HEIGHT) return;
+    if (x0 >= VRAM_WIDTH) return;
 
-    if (y1 > GPU_HEIGHT) y1 = GPU_HEIGHT;
-    if (x1 > GPU_WIDTH) x1 = GPU_WIDTH;
+    if (y1 > VRAM_HEIGHT) y1 = VRAM_HEIGHT;
+    if (x1 > VRAM_WIDTH) x1 = VRAM_WIDTH;
 
     dx = x1 - x0;
     dy = y1 - y0;
@@ -916,8 +916,8 @@ void PCSX::SoftGPU::SoftRenderer::fillSoftwareAreaTrans(int16_t x0, int16_t y0, 
         // slow fill
         uint16_t *DSTPtr;
         uint16_t LineOffset;
-        DSTPtr = m_vram16 + (GPU_WIDTH * y0) + x0;
-        LineOffset = GPU_WIDTH - dx;
+        DSTPtr = m_vram16 + (VRAM_WIDTH * y0) + x0;
+        LineOffset = VRAM_WIDTH - dx;
         for (i = 0; i < dy; i++) {
             for (j = 0; j < dx; j++) Writer::scalar(rs, DSTPtr++, col);
             DSTPtr += LineOffset;
@@ -928,7 +928,7 @@ void PCSX::SoftGPU::SoftRenderer::fillSoftwareAreaTrans(int16_t x0, int16_t y0, 
         uint16_t LineOffset;
         uint32_t lcol = m_setMask32 | (((uint32_t)(col)) << 16) | col;
         dx >>= 1;
-        DSTPtr = (uint32_t *)(m_vram16 + (GPU_WIDTH * y0) + x0);
+        DSTPtr = (uint32_t *)(m_vram16 + (VRAM_WIDTH * y0) + x0);
         LineOffset = 512 - dx;
 
         if (!m_checkMask && !m_drawSemiTrans) {
@@ -953,11 +953,11 @@ void PCSX::SoftGPU::SoftRenderer::fillSoftwareArea(int16_t x0, int16_t y0, int16
     if (y0 > y1) return;
     if (x0 > x1) return;
 
-    if (y0 >= GPU_HEIGHT) return;
-    if (x0 >= GPU_WIDTH) return;
+    if (y0 >= VRAM_HEIGHT) return;
+    if (x0 >= VRAM_WIDTH) return;
 
-    if (y1 > GPU_HEIGHT) y1 = GPU_HEIGHT;
-    if (x1 > GPU_WIDTH) x1 = GPU_WIDTH;
+    if (y1 > VRAM_HEIGHT) y1 = VRAM_HEIGHT;
+    if (x1 > VRAM_WIDTH) x1 = VRAM_WIDTH;
 
     dx = x1 - x0;
     dy = y1 - y0;
@@ -965,8 +965,8 @@ void PCSX::SoftGPU::SoftRenderer::fillSoftwareArea(int16_t x0, int16_t y0, int16
         uint16_t *DSTPtr;
         uint16_t LineOffset;
 
-        DSTPtr = m_vram16 + (GPU_WIDTH * y0) + x0;
-        LineOffset = GPU_WIDTH - dx;
+        DSTPtr = m_vram16 + (VRAM_WIDTH * y0) + x0;
+        LineOffset = VRAM_WIDTH - dx;
 
         for (i = 0; i < dy; i++) {
             for (j = 0; j < dx; j++) *DSTPtr++ = col;
@@ -978,7 +978,7 @@ void PCSX::SoftGPU::SoftRenderer::fillSoftwareArea(int16_t x0, int16_t y0, int16
         uint32_t lcol = (((int32_t)col) << 16) | col;
 
         dx >>= 1;
-        DSTPtr = (uint32_t *)(m_vram16 + (GPU_WIDTH * y0) + x0);
+        DSTPtr = (uint32_t *)(m_vram16 + (VRAM_WIDTH * y0) + x0);
         LineOffset = 512 - dx;
 
         for (i = 0; i < dy; i++) {

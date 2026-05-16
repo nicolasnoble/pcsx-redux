@@ -47,7 +47,7 @@ int32_t PCSX::SoftGPU::impl::initBackend(UI *ui) {
     initDisplay();
 
     // always alloc one extra MB for soft drawing funcs security
-    m_allocatedVRAM = new uint8_t[(GPU_HEIGHT * 2) * 1024 + (1024 * 1024)]();
+    m_allocatedVRAM = new uint8_t[(VRAM_HEIGHT * 2) * 1024 + (1024 * 1024)]();
     if (!m_allocatedVRAM) return -1;
 
     //!!! ATTENTION !!!
@@ -144,9 +144,9 @@ void PCSX::SoftGPU::impl::changeDispOffsetsY() {
     int iT, iO = m_previousDisplay.Range.y0;
     int iOldYOffset = m_previousDisplay.DisplayModeNew.y;
 
-    if ((m_previousDisplay.DisplayModeNew.x + m_softDisplay.DisplayModeNew.y) > GPU_HEIGHT) {
-        int dy1 = GPU_HEIGHT - m_previousDisplay.DisplayModeNew.x;
-        int dy2 = (m_previousDisplay.DisplayModeNew.x + m_softDisplay.DisplayModeNew.y) - GPU_HEIGHT;
+    if ((m_previousDisplay.DisplayModeNew.x + m_softDisplay.DisplayModeNew.y) > VRAM_HEIGHT) {
+        int dy1 = VRAM_HEIGHT - m_previousDisplay.DisplayModeNew.x;
+        int dy2 = (m_previousDisplay.DisplayModeNew.x + m_softDisplay.DisplayModeNew.y) - VRAM_HEIGHT;
 
         if (dy1 >= dy2) {
             m_previousDisplay.DisplayModeNew.y = -dy2;
@@ -584,13 +584,13 @@ void PCSX::SoftGPU::impl::write0(BlitVramVram *prim) {
     if (imageSX <= 0) return;
     if (imageSY <= 0) return;
 
-    if ((imageY0 + imageSY) > GPU_HEIGHT || (imageX0 + imageSX) > 1024 || (imageY1 + imageSY) > GPU_HEIGHT ||
+    if ((imageY0 + imageSY) > VRAM_HEIGHT || (imageX0 + imageSX) > 1024 || (imageY1 + imageSY) > VRAM_HEIGHT ||
         (imageX1 + imageSX) > 1024) {
         int i, j;
         for (j = 0; j < imageSY; j++) {
             for (i = 0; i < imageSX; i++) {
-                m_vram16[(1024 * ((imageY1 + j) & GPU_HEIGHT_MASK)) + ((imageX1 + i) & 0x3ff)] =
-                    m_vram16[(1024 * ((imageY0 + j) & GPU_HEIGHT_MASK)) + ((imageX0 + i) & 0x3ff)];
+                m_vram16[(1024 * ((imageY1 + j) & VRAM_Y_MASK)) + ((imageX1 + i) & VRAM_X_MASK)] =
+                    m_vram16[(1024 * ((imageY0 + j) & VRAM_Y_MASK)) + ((imageX0 + i) & VRAM_X_MASK)];
             }
         }
 
@@ -719,9 +719,9 @@ void PCSX::SoftGPU::impl::write1(CtrlDisplayStart *ctrl) {
     // store the same val in some helper var, we need it on later compares
     m_previousDisplay.DisplayModeNew.x = m_softDisplay.DisplayPosition.y;
 
-    if ((m_softDisplay.DisplayPosition.y + m_softDisplay.DisplayMode.y) > GPU_HEIGHT) {
-        int dy1 = GPU_HEIGHT - m_softDisplay.DisplayPosition.y;
-        int dy2 = (m_softDisplay.DisplayPosition.y + m_softDisplay.DisplayMode.y) - GPU_HEIGHT;
+    if ((m_softDisplay.DisplayPosition.y + m_softDisplay.DisplayMode.y) > VRAM_HEIGHT) {
+        int dy1 = VRAM_HEIGHT - m_softDisplay.DisplayPosition.y;
+        int dy2 = (m_softDisplay.DisplayPosition.y + m_softDisplay.DisplayMode.y) - VRAM_HEIGHT;
 
         if (dy1 >= dy2) {
             m_previousDisplay.DisplayModeNew.y = -dy2;

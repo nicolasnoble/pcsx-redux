@@ -27,6 +27,32 @@ namespace PCSX {
 
 namespace SoftGPU {
 
+// PS1 VRAM geometry. The framebuffer is a fixed 1024x512 halfword grid,
+// addressed by `vram16[(y << VRAM_WIDTH_SHIFT) + x]`. The mask constants
+// are useful when wrap-mode addressing is needed (uploads, blits) or
+// when the address arithmetic carries through a wider type.
+//
+// CHKMAX_X / CHKMAX_Y in soft.cc are edge-length-limit constants for
+// triangle setup; they happen to share these numeric values but are
+// semantically distinct - keep them separate.
+static constexpr int VRAM_WIDTH = 1024;
+static constexpr int VRAM_HEIGHT = 512;
+static constexpr int VRAM_WIDTH_SHIFT = 10;
+static constexpr uint32_t VRAM_X_MASK = 0x3ff;
+static constexpr uint32_t VRAM_Y_MASK = 0x1ff;
+// Two 16-bit pixels per 32-bit word; the packed-pair pixel writers
+// process this many per inner-loop iteration.
+static constexpr int PACKED_PIXELS_PER_WORD = 2;
+
+// 16.16 fixed-point parameters. The soft rasterizer carries edge X
+// values and per-row gradients in this format throughout the inner
+// loops. FIXED_HALF is the pixel-centre bias hardware uses to decide
+// which side of an edge a pixel sits on.
+static constexpr int FIXED_SHIFT = 16;
+static constexpr int32_t FIXED_ONE = 1 << FIXED_SHIFT;
+static constexpr int32_t FIXED_HALF = 1 << (FIXED_SHIFT - 1);
+static constexpr int32_t FIXED_MASK = FIXED_ONE - 1;
+
 // Compile-time texture sampling mode for the software rasterizer. Picks the
 // per-texel address arithmetic and CLUT lookup form. Selected at primitive
 // dispatch after texturePage() resolves the runtime m_globalTextTP value,

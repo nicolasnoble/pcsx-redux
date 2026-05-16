@@ -104,10 +104,6 @@ struct SoftRenderer {
     bool m_ditherMode = false;
     int m_drawX, m_drawY, m_drawW, m_drawH;
 
-    static constexpr int GPU_WIDTH = 1024;
-    static constexpr int GPU_HEIGHT = 512;
-    static constexpr int GPU_HEIGHT_MASK = 511;
-
     bool m_drawSemiTrans = false;
     int16_t m_m1 = 255, m_m2 = 255, m_m3 = 255;
     int16_t m_y0, m_x0, m_y1, m_x1, m_y2, m_x2, m_y3, m_x3;  // global psx vertex coords
