@@ -2406,6 +2406,53 @@ class LineStepper {
     int m_endMajor;
 };
 
+// Per-step gouraud colour walker for shaded line rasterizers. Captures
+// the per-channel deltas at construction; advanceTo(stepIdx) snaps the
+// internal R/G/B back to the line-anchored linear interpolation, and
+// current555() packs them into BGR555. Channels are kept in the same
+// high-aligned 8.16-style layout the original octant bodies used so
+// the >> 9 / >> 14 / >> 19 pack stays identical at the bit level.
+// The steps==0 guard is hoisted into advanceTo() once instead of being
+// repeated at every plot site.
+class GouraudWalker {
+  public:
+    GouraudWalker(uint32_t rgb0, uint32_t rgb1, int steps)
+        : m_r((rgb0 & 0x00ff0000)),
+          m_g((rgb0 & 0x0000ff00) << 8),
+          m_b((rgb0 & 0x000000ff) << 16),
+          m_rInit(m_r),
+          m_gInit(m_g),
+          m_bInit(m_b),
+          m_drFull((int32_t)(rgb1 & 0x00ff0000) - (int32_t)m_r),
+          m_dgFull((int32_t)((rgb1 & 0x0000ff00) << 8) - (int32_t)m_g),
+          m_dbFull((int32_t)((rgb1 & 0x000000ff) << 16) - (int32_t)m_b),
+          m_steps(steps) {}
+
+    void advanceTo(int stepIdx) {
+        if (m_steps != 0) {
+            m_r = m_rInit + (int64_t)m_drFull * stepIdx / m_steps;
+            m_g = m_gInit + (int64_t)m_dgFull * stepIdx / m_steps;
+            m_b = m_bInit + (int64_t)m_dbFull * stepIdx / m_steps;
+        }
+    }
+
+    uint16_t current555() const {
+        return (uint16_t)(((m_r >> 9) & 0x7c00) | ((m_g >> 14) & 0x03e0) | ((m_b >> 19) & 0x001f));
+    }
+
+  private:
+    uint32_t m_r;
+    uint32_t m_g;
+    uint32_t m_b;
+    uint32_t m_rInit;
+    uint32_t m_gInit;
+    uint32_t m_bInit;
+    int32_t m_drFull;
+    int32_t m_dgFull;
+    int32_t m_dbFull;
+    int m_steps;
+};
+
 }  // namespace
 
 template <PCSX::SoftGPU::Line::Axis MajorAxis, PCSX::SoftGPU::Line::MajorSign MaSign,
@@ -2416,18 +2463,6 @@ void PCSX::SoftGPU::SoftRenderer::drawLineOctantShade(int x0, int y0, int x1, in
     const auto drawH = m_drawH;
     const auto drawW = m_drawW;
     const auto vram16 = m_vram16;
-
-    uint32_t r0 = (rgb0 & 0x00ff0000);
-    uint32_t g0 = (rgb0 & 0x0000ff00) << 8;
-    uint32_t b0 = (rgb0 & 0x000000ff) << 16;
-    const uint32_t r1 = (rgb1 & 0x00ff0000);
-    const uint32_t g1 = (rgb1 & 0x0000ff00) << 8;
-    const uint32_t b1 = (rgb1 & 0x000000ff) << 16;
-
-    const uint32_t r_init = r0, g_init = g0, b_init = b0;
-    const int32_t dr_full = (int32_t)r1 - (int32_t)r0;
-    const int32_t dg_full = (int32_t)g1 - (int32_t)g0;
-    const int32_t db_full = (int32_t)b1 - (int32_t)b0;
 
     // Major-axis distance for the gouraud interpolation denominator.
     int steps;
@@ -2440,25 +2475,22 @@ void PCSX::SoftGPU::SoftRenderer::drawLineOctantShade(int x0, int y0, int x1, in
     }
 
     LineStepper<MajorAxis, MaSign, MiSign, B> stepper(x0, y0, x1, y1);
+    GouraudWalker walker(rgb0, rgb1, steps);
     RasterState rs = makeBaseRasterState();
 
     auto plot = [&](int x, int y) {
         if ((x >= drawX) && (x < drawW) && (y >= drawY) && (y < drawH)) {
             PixelWriter<false, GPU::Shading::Flat, WriteMode::Default>::scalar(rs, &vram16[(y << 10) + x],
-                (uint16_t)(((r0 >> 9) & 0x7c00) | ((g0 >> 14) & 0x03e0) | ((b0 >> 19) & 0x001f)));
+                                                                               walker.current555());
         }
     };
 
     plot(stepper.x(), stepper.y());
-    int step_idx = 0;
+    int stepIdx = 0;
     while (stepper.more()) {
         stepper.advance();
-        ++step_idx;
-        if (steps != 0) {
-            r0 = r_init + (int64_t)dr_full * step_idx / steps;
-            g0 = g_init + (int64_t)dg_full * step_idx / steps;
-            b0 = b_init + (int64_t)db_full * step_idx / steps;
-        }
+        ++stepIdx;
+        walker.advanceTo(stepIdx);
         plot(stepper.x(), stepper.y());
     }
 }
@@ -2469,20 +2501,10 @@ template <PCSX::SoftGPU::Line::Axis Iter>
 void PCSX::SoftGPU::SoftRenderer::drawAxisLineShade(int constCoord, int varStart, int varEnd, uint32_t rgb0,
                                                     uint32_t rgb1) {
     const auto vram16 = m_vram16;
-
-    uint32_t r0 = (rgb0 & 0x00ff0000);
-    uint32_t g0 = (rgb0 & 0x0000ff00) << 8;
-    uint32_t b0 = (rgb0 & 0x000000ff) << 16;
-    const uint32_t r1 = (rgb1 & 0x00ff0000);
-    const uint32_t g1 = (rgb1 & 0x0000ff00) << 8;
-    const uint32_t b1 = (rgb1 & 0x000000ff) << 16;
-
-    const uint32_t r_init = r0, g_init = g0, b_init = b0;
-    const int32_t dr_full = (int32_t)r1 - (int32_t)r0;
-    const int32_t dg_full = (int32_t)g1 - (int32_t)g0;
-    const int32_t db_full = (int32_t)b1 - (int32_t)b0;
     const int steps = varEnd - varStart;
-    const int varStart_orig = varStart;
+    const int varStartOrig = varStart;
+
+    GouraudWalker walker(rgb0, rgb1, steps);
 
     if constexpr (Iter == Line::Axis::X) {
         if (varStart < m_drawX) varStart = m_drawX;
@@ -2495,20 +2517,14 @@ void PCSX::SoftGPU::SoftRenderer::drawAxisLineShade(int constCoord, int varStart
     RasterState rs = makeBaseRasterState();
 
     for (int v = varStart; v <= varEnd; ++v) {
-        if (steps != 0) {
-            const int step_idx = v - varStart_orig;
-            r0 = r_init + (int64_t)dr_full * step_idx / steps;
-            g0 = g_init + (int64_t)dg_full * step_idx / steps;
-            b0 = b_init + (int64_t)db_full * step_idx / steps;
-        }
+        walker.advanceTo(v - varStartOrig);
         uint16_t *dst;
         if constexpr (Iter == Line::Axis::X) {
             dst = &vram16[(constCoord << 10) + v];
         } else {
             dst = &vram16[(v << 10) + constCoord];
         }
-        PixelWriter<false, GPU::Shading::Flat, WriteMode::Default>::scalar(rs, dst,
-            (uint16_t)(((r0 >> 9) & 0x7c00) | ((g0 >> 14) & 0x03e0) | ((b0 >> 19) & 0x001f)));
+        PixelWriter<false, GPU::Shading::Flat, WriteMode::Default>::scalar(rs, dst, walker.current555());
     }
 }
 
