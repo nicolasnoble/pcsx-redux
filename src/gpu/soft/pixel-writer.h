@@ -134,11 +134,19 @@ struct PixelWriter<true, GPU::Shading::Flat, WriteMode::Default> {
         int32_t r, g, b;
         if (rs.drawSemiTrans && (color & 0x8000)) {
             if (rs.abr == GPU::BlendFunction::HalfBackAndHalfFront) {
-                const uint16_t d = ((*pdest) & 0x7bde) >> 1;
-                color = (color & 0x7bde) >> 1;
-                r = (d & 0x1f) + (((color & 0x1f) * rs.m1) >> 7);
-                b = (d & 0x3e0) + (((color & 0x3e0) * rs.m2) >> 7);
-                g = (d & 0x7c00) + (((color & 0x7c00) * rs.m3) >> 7);
+                // (B + F_modulated) / 2 per channel, in 5-bit space. The
+                // historical `((B|F) & 0x7bde) >> 1` shortcut drops the
+                // bit-0 carry term: hardware preserves it (verified on
+                // SCPH-5501 via gpu-raster-phase12 abr0_tri_b31_f31).
+                const int32_t Br = *pdest & 0x1f;
+                const int32_t Bb = (*pdest >> 5) & 0x1f;
+                const int32_t Bg = (*pdest >> 10) & 0x1f;
+                const int32_t Fr = ((color & 0x1f) * rs.m1) >> 7;
+                const int32_t Fb = (((color >> 5) & 0x1f) * rs.m2) >> 7;
+                const int32_t Fg = (((color >> 10) & 0x1f) * rs.m3) >> 7;
+                r = (Br + Fr) >> 1;
+                b = ((Bb + Fb) >> 1) << 5;
+                g = ((Bg + Fg) >> 1) << 10;
             } else if (rs.abr == GPU::BlendFunction::FullBackAndFullFront) {
                 r = (*pdest & 0x1f) + (((color & 0x1f) * rs.m1) >> 7);
                 b = (*pdest & 0x3e0) + (((color & 0x3e0) * rs.m2) >> 7);
@@ -334,11 +342,18 @@ struct PixelWriter<true, GPU::Shading::Gouraud, WriteMode::Default> {
         int32_t r, g, b;
         if (rs.drawSemiTrans && (color & 0x8000)) {
             if (rs.abr == GPU::BlendFunction::HalfBackAndHalfFront) {
-                const uint16_t d = ((*pdest) & 0x7bde) >> 1;
-                color = (color & 0x7bde) >> 1;
-                r = (d & 0x1f) + (((color & 0x1f) * m1) >> 7);
-                b = (d & 0x3e0) + (((color & 0x3e0) * m2) >> 7);
-                g = (d & 0x7c00) + (((color & 0x7c00) * m3) >> 7);
+                // Carry-preserving (B + F_modulated) / 2 per channel.
+                // See PixelWriter<true, Flat, Default>::scalar for the
+                // hardware rationale (phase-12 abr0_tri_b31_f31).
+                const int32_t Br = *pdest & 0x1f;
+                const int32_t Bb = (*pdest >> 5) & 0x1f;
+                const int32_t Bg = (*pdest >> 10) & 0x1f;
+                const int32_t Fr = ((color & 0x1f) * m1) >> 7;
+                const int32_t Fb = (((color >> 5) & 0x1f) * m2) >> 7;
+                const int32_t Fg = (((color >> 10) & 0x1f) * m3) >> 7;
+                r = (Br + Fr) >> 1;
+                b = ((Bb + Fb) >> 1) << 5;
+                g = ((Bg + Fg) >> 1) << 10;
             } else if (rs.abr == GPU::BlendFunction::FullBackAndFullFront) {
                 r = (*pdest & 0x1f) + (((color & 0x1f) * m1) >> 7);
                 b = (*pdest & 0x3e0) + (((color & 0x3e0) * m2) >> 7);
@@ -388,8 +403,18 @@ struct PixelWriter<false, GPU::Shading::Flat, WriteMode::Default> {
         if (rs.drawSemiTrans) {
             int32_t r, g, b;
             if (rs.abr == GPU::BlendFunction::HalfBackAndHalfFront) {
-                *pdest = ((((*pdest) & 0x7bde) >> 1) + ((color & 0x7bde) >> 1)) | rs.setMask16;
-                return;
+                // Carry-preserving (B + F) / 2 per channel. The legacy
+                // `((B|F) & 0x7bde) >> 1` shortcut drops the bit-0
+                // carry; hardware preserves it.
+                const int32_t Br = *pdest & 0x1f;
+                const int32_t Bb = (*pdest >> 5) & 0x1f;
+                const int32_t Bg = (*pdest >> 10) & 0x1f;
+                const int32_t Fr = color & 0x1f;
+                const int32_t Fb = (color >> 5) & 0x1f;
+                const int32_t Fg = (color >> 10) & 0x1f;
+                r = (Br + Fr) >> 1;
+                b = ((Bb + Fb) >> 1) << 5;
+                g = ((Bg + Fg) >> 1) << 10;
             } else if (rs.abr == GPU::BlendFunction::FullBackAndFullFront) {
                 r = (*pdest & 0x1f) + (color & 0x1f);
                 b = (*pdest & 0x3e0) + (color & 0x3e0);
@@ -419,14 +444,26 @@ struct PixelWriter<false, GPU::Shading::Flat, WriteMode::Default> {
         if (rs.drawSemiTrans) {
             int32_t r, g, b;
             if (rs.abr == GPU::BlendFunction::HalfBackAndHalfFront) {
+                // Per-channel (B + F) / 2 across the two packed pixels.
+                // Replaces the legacy `((p|color) & 0x7bde7bde) >> 1`
+                // shortcut, which dropped each channel's bit-0 carry.
+                // Hardware preserves it (phase-12 abr0_tri_b31_f31).
+                const uint32_t Br = *pdest & 0x001f001f;
+                const uint32_t Bb = (*pdest >> 5) & 0x001f001f;
+                const uint32_t Bg = (*pdest >> 10) & 0x001f001f;
+                const uint32_t Fr = color & 0x001f001f;
+                const uint32_t Fb = (color >> 5) & 0x001f001f;
+                const uint32_t Fg = (color >> 10) & 0x001f001f;
                 if (!rs.checkMask) {
-                    *pdest = ((((*pdest) & 0x7bde7bde) >> 1) + ((color & 0x7bde7bde) >> 1)) | rs.setMask32;
+                    const uint32_t hr = ((Br + Fr) >> 1) & 0x001f001f;
+                    const uint32_t hb = ((Bb + Fb) >> 1) & 0x001f001f;
+                    const uint32_t hg = ((Bg + Fg) >> 1) & 0x001f001f;
+                    *pdest = (hg << 10) | (hb << 5) | hr | rs.setMask32;
                     return;
                 }
-                // X32ACOL1 = (x & 0x001e001e); etc. Trailing low bit dropped so >> 1 stays lossless across both halves.
-                r = ((*pdest & 0x001e001e) >> 1) + ((color & 0x001e001e) >> 1);
-                b = (((*pdest >> 5) & 0x001e001e) >> 1) + (((color >> 5) & 0x001e001e) >> 1);
-                g = (((*pdest >> 10) & 0x001e001e) >> 1) + (((color >> 10) & 0x001e001e) >> 1);
+                r = ((Br + Fr) >> 1) & 0x001f001f;
+                b = ((Bb + Fb) >> 1) & 0x001f001f;
+                g = ((Bg + Fg) >> 1) & 0x001f001f;
             } else if (rs.abr == GPU::BlendFunction::FullBackAndFullFront) {
                 r = (*pdest & 0x001f001f) + (color & 0x001f001f);
                 b = ((*pdest >> 5) & 0x001f001f) + ((color >> 5) & 0x001f001f);

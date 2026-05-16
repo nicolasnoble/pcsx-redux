@@ -338,9 +338,11 @@ void PCSX::SoftGPU::SoftRenderer::getShadeTransColDither(uint16_t *pdest, int32_
         g = ((XCOL3D(*pdest)) << 3);
 
         if (m_globalTextABR == GPU::BlendFunction::HalfBackAndHalfFront) {
-            r = (r >> 1) + (m1 >> 1);
-            b = (b >> 1) + (m2 >> 1);
-            g = (g >> 1) + (m3 >> 1);
+            // (B + F) / 2 preserving each channel's bit-0 carry
+            // (phase-12 abr0_tri_b31_f31). 8-bit per channel here.
+            r = (r + m1) >> 1;
+            b = (b + m2) >> 1;
+            g = (g + m3) >> 1;
         } else if (m_globalTextABR == GPU::BlendFunction::FullBackAndFullFront) {
             r += m1;
             b += m2;
@@ -388,12 +390,19 @@ void PCSX::SoftGPU::SoftRenderer::getTextureTransColShade(uint16_t *pdest, uint1
 
     if (m_drawSemiTrans && (color & 0x8000)) {
         if (m_globalTextABR == GPU::BlendFunction::HalfBackAndHalfFront) {
-            uint16_t d;
-            d = ((*pdest) & 0x7bde) >> 1;
-            color = (color & 0x7bde) >> 1;
-            r = (XCOL1(d)) + ((((XCOL1(color))) * m_m1) >> 7);
-            b = (XCOL2(d)) + ((((XCOL2(color))) * m_m2) >> 7);
-            g = (XCOL3(d)) + ((((XCOL3(color))) * m_m3) >> 7);
+            // Carry-preserving (B + F_modulated) / 2 per channel.
+            // See pixel-writer.h for the hardware rationale (phase-12
+            // abr0_tri_b31_f31): the legacy `((B|F) & 0x7bde) >> 1`
+            // shortcut drops each channel's bit-0 carry term.
+            const int32_t Br = *pdest & 0x1f;
+            const int32_t Bb = (*pdest >> 5) & 0x1f;
+            const int32_t Bg = (*pdest >> 10) & 0x1f;
+            const int32_t Fr = ((color & 0x1f) * m_m1) >> 7;
+            const int32_t Fb = (((color >> 5) & 0x1f) * m_m2) >> 7;
+            const int32_t Fg = (((color >> 10) & 0x1f) * m_m3) >> 7;
+            r = (Br + Fr) >> 1;
+            b = ((Bb + Fb) >> 1) << 5;
+            g = ((Bg + Fg) >> 1) << 10;
         } else if (m_globalTextABR == GPU::BlendFunction::FullBackAndFullFront) {
             r = (XCOL1(*pdest)) + ((((XCOL1(color))) * m_m1) >> 7);
             b = (XCOL2(*pdest)) + ((((XCOL2(color))) * m_m2) >> 7);
@@ -458,12 +467,17 @@ void PCSX::SoftGPU::SoftRenderer::getTextureTransColShadeSemi(uint16_t *pdest, u
 
     if (m_drawSemiTrans && (color & 0x8000)) {
         if (m_globalTextABR == GPU::BlendFunction::HalfBackAndHalfFront) {
-            uint16_t d;
-            d = ((*pdest) & 0x7bde) >> 1;
-            color = (color & 0x7bde) >> 1;
-            r = (XCOL1(d)) + ((((XCOL1(color))) * m_m1) >> 7);
-            b = (XCOL2(d)) + ((((XCOL2(color))) * m_m2) >> 7);
-            g = (XCOL3(d)) + ((((XCOL3(color))) * m_m3) >> 7);
+            // Carry-preserving (B + F_modulated) / 2 per channel
+            // (phase-12 abr0_tri_b31_f31).
+            const int32_t Br = *pdest & 0x1f;
+            const int32_t Bb = (*pdest >> 5) & 0x1f;
+            const int32_t Bg = (*pdest >> 10) & 0x1f;
+            const int32_t Fr = ((color & 0x1f) * m_m1) >> 7;
+            const int32_t Fb = (((color >> 5) & 0x1f) * m_m2) >> 7;
+            const int32_t Fg = (((color >> 10) & 0x1f) * m_m3) >> 7;
+            r = (Br + Fr) >> 1;
+            b = ((Bb + Fb) >> 1) << 5;
+            g = ((Bg + Fg) >> 1) << 10;
         } else if (m_globalTextABR == GPU::BlendFunction::FullBackAndFullFront) {
             r = (XCOL1(*pdest)) + ((((XCOL1(color))) * m_m1) >> 7);
             b = (XCOL2(*pdest)) + ((((XCOL2(color))) * m_m2) >> 7);
@@ -730,9 +744,11 @@ void PCSX::SoftGPU::SoftRenderer::getTextureTransColShadeXDither(uint16_t *pdest
         g = ((XCOL3D(*pdest)) << 3);
 
         if (m_globalTextABR == GPU::BlendFunction::HalfBackAndHalfFront) {
-            r = (r >> 1) + (m1 >> 1);
-            b = (b >> 1) + (m2 >> 1);
-            g = (g >> 1) + (m3 >> 1);
+            // (B + F) / 2 preserving each channel's bit-0 carry
+            // (phase-12 abr0_tri_b31_f31). 8-bit per channel here.
+            r = (r + m1) >> 1;
+            b = (b + m2) >> 1;
+            g = (g + m3) >> 1;
         } else if (m_globalTextABR == GPU::BlendFunction::FullBackAndFullFront) {
             r += m1;
             b += m2;
@@ -781,12 +797,17 @@ void PCSX::SoftGPU::SoftRenderer::getTextureTransColShadeX(uint16_t *pdest, uint
 
     if (m_drawSemiTrans && (color & 0x8000)) {
         if (m_globalTextABR == GPU::BlendFunction::HalfBackAndHalfFront) {
-            uint16_t d;
-            d = ((*pdest) & 0x7bde) >> 1;
-            color = (color & 0x7bde) >> 1;
-            r = (XCOL1(d)) + ((((XCOL1(color))) * m1) >> 7);
-            b = (XCOL2(d)) + ((((XCOL2(color))) * m2) >> 7);
-            g = (XCOL3(d)) + ((((XCOL3(color))) * m3) >> 7);
+            // Carry-preserving (B + F_modulated) / 2 per channel
+            // (phase-12 abr0_tri_b31_f31).
+            const int32_t Br = *pdest & 0x1f;
+            const int32_t Bb = (*pdest >> 5) & 0x1f;
+            const int32_t Bg = (*pdest >> 10) & 0x1f;
+            const int32_t Fr = ((color & 0x1f) * m1) >> 7;
+            const int32_t Fb = (((color >> 5) & 0x1f) * m2) >> 7;
+            const int32_t Fg = (((color >> 10) & 0x1f) * m3) >> 7;
+            r = (Br + Fr) >> 1;
+            b = ((Bb + Fb) >> 1) << 5;
+            g = ((Bg + Fg) >> 1) << 10;
         } else if (m_globalTextABR == GPU::BlendFunction::FullBackAndFullFront) {
             r = (XCOL1(*pdest)) + ((((XCOL1(color))) * m1) >> 7);
             b = (XCOL2(*pdest)) + ((((XCOL2(color))) * m2) >> 7);
