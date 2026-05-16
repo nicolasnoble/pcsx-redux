@@ -1369,154 +1369,6 @@ bool PCSX::SoftGPU::SoftRenderer::setupSections3(const TriInput &in) {
 ////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////
 
-int PCSX::SoftGPU::SoftRenderer::rightSectionShade3() {
-    SoftVertex *v1 = m_rightArray[m_rightSection];
-    SoftVertex *v2 = m_rightArray[m_rightSection - 1];
-
-    int height = v2->y - v1->y;
-    if (height == 0) return 0;
-    m_deltaRightX = (v2->x - v1->x) / height;
-    m_rightX = v1->x;
-
-    m_rightSectionHeight = height;
-    return height;
-}
-
-////////////////////////////////////////////////////////////////////////
-
-int PCSX::SoftGPU::SoftRenderer::leftSectionShade3() {
-    SoftVertex *v1 = m_leftArray[m_leftSection];
-    SoftVertex *v2 = m_leftArray[m_leftSection - 1];
-
-    int height = v2->y - v1->y;
-    if (height == 0) return 0;
-    m_deltaLeftX = (v2->x - v1->x) / height;
-    m_leftX = v1->x;
-
-    deltaLeftR = ((v2->R - v1->R)) / height;
-    m_leftR = v1->R;
-    m_deltaLeftG = ((v2->G - v1->G)) / height;
-    m_leftG = v1->G;
-    m_deltaLeftB = ((v2->B - v1->B)) / height;
-    m_leftB = v1->B;
-
-    m_leftSectionHeight = height;
-    return height;
-}
-
-////////////////////////////////////////////////////////////////////////
-
-bool PCSX::SoftGPU::SoftRenderer::nextRowShade3() {
-    if (--m_leftSectionHeight <= 0) {
-        if (--m_leftSection <= 0) return true;
-        if (leftSectionShade3() <= 0) return true;
-    } else {
-        m_leftX += m_deltaLeftX;
-        m_leftR += deltaLeftR;
-        m_leftG += m_deltaLeftG;
-        m_leftB += m_deltaLeftB;
-    }
-
-    if (--m_rightSectionHeight <= 0) {
-        if (--m_rightSection <= 0) return true;
-        if (rightSectionShade3() <= 0) return true;
-    } else {
-        m_rightX += m_deltaRightX;
-    }
-    return false;
-}
-
-////////////////////////////////////////////////////////////////////////
-
-bool PCSX::SoftGPU::SoftRenderer::setupSectionsShade3(int16_t x1, int16_t y1, int16_t x2, int16_t y2, int16_t x3,
-                                                      int16_t y3, int32_t rgb1, int32_t rgb2, int32_t rgb3) {
-    SoftVertex *v1, *v2, *v3;
-    int height, longest, temp;
-
-    v1 = m_vtx;
-    v1->x = x1 << 16;
-    v1->y = y1;
-    v1->R = rgb1 & 0x00ff0000;
-    v1->G = (rgb1 << 8) & 0x00ff0000;
-    v1->B = (rgb1 << 16) & 0x00ff0000;
-    v2 = m_vtx + 1;
-    v2->x = x2 << 16;
-    v2->y = y2;
-    v2->R = rgb2 & 0x00ff0000;
-    v2->G = (rgb2 << 8) & 0x00ff0000;
-    v2->B = (rgb2 << 16) & 0x00ff0000;
-    v3 = m_vtx + 2;
-    v3->x = x3 << 16;
-    v3->y = y3;
-    v3->R = rgb3 & 0x00ff0000;
-    v3->G = (rgb3 << 8) & 0x00ff0000;
-    v3->B = (rgb3 << 16) & 0x00ff0000;
-
-    if (v1->y > v2->y) {
-        SoftVertex *v = v1;
-        v1 = v2;
-        v2 = v;
-    }
-    if (v1->y > v3->y) {
-        SoftVertex *v = v1;
-        v1 = v3;
-        v3 = v;
-    }
-    if (v2->y > v3->y) {
-        SoftVertex *v = v2;
-        v2 = v3;
-        v3 = v;
-    }
-
-    height = v3->y - v1->y;
-    if (height == 0) return false;
-    temp = (((v2->y - v1->y) << 16) / height);
-    longest = temp * ((v3->x - v1->x) >> 16) + (v1->x - v2->x);
-    if (longest == 0) return false;
-
-    if (longest < 0) {
-        m_rightArray[0] = v3;
-        m_rightArray[1] = v2;
-        m_rightArray[2] = v1;
-        m_rightSection = 2;
-        m_leftArray[0] = v3;
-        m_leftArray[1] = v1;
-        m_leftSection = 1;
-
-        if (leftSectionShade3() <= 0) return false;
-        if (rightSectionShade3() <= 0) {
-            m_rightSection--;
-            if (rightSectionShade3() <= 0) return false;
-        }
-        if (longest > -0x1000) longest = -0x1000;
-    } else {
-        m_leftArray[0] = v3;
-        m_leftArray[1] = v2;
-        m_leftArray[2] = v1;
-        m_leftSection = 2;
-        m_rightArray[0] = v3;
-        m_rightArray[1] = v1;
-        m_rightSection = 1;
-
-        if (rightSectionShade3() <= 0) return false;
-        if (leftSectionShade3() <= 0) {
-            m_leftSection--;
-            if (leftSectionShade3() <= 0) return false;
-        }
-        if (longest < 0x1000) longest = 0x1000;
-    }
-
-    m_yMin = v1->y;
-    m_yMax = std::min(v3->y - 1, m_drawH);
-
-    m_deltaRightR = shl10idiv(temp * ((v3->R - v1->R) >> 10) + ((v1->R - v2->R) << 6), longest);
-    m_deltaRightG = shl10idiv(temp * ((v3->G - v1->G) >> 10) + ((v1->G - v2->G) << 6), longest);
-    m_deltaRightB = shl10idiv(temp * ((v3->B - v1->B) >> 10) + ((v1->B - v2->B) << 6), longest);
-
-    return true;
-}
-
-////////////////////////////////////////////////////////////////////////
 
 int PCSX::SoftGPU::SoftRenderer::rightSectionFlatTextured3() {
     SoftVertex *v1 = m_rightArray[m_rightSection];
@@ -3587,12 +3439,12 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3Gi(int16_t x1, int16_t y1, int16_t x2
     if (drawY >= drawH) return;
     if (drawX >= drawW) return;
 
-    if (!setupSectionsShade3(x1, y1, x2, y2, x3, y3, rgb1, rgb2, rgb3)) return;
+    if (!setupSections3<false, true>(TriInput{{x1, x2, x3}, {y1, y2, y3}, {}, {}, {rgb1, rgb2, rgb3}})) return;
 
     ymax = m_yMax;
 
     for (ymin = m_yMin; ymin < drawY; ymin++) {
-        if (nextRowShade3()) return;
+        if (nextRow3<false, true>()) return;
     }
 
     difR = m_deltaRightR;
@@ -3647,7 +3499,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3Gi(int16_t x1, int16_t y1, int16_t x2
                         (((cR1 >> 9) & 0x7c00) | ((cG1 >> 14) & 0x03e0) | ((cB1 >> 19) & 0x001f)) | setMask16;
                 }
             }
-            if (nextRowShade3()) return;
+            if (nextRow3<false, true>()) return;
         }
         return;
     }
@@ -3680,7 +3532,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3Gi(int16_t x1, int16_t y1, int16_t x2
                     cB1 += difB;
                 }
             }
-            if (nextRowShade3()) return;
+            if (nextRow3<false, true>()) return;
         }
     } else {
         for (i = ymin; i <= ymax; i++) {
@@ -3710,7 +3562,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3Gi(int16_t x1, int16_t y1, int16_t x2
                     cB1 += difB;
                 }
             }
-            if (nextRowShade3()) return;
+            if (nextRow3<false, true>()) return;
         }
     }
 }
