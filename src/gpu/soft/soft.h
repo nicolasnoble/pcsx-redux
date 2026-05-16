@@ -231,6 +231,61 @@ struct SoftRenderer {
     void disableCachedDithering();
 
   private:
+    // RasterState builders: capture the renderer's stable per-primitive state
+    // into a value type so the inner loops read from a single struct instead
+    // of repeatedly dereferencing renderer members.
+    //
+    // makeBaseRasterState() fills the fields every primitive needs: ABR, the
+    // mask-write policy (checkMask + setMask16/32), and the drawSemiTrans
+    // toggle. Untextured paths (fills, lines, flat triangles, gouraud
+    // triangles without sampling) need nothing more.
+    //
+    // makeTexturedRasterState<Tex>(drawX, drawY, drawW, drawH, clX, clY)
+    // adds the VRAM pointers, the texture window, the texture page base,
+    // the draw rect, the per-call modulation factors, and the CLUT pointer.
+    // clutP is set to zero for Direct15 (the field is unused), and to
+    // `(clY << 10) + clX` for the CLUT4 / CLUT8 modes.
+    inline RasterState makeBaseRasterState() const {
+        RasterState rs{};
+        rs.abr = m_globalTextABR;
+        rs.checkMask = m_checkMask;
+        rs.setMask16 = m_setMask16;
+        rs.setMask32 = m_setMask32;
+        rs.drawSemiTrans = m_drawSemiTrans;
+        return rs;
+    }
+
+    template <TexMode Tex>
+    inline RasterState makeTexturedRasterState(int drawX, int drawY, int drawW, int drawH, int clX, int clY) const {
+        RasterState rs{};
+        rs.vram = m_vram;
+        rs.vram16 = m_vram16;
+        rs.texWindowX0 = m_textureWindowOffU;
+        rs.texWindowY0 = m_textureWindowOffV;
+        rs.maskX = m_textureWindowMaskU;
+        rs.maskY = m_textureWindowMaskV;
+        rs.texBaseX = m_globalTextAddrX;
+        rs.texBaseY = m_globalTextAddrY;
+        rs.abr = m_globalTextABR;
+        rs.drawX = drawX;
+        rs.drawY = drawY;
+        rs.drawW = drawW;
+        rs.drawH = drawH;
+        rs.checkMask = m_checkMask;
+        rs.setMask16 = m_setMask16;
+        rs.setMask32 = m_setMask32;
+        rs.drawSemiTrans = m_drawSemiTrans;
+        rs.m1 = m_m1;
+        rs.m2 = m_m2;
+        rs.m3 = m_m3;
+        if constexpr (Tex == TexMode::Direct15) {
+            rs.clutP = 0;
+        } else {
+            rs.clutP = (clY << 10) + clX;
+        }
+        return rs;
+    }
+
     // Unified 3-vertex edge walkers. Four (HasUV, HasRGB) instantiations cover
     // the legacy Flat3 / Shade3 / FlatTextured3 / ShadeTextured3 family. See
     // soft.cc for the body comment that explains why 3-vert and 4-vert stay

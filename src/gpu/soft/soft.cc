@@ -936,12 +936,7 @@ void PCSX::SoftGPU::SoftRenderer::fillSoftwareAreaTrans(int16_t x0, int16_t y0, 
         iCheat ^= 1;
     }
 
-    RasterState rs{};
-    rs.abr = m_globalTextABR;
-    rs.checkMask = m_checkMask;
-    rs.setMask16 = m_setMask16;
-    rs.setMask32 = m_setMask32;
-    rs.drawSemiTrans = m_drawSemiTrans;
+    RasterState rs = makeBaseRasterState();
 
     using Writer = PixelWriter<false, GPU::Shading::Flat, WriteMode::Default>;
 
@@ -1582,12 +1577,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3Fi(int16_t x1, int16_t y1, int16_t x2
         return;
     }
 
-    RasterState rs{};
-    rs.abr = m_globalTextABR;
-    rs.checkMask = m_checkMask;
-    rs.setMask16 = m_setMask16;
-    rs.setMask32 = m_setMask32;
-    rs.drawSemiTrans = m_drawSemiTrans;
+    RasterState rs = makeBaseRasterState();
 
     for (i = ymin; i <= ymax; i++) {
         xmin = (m_leftX + 0xFFFF) >> 16;
@@ -1656,35 +1646,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3T(int16_t x1, int16_t y1, int16_t x2,
         if (nextRow3<true, false>()) return;
     }
 
-    RasterState rs{};
-    rs.vram = m_vram;
-    rs.vram16 = m_vram16;
-    // texWindowX0/Y0: pre-masked offset bits (`(off * 8) & (mask * 8)`).
-    // maskX/Y: mask * 8 (the bits of U/V that get overwritten by the
-    // offset). filtered_u = (u & ~maskX) | texWindowX0. See twindow().
-    rs.texWindowX0 = m_textureWindowOffU;
-    rs.texWindowY0 = m_textureWindowOffV;
-    rs.maskX = m_textureWindowMaskU;
-    rs.maskY = m_textureWindowMaskV;
-    rs.texBaseX = m_globalTextAddrX;
-    rs.texBaseY = m_globalTextAddrY;
-    rs.abr = m_globalTextABR;
-    rs.drawX = drawX;
-    rs.drawY = drawY;
-    rs.drawW = drawW;
-    rs.drawH = drawH;
-    rs.checkMask = m_checkMask;
-    rs.setMask16 = m_setMask16;
-    rs.setMask32 = m_setMask32;
-    rs.drawSemiTrans = m_drawSemiTrans;
-    rs.m1 = m_m1;
-    rs.m2 = m_m2;
-    rs.m3 = m_m3;
-    if constexpr (Tex == TexMode::Direct15) {
-        rs.clutP = 0;  // unused for Direct15
-    } else {
-        rs.clutP = (clY << 10) + clX;
-    }
+    RasterState rs = makeTexturedRasterState<Tex>(drawX, drawY, drawW, drawH, clX, clY);
     const int32_t yAdj = Sampler<Tex>::yAdjust(rs);
     const auto vram16 = rs.vram16;
 
@@ -2724,12 +2686,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3Gi(int16_t x1, int16_t y1, int16_t x2
             if (nextRow3<false, true>()) return;
         }
     } else {
-        RasterState rs{};
-        rs.abr = m_globalTextABR;
-        rs.checkMask = m_checkMask;
-        rs.setMask16 = m_setMask16;
-        rs.setMask32 = m_setMask32;
-        rs.drawSemiTrans = m_drawSemiTrans;
+        RasterState rs = makeBaseRasterState();
 
         for (i = ymin; i <= ymax; i++) {
             xmin = (m_leftX + 0xFFFF) >> 16;
@@ -2839,35 +2796,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3TG(int16_t x1, int16_t y1, int16_t x2
         if (nextRow3<true, true>()) return;
     }
 
-    RasterState rs{};
-    rs.vram = m_vram;
-    rs.vram16 = m_vram16;
-    // texWindowX0/Y0: pre-masked offset bits (`(off * 8) & (mask * 8)`).
-    // maskX/Y: mask * 8 (the bits of U/V that get overwritten by the
-    // offset). filtered_u = (u & ~maskX) | texWindowX0. See twindow().
-    rs.texWindowX0 = m_textureWindowOffU;
-    rs.texWindowY0 = m_textureWindowOffV;
-    rs.maskX = m_textureWindowMaskU;
-    rs.maskY = m_textureWindowMaskV;
-    rs.texBaseX = m_globalTextAddrX;
-    rs.texBaseY = m_globalTextAddrY;
-    rs.abr = m_globalTextABR;
-    rs.drawX = drawX;
-    rs.drawY = drawY;
-    rs.drawW = drawW;
-    rs.drawH = drawH;
-    rs.checkMask = m_checkMask;
-    rs.setMask16 = m_setMask16;
-    rs.setMask32 = m_setMask32;
-    rs.drawSemiTrans = m_drawSemiTrans;
-    rs.m1 = m_m1;
-    rs.m2 = m_m2;
-    rs.m3 = m_m3;
-    if constexpr (Tex == TexMode::Direct15) {
-        rs.clutP = 0;
-    } else {
-        rs.clutP = (clY << 10) + clX;
-    }
+    RasterState rs = makeTexturedRasterState<Tex>(drawX, drawY, drawW, drawH, clX, clY);
     const int32_t yAdj = Sampler<Tex>::yAdjust(rs);
     const auto vram16 = rs.vram16;
 
@@ -3124,12 +3053,7 @@ void PCSX::SoftGPU::SoftRenderer::line_E_SE_Shade(int x0, int y0, int x1, int y1
     const auto setMask32 = m_setMask32;
     const auto ditherMode = m_ditherMode;
 
-    RasterState rs{};
-    rs.abr = m_globalTextABR;
-    rs.checkMask = m_checkMask;
-    rs.setMask16 = m_setMask16;
-    rs.setMask32 = m_setMask32;
-    rs.drawSemiTrans = m_drawSemiTrans;
+    RasterState rs = makeBaseRasterState();
 
     if ((x0 >= drawX) && (x0 < drawW) && (y0 >= drawY) && (y0 < drawH)) {
         PixelWriter<false, GPU::Shading::Flat, WriteMode::Default>::scalar(rs, &vram16[(y0 << 10) + x0],
@@ -3202,12 +3126,7 @@ void PCSX::SoftGPU::SoftRenderer::line_S_SE_Shade(int x0, int y0, int x1, int y1
     const auto setMask32 = m_setMask32;
     const auto ditherMode = m_ditherMode;
 
-    RasterState rs{};
-    rs.abr = m_globalTextABR;
-    rs.checkMask = m_checkMask;
-    rs.setMask16 = m_setMask16;
-    rs.setMask32 = m_setMask32;
-    rs.drawSemiTrans = m_drawSemiTrans;
+    RasterState rs = makeBaseRasterState();
 
     if ((x0 >= drawX) && (x0 < drawW) && (y0 >= drawY) && (y0 < drawH)) {
         PixelWriter<false, GPU::Shading::Flat, WriteMode::Default>::scalar(rs, &vram16[(y0 << 10) + x0],
@@ -3280,12 +3199,7 @@ void PCSX::SoftGPU::SoftRenderer::line_N_NE_Shade(int x0, int y0, int x1, int y1
     const auto setMask32 = m_setMask32;
     const auto ditherMode = m_ditherMode;
 
-    RasterState rs{};
-    rs.abr = m_globalTextABR;
-    rs.checkMask = m_checkMask;
-    rs.setMask16 = m_setMask16;
-    rs.setMask32 = m_setMask32;
-    rs.drawSemiTrans = m_drawSemiTrans;
+    RasterState rs = makeBaseRasterState();
 
     if ((x0 >= drawX) && (x0 < drawW) && (y0 >= drawY) && (y0 < drawH)) {
         PixelWriter<false, GPU::Shading::Flat, WriteMode::Default>::scalar(rs, &vram16[(y0 << 10) + x0],
@@ -3359,12 +3273,7 @@ void PCSX::SoftGPU::SoftRenderer::line_E_NE_Shade(int x0, int y0, int x1, int y1
     const auto setMask32 = m_setMask32;
     const auto ditherMode = m_ditherMode;
 
-    RasterState rs{};
-    rs.abr = m_globalTextABR;
-    rs.checkMask = m_checkMask;
-    rs.setMask16 = m_setMask16;
-    rs.setMask32 = m_setMask32;
-    rs.drawSemiTrans = m_drawSemiTrans;
+    RasterState rs = makeBaseRasterState();
 
     if ((x0 >= drawX) && (x0 < drawW) && (y0 >= drawY) && (y0 < drawH)) {
         PixelWriter<false, GPU::Shading::Flat, WriteMode::Default>::scalar(rs, &vram16[(y0 << 10) + x0],
@@ -3436,12 +3345,7 @@ void PCSX::SoftGPU::SoftRenderer::vertLineShade(int x, int y0, int y1, uint32_t 
     const auto setMask32 = m_setMask32;
     const auto ditherMode = m_ditherMode;
 
-    RasterState rs{};
-    rs.abr = m_globalTextABR;
-    rs.checkMask = m_checkMask;
-    rs.setMask16 = m_setMask16;
-    rs.setMask32 = m_setMask32;
-    rs.drawSemiTrans = m_drawSemiTrans;
+    RasterState rs = makeBaseRasterState();
 
     for (y = y0; y <= y1; y++) {
         if (steps != 0) {
@@ -3496,12 +3400,7 @@ void PCSX::SoftGPU::SoftRenderer::horzLineShade(int y, int x0, int x1, uint32_t 
     const auto setMask32 = m_setMask32;
     const auto ditherMode = m_ditherMode;
 
-    RasterState rs{};
-    rs.abr = m_globalTextABR;
-    rs.checkMask = m_checkMask;
-    rs.setMask16 = m_setMask16;
-    rs.setMask32 = m_setMask32;
-    rs.drawSemiTrans = m_drawSemiTrans;
+    RasterState rs = makeBaseRasterState();
 
     for (x = x0; x <= x1; x++) {
         if (steps != 0) {
@@ -3548,12 +3447,7 @@ void PCSX::SoftGPU::SoftRenderer::line_E_SE_Flat(int x0, int y0, int x1, int y1,
     const auto setMask32 = m_setMask32;
     const auto ditherMode = m_ditherMode;
 
-    RasterState rs{};
-    rs.abr = m_globalTextABR;
-    rs.checkMask = m_checkMask;
-    rs.setMask16 = m_setMask16;
-    rs.setMask32 = m_setMask32;
-    rs.drawSemiTrans = m_drawSemiTrans;
+    RasterState rs = makeBaseRasterState();
 
     if ((x >= drawX) && (x < drawW) && (y >= drawY) && (y < drawH)) {
         PixelWriter<false, GPU::Shading::Flat, WriteMode::Default>::scalar(rs, &vram16[(y << 10) + x], color);
@@ -3603,12 +3497,7 @@ void PCSX::SoftGPU::SoftRenderer::line_S_SE_Flat(int x0, int y0, int x1, int y1,
     const auto setMask32 = m_setMask32;
     const auto ditherMode = m_ditherMode;
 
-    RasterState rs{};
-    rs.abr = m_globalTextABR;
-    rs.checkMask = m_checkMask;
-    rs.setMask16 = m_setMask16;
-    rs.setMask32 = m_setMask32;
-    rs.drawSemiTrans = m_drawSemiTrans;
+    RasterState rs = makeBaseRasterState();
 
     if ((x >= drawX) && (x < drawW) && (y >= drawY) && (y < drawH)) {
         PixelWriter<false, GPU::Shading::Flat, WriteMode::Default>::scalar(rs, &vram16[(y << 10) + x], color);
@@ -3658,12 +3547,7 @@ void PCSX::SoftGPU::SoftRenderer::line_N_NE_Flat(int x0, int y0, int x1, int y1,
     const auto setMask32 = m_setMask32;
     const auto ditherMode = m_ditherMode;
 
-    RasterState rs{};
-    rs.abr = m_globalTextABR;
-    rs.checkMask = m_checkMask;
-    rs.setMask16 = m_setMask16;
-    rs.setMask32 = m_setMask32;
-    rs.drawSemiTrans = m_drawSemiTrans;
+    RasterState rs = makeBaseRasterState();
 
     if ((x >= drawX) && (x < drawW) && (y >= drawY) && (y < drawH)) {
         PixelWriter<false, GPU::Shading::Flat, WriteMode::Default>::scalar(rs, &vram16[(y << 10) + x], color);
@@ -3717,12 +3601,7 @@ void PCSX::SoftGPU::SoftRenderer::line_E_NE_Flat(int x0, int y0, int x1, int y1,
     const auto setMask32 = m_setMask32;
     const auto ditherMode = m_ditherMode;
 
-    RasterState rs{};
-    rs.abr = m_globalTextABR;
-    rs.checkMask = m_checkMask;
-    rs.setMask16 = m_setMask16;
-    rs.setMask32 = m_setMask32;
-    rs.drawSemiTrans = m_drawSemiTrans;
+    RasterState rs = makeBaseRasterState();
 
     if ((x >= drawX) && (x < drawW) && (y >= drawY) && (y < drawH)) {
         PixelWriter<false, GPU::Shading::Flat, WriteMode::Default>::scalar(rs, &vram16[(y << 10) + x], color);
@@ -3758,12 +3637,7 @@ void PCSX::SoftGPU::SoftRenderer::vertLineFlat(int x, int y0, int y1, uint16_t c
 
     const auto vram16 = m_vram16;
 
-    RasterState rs{};
-    rs.abr = m_globalTextABR;
-    rs.checkMask = m_checkMask;
-    rs.setMask16 = m_setMask16;
-    rs.setMask32 = m_setMask32;
-    rs.drawSemiTrans = m_drawSemiTrans;
+    RasterState rs = makeBaseRasterState();
 
     for (y = y0; y <= y1; y++) {
         PixelWriter<false, GPU::Shading::Flat, WriteMode::Default>::scalar(rs, &vram16[(y << 10) + x], color);
@@ -3785,12 +3659,7 @@ void PCSX::SoftGPU::SoftRenderer::horzLineFlat(int y, int x0, int x1, uint16_t c
 
     const auto vram16 = m_vram16;
 
-    RasterState rs{};
-    rs.abr = m_globalTextABR;
-    rs.checkMask = m_checkMask;
-    rs.setMask16 = m_setMask16;
-    rs.setMask32 = m_setMask32;
-    rs.drawSemiTrans = m_drawSemiTrans;
+    RasterState rs = makeBaseRasterState();
 
     for (x = x0; x <= x1; x++) {
         PixelWriter<false, GPU::Shading::Flat, WriteMode::Default>::scalar(rs, &vram16[(y << 10) + x], color);
@@ -3890,12 +3759,7 @@ void PCSX::SoftGPU::SoftRenderer::drawSoftwareLineFlat(int32_t rgb) {
         if (dy == 0) {
             // Zero-length line: hardware draws exactly one pixel at the vertex.
             if ((x0 >= m_drawX) && (x0 < m_drawW) && (y0 >= m_drawY) && (y0 < m_drawH)) {
-                RasterState rs{};
-                rs.abr = m_globalTextABR;
-                rs.checkMask = m_checkMask;
-                rs.setMask16 = m_setMask16;
-                rs.setMask32 = m_setMask32;
-                rs.drawSemiTrans = m_drawSemiTrans;
+                RasterState rs = makeBaseRasterState();
                 PixelWriter<false, GPU::Shading::Flat, WriteMode::Default>::scalar(
                     rs, &m_vram16[(y0 << 10) + x0], color);
             }
