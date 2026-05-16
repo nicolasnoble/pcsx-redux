@@ -503,8 +503,15 @@ void PCSX::SoftGPU::impl::rectExec(Rect<size, textured, blend, modulation> *prim
     m_y0 = prim->y;
 
     if constexpr (size == Size::Variable) {
-        w = prim->w;
-        h = prim->h;
+        // Hardware masks the variable-rect dimensions to 10 bits (width) and
+        // 9 bits (height); the effective extents are `w & 0x3FF` / `h & 0x1FF`,
+        // not the documented `((w-1) & mask) + 1` shape. A width of 1024 maps
+        // to 0 and silently drops the primitive on real silicon (verified via
+        // gpu-raster-phase14 ct_rect_w1024 / ct_rect_h512 against SCPH-5501),
+        // while 1025/513 fall through as 1-pixel wide/tall.
+        w = static_cast<int16_t>(prim->w & 0x3FF);
+        h = static_cast<int16_t>(prim->h & 0x1FF);
+        if (w == 0 || h == 0) return;
     } else if constexpr (size == Size::S1) {
         w = h = 1;
     } else if constexpr (size == Size::S8) {
