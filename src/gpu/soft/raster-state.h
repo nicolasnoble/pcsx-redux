@@ -33,6 +33,20 @@ namespace SoftGPU {
 // then threaded into the inner loop as a template parameter.
 enum class TexMode { None, Clut4, Clut8, Direct15 };
 
+// Per-vertex input for the unified 3-vertex edge-walker setup. The caller
+// populates only the fields its template instantiation reads:
+//   x[3], y[3] : always required
+//   u[3], v[3] : required when HasUV
+//   rgb[3]     : required when HasRGB (packed BGR as the GP0 stream provides)
+// Unmentioned fields are value-initialized (zero) and never read by the body.
+struct TriInput {
+    int16_t x[3];
+    int16_t y[3];
+    int16_t u[3];
+    int16_t v[3];
+    int32_t rgb[3];
+};
+
 // Snapshot of the GP0-derived renderer state that stays stable for the
 // duration of a primitive draw. Captured once at primitive entry so the
 // inner loops can read from a single value type instead of repeatedly

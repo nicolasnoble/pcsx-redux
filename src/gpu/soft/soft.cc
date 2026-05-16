@@ -1150,7 +1150,34 @@ void PCSX::SoftGPU::SoftRenderer::fillSoftwareArea(int16_t x0, int16_t y0, int16
 ////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////
 
-int PCSX::SoftGPU::SoftRenderer::rightSectionFlat3() {
+// Unified 3-vertex edge walkers.
+//
+// One body per role, four (HasUV, HasRGB) template instantiations replace
+// the legacy Flat3 / Shade3 / FlatTextured3 / ShadeTextured3 family:
+//
+//   <false, false> : drawPolyFlat3              (flat untextured triangle)
+//   <false, true>  : drawPolyShade3             (gouraud untextured triangle)
+//   <true,  false> : drawPoly3T<TexMode>        (flat textured triangle)
+//   <true,  true>  : drawPoly3TG<TexMode, Dith> (gouraud textured triangle)
+//
+// 3-vert convention worth knowing before reading the body: the
+// m_deltaRight{U,V,R,G,B} members are the *X-direction span gradients*
+// computed once via shl10idiv against the longest edge. Per-row Y advance
+// on the right edge only carries m_deltaRightX. The left edge tracks full
+// X+U+V+R+G+B per-row in m_left*/deltaLeft*/m_deltaLeft*.
+//
+// The 4-vertex paths (setupSections{Flat4,FlatTextured4}) reuse the same
+// m_deltaRight{U,V,R,G,B} field names but populate them with per-row
+// Y-deltas, not span gradients - body code interpolates across each span
+// by (m_rightU - m_leftU) / spanWidth. The two schemes are not
+// interchangeable, which is why Phase 4 keeps 3-vert and 4-vert as
+// separate template families instead of one unified shape.
+//
+// Bodies live in this TU only; all instantiations happen here, so no
+// explicit instantiation declarations are needed.
+
+template <bool HasUV, bool HasRGB>
+int PCSX::SoftGPU::SoftRenderer::rightSection3() {
     SoftVertex *v1 = m_rightArray[m_rightSection];
     SoftVertex *v2 = m_rightArray[m_rightSection - 1];
 
@@ -1163,9 +1190,8 @@ int PCSX::SoftGPU::SoftRenderer::rightSectionFlat3() {
     return height;
 }
 
-////////////////////////////////////////////////////////////////////////
-
-int PCSX::SoftGPU::SoftRenderer::leftSectionFlat3() {
+template <bool HasUV, bool HasRGB>
+int PCSX::SoftGPU::SoftRenderer::leftSection3() {
     SoftVertex *v1 = m_leftArray[m_leftSection];
     SoftVertex *v2 = m_leftArray[m_leftSection - 1];
 
@@ -1174,53 +1200,95 @@ int PCSX::SoftGPU::SoftRenderer::leftSectionFlat3() {
     m_deltaLeftX = (v2->x - v1->x) / height;
     m_leftX = v1->x;
 
+    if constexpr (HasUV) {
+        m_deltaLeftU = ((v2->u - v1->u)) / height;
+        m_leftU = v1->u;
+        m_deltaLeftV = ((v2->v - v1->v)) / height;
+        m_leftV = v1->v;
+    }
+
+    if constexpr (HasRGB) {
+        deltaLeftR = ((v2->R - v1->R)) / height;
+        m_leftR = v1->R;
+        m_deltaLeftG = ((v2->G - v1->G)) / height;
+        m_leftG = v1->G;
+        m_deltaLeftB = ((v2->B - v1->B)) / height;
+        m_leftB = v1->B;
+    }
+
     m_leftSectionHeight = height;
     return height;
 }
 
-////////////////////////////////////////////////////////////////////////
-
-bool PCSX::SoftGPU::SoftRenderer::nextRowFlat3() {
+template <bool HasUV, bool HasRGB>
+bool PCSX::SoftGPU::SoftRenderer::nextRow3() {
     if (--m_leftSectionHeight <= 0) {
-        if (--m_leftSection <= 0) {
-            return true;
-        }
-        if (leftSectionFlat3() <= 0) {
-            return true;
-        }
+        if (--m_leftSection <= 0) return true;
+        if (leftSection3<HasUV, HasRGB>() <= 0) return true;
     } else {
         m_leftX += m_deltaLeftX;
+        if constexpr (HasUV) {
+            m_leftU += m_deltaLeftU;
+            m_leftV += m_deltaLeftV;
+        }
+        if constexpr (HasRGB) {
+            m_leftR += deltaLeftR;
+            m_leftG += m_deltaLeftG;
+            m_leftB += m_deltaLeftB;
+        }
     }
 
     if (--m_rightSectionHeight <= 0) {
-        if (--m_rightSection <= 0) {
-            return true;
-        }
-        if (rightSectionFlat3() <= 0) {
-            return true;
-        }
+        if (--m_rightSection <= 0) return true;
+        if (rightSection3<HasUV, HasRGB>() <= 0) return true;
     } else {
         m_rightX += m_deltaRightX;
     }
     return false;
 }
 
-////////////////////////////////////////////////////////////////////////
-
-bool PCSX::SoftGPU::SoftRenderer::setupSectionsFlat3(int16_t x1, int16_t y1, int16_t x2, int16_t y2, int16_t x3,
-                                                     int16_t y3) {
+template <bool HasUV, bool HasRGB>
+bool PCSX::SoftGPU::SoftRenderer::setupSections3(const TriInput &in) {
     SoftVertex *v1, *v2, *v3;
-    int height, longest;
 
     v1 = m_vtx;
-    v1->x = x1 << 16;
-    v1->y = y1;
+    v1->x = in.x[0] << 16;
+    v1->y = in.y[0];
+    if constexpr (HasUV) {
+        v1->u = in.u[0] << 16;
+        v1->v = in.v[0] << 16;
+    }
+    if constexpr (HasRGB) {
+        v1->R = in.rgb[0] & 0x00ff0000;
+        v1->G = (in.rgb[0] << 8) & 0x00ff0000;
+        v1->B = (in.rgb[0] << 16) & 0x00ff0000;
+    }
+
     v2 = m_vtx + 1;
-    v2->x = x2 << 16;
-    v2->y = y2;
+    v2->x = in.x[1] << 16;
+    v2->y = in.y[1];
+    if constexpr (HasUV) {
+        v2->u = in.u[1] << 16;
+        v2->v = in.v[1] << 16;
+    }
+    if constexpr (HasRGB) {
+        v2->R = in.rgb[1] & 0x00ff0000;
+        v2->G = (in.rgb[1] << 8) & 0x00ff0000;
+        v2->B = (in.rgb[1] << 16) & 0x00ff0000;
+    }
+
     v3 = m_vtx + 2;
-    v3->x = x3 << 16;
-    v3->y = y3;
+    v3->x = in.x[2] << 16;
+    v3->y = in.y[2];
+    if constexpr (HasUV) {
+        v3->u = in.u[2] << 16;
+        v3->v = in.v[2] << 16;
+    }
+    if constexpr (HasRGB) {
+        v3->R = in.rgb[2] & 0x00ff0000;
+        v3->G = (in.rgb[2] << 8) & 0x00ff0000;
+        v3->B = (in.rgb[2] << 16) & 0x00ff0000;
+    }
 
     if (v1->y > v2->y) {
         SoftVertex *v = v1;
@@ -1238,14 +1306,12 @@ bool PCSX::SoftGPU::SoftRenderer::setupSectionsFlat3(int16_t x1, int16_t y1, int
         v3 = v;
     }
 
-    height = v3->y - v1->y;
-    if (height == 0) {
-        return false;
-    }
-    longest = (((v2->y - v1->y) << 16) / height) * ((v3->x - v1->x) >> 16) + (v1->x - v2->x);
-    if (longest == 0) {
-        return false;
-    }
+    int height = v3->y - v1->y;
+    if (height == 0) return false;
+
+    int temp = (((v2->y - v1->y) << 16) / height);
+    int longest = temp * ((v3->x - v1->x) >> 16) + (v1->x - v2->x);
+    if (longest == 0) return false;
 
     if (longest < 0) {
         m_rightArray[0] = v3;
@@ -1256,10 +1322,13 @@ bool PCSX::SoftGPU::SoftRenderer::setupSectionsFlat3(int16_t x1, int16_t y1, int
         m_leftArray[1] = v1;
         m_leftSection = 1;
 
-        if (leftSectionFlat3() <= 0) return false;
-        if (rightSectionFlat3() <= 0) {
+        if (leftSection3<HasUV, HasRGB>() <= 0) return false;
+        if (rightSection3<HasUV, HasRGB>() <= 0) {
             m_rightSection--;
-            if (rightSectionFlat3() <= 0) return false;
+            if (rightSection3<HasUV, HasRGB>() <= 0) return false;
+        }
+        if constexpr (HasUV || HasRGB) {
+            if (longest > -0x1000) longest = -0x1000;
         }
     } else {
         m_leftArray[0] = v3;
@@ -1270,15 +1339,29 @@ bool PCSX::SoftGPU::SoftRenderer::setupSectionsFlat3(int16_t x1, int16_t y1, int
         m_rightArray[1] = v1;
         m_rightSection = 1;
 
-        if (rightSectionFlat3() <= 0) return false;
-        if (leftSectionFlat3() <= 0) {
+        if (rightSection3<HasUV, HasRGB>() <= 0) return false;
+        if (leftSection3<HasUV, HasRGB>() <= 0) {
             m_leftSection--;
-            if (leftSectionFlat3() <= 0) return false;
+            if (leftSection3<HasUV, HasRGB>() <= 0) return false;
+        }
+        if constexpr (HasUV || HasRGB) {
+            if (longest < 0x1000) longest = 0x1000;
         }
     }
 
     m_yMin = v1->y;
     m_yMax = std::min(v3->y - 1, m_drawH);
+
+    if constexpr (HasRGB) {
+        m_deltaRightR = shl10idiv(temp * ((v3->R - v1->R) >> 10) + ((v1->R - v2->R) << 6), longest);
+        m_deltaRightG = shl10idiv(temp * ((v3->G - v1->G) >> 10) + ((v1->G - v2->G) << 6), longest);
+        m_deltaRightB = shl10idiv(temp * ((v3->B - v1->B) >> 10) + ((v1->B - v2->B) << 6), longest);
+    }
+
+    if constexpr (HasUV) {
+        m_deltaRightU = shl10idiv(temp * ((v3->u - v1->u) >> 10) + ((v1->u - v2->u) << 6), longest);
+        m_deltaRightV = shl10idiv(temp * ((v3->v - v1->v) >> 10) + ((v1->v - v2->v) << 6), longest);
+    }
 
     return true;
 }
@@ -2441,7 +2524,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3Fi(int16_t x1, int16_t y1, int16_t x2
     if (drawY >= drawH) return;
     if (drawX >= drawW) return;
 
-    if (!setupSectionsFlat3(x1, y1, x2, y2, x3, y3)) return;
+    if (!setupSections3<false, false>(TriInput{{x1, x2, x3}, {y1, y2, y3}})) return;
 
     ymax = m_yMax;
 
@@ -2449,7 +2532,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3Fi(int16_t x1, int16_t y1, int16_t x2
     lcolor = m_setMask32 | (((uint32_t)(color)) << 16) | color;
 
     for (ymin = m_yMin; ymin < drawY; ymin++) {
-        if (nextRowFlat3()) return;
+        if (nextRow3<false, false>()) return;
     }
 
     const auto vram = m_vram;
@@ -2468,7 +2551,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3Fi(int16_t x1, int16_t y1, int16_t x2
             }
             if (j == xmax) vram16[(i << 10) + j] = color;
 
-            if (nextRowFlat3()) return;
+            if (nextRow3<false, false>()) return;
         }
         return;
     }
@@ -2494,7 +2577,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3Fi(int16_t x1, int16_t y1, int16_t x2
             PixelWriter<false, GPU::Shading::Flat, WriteMode::Default>::scalar(rs, &vram16[(i << 10) + j], color);
         }
 
-        if (nextRowFlat3()) return;
+        if (nextRow3<false, false>()) return;
     }
 }
 

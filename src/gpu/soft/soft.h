@@ -132,7 +132,6 @@ struct SoftRenderer {
     int16_t m_yMin;
     int16_t m_yMax;
 
-    bool setupSectionsFlat3(int16_t x1, int16_t y1, int16_t x2, int16_t y2, int16_t x3, int16_t y3);
     bool setupSectionsShade3(int16_t x1, int16_t y1, int16_t x2, int16_t y2, int16_t x3, int16_t y3, int32_t rgb1,
                              int32_t rgb2, int32_t rgb3);
     bool setupSectionsFlatTextured3(int16_t x1, int16_t y1, int16_t x2, int16_t y2, int16_t x3, int16_t y3, int16_t tx1,
@@ -239,9 +238,20 @@ struct SoftRenderer {
     void disableCachedDithering();
 
   private:
-    int rightSectionFlat3();
-    int leftSectionFlat3();
-    bool nextRowFlat3();
+    // Unified 3-vertex edge walkers. Four (HasUV, HasRGB) instantiations cover
+    // the legacy Flat3 / Shade3 / FlatTextured3 / ShadeTextured3 family. See
+    // soft.cc for the body comment that explains why 3-vert and 4-vert stay
+    // as separate template families (m_deltaRight{U,V,R,G,B} fields carry
+    // different semantics between them).
+    template <bool HasUV, bool HasRGB>
+    bool setupSections3(const TriInput &in);
+    template <bool HasUV, bool HasRGB>
+    int leftSection3();
+    template <bool HasUV, bool HasRGB>
+    int rightSection3();
+    template <bool HasUV, bool HasRGB>
+    bool nextRow3();
+
     int rightSectionShade3();
     int leftSectionShade3();
     bool nextRowShade3();
