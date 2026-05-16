@@ -65,6 +65,39 @@ struct PackedPair555 {
     }
 };
 
+// Native-position channel traits for the BGR555 layout.
+//
+// The PSX 16-bit pixel layout keeps each colour channel in a fixed
+// position: R in bits 0..4, B in bits 5..9, G in bits 10..14, mask in
+// bit 15. The scalar pixel writers do per-channel math entirely at
+// native position - extract via `color & Mask`, multiply by a 0..255
+// modulation factor, shift right by 7, then saturate. The saturate is
+// the same shape across all three channels: probe whether any bit
+// above the channel's native top is set, and clamp to the channel's
+// max value if so.
+//
+// Channel555::R / B / G expose `mask` (native-position extract /
+// max-value) and `saturateNative(c)` (post-multiply clamp). Use the
+// channel type for both the extract and the saturate so the two halves
+// of the round-trip stay consistent.
+namespace Channel555 {
+
+template <uint32_t Mask, uint32_t Overflow>
+struct Trait {
+    static constexpr uint32_t mask = Mask;
+    static constexpr uint32_t overflowMask = Overflow;
+    static inline int32_t saturateNative(int32_t c) {
+        if (c & Overflow) c = Mask;
+        return c;
+    }
+};
+
+using R = Trait<0x1f, 0x7fffffe0>;
+using B = Trait<0x3e0, 0x7ffffc00>;
+using G = Trait<0x7c00, 0x7fff8000>;
+
+}  // namespace Channel555
+
 // Per-pixel writer policy. Each specialization owns both a scalar (one
 // 16-bit pixel) and a packed (a 32-bit pair, low halfword first) entry
 // point. The packed entry must produce bit-equivalent output to two
@@ -91,9 +124,9 @@ struct PixelWriter<true, GPU::Shading::Flat, WriteMode::Solid> {
         int32_t r = ((color & 0x1f) * rs.m1) >> 7;
         int32_t b = ((color & 0x3e0) * rs.m2) >> 7;
         int32_t g = ((color & 0x7c00) * rs.m3) >> 7;
-        if (r & 0x7fffffe0) r = 0x1f;
-        if (b & 0x7ffffc00) b = 0x3e0;
-        if (g & 0x7fff8000) g = 0x7c00;
+        r = Channel555::R::saturateNative(r);
+        b = Channel555::B::saturateNative(b);
+        g = Channel555::G::saturateNative(g);
         *pdest = ((g & 0x7c00) | (b & 0x3e0) | (r & 0x1f)) | l;
     }
 
@@ -187,9 +220,9 @@ struct PixelWriter<true, GPU::Shading::Flat, WriteMode::Default> {
             b = ((color & 0x3e0) * rs.m2) >> 7;
             g = ((color & 0x7c00) * rs.m3) >> 7;
         }
-        if (r & 0x7fffffe0) r = 0x1f;
-        if (b & 0x7ffffc00) b = 0x3e0;
-        if (g & 0x7fff8000) g = 0x7c00;
+        r = Channel555::R::saturateNative(r);
+        b = Channel555::B::saturateNative(b);
+        g = Channel555::G::saturateNative(g);
         *pdest = ((g & 0x7c00) | (b & 0x3e0) | (r & 0x1f)) | l;
     }
 
@@ -305,9 +338,9 @@ struct PixelWriter<true, GPU::Shading::Gouraud, WriteMode::Solid> {
         int32_t r = ((color & 0x1f) * m1) >> 7;
         int32_t b = ((color & 0x3e0) * m2) >> 7;
         int32_t g = ((color & 0x7c00) * m3) >> 7;
-        if (r & 0x7fffffe0) r = 0x1f;
-        if (b & 0x7ffffc00) b = 0x3e0;
-        if (g & 0x7fff8000) g = 0x7c00;
+        r = Channel555::R::saturateNative(r);
+        b = Channel555::B::saturateNative(b);
+        g = Channel555::G::saturateNative(g);
         *pdest = ((g & 0x7c00) | (b & 0x3e0) | (r & 0x1f)) | rs.setMask16 | (color & 0x8000);
     }
 
@@ -388,9 +421,9 @@ struct PixelWriter<true, GPU::Shading::Gouraud, WriteMode::Default> {
             b = ((color & 0x3e0) * m2) >> 7;
             g = ((color & 0x7c00) * m3) >> 7;
         }
-        if (r & 0x7fffffe0) r = 0x1f;
-        if (b & 0x7ffffc00) b = 0x3e0;
-        if (g & 0x7fff8000) g = 0x7c00;
+        r = Channel555::R::saturateNative(r);
+        b = Channel555::B::saturateNative(b);
+        g = Channel555::G::saturateNative(g);
         *pdest = ((g & 0x7c00) | (b & 0x3e0) | (r & 0x1f)) | l;
     }
 };
@@ -444,9 +477,9 @@ struct PixelWriter<false, GPU::Shading::Flat, WriteMode::Default> {
                 b = (*pdest & 0x3e0) + ((color & 0x3e0) >> 2);
                 g = (*pdest & 0x7c00) + ((color & 0x7c00) >> 2);
             }
-            if (r & 0x7fffffe0) r = 0x1f;
-            if (b & 0x7ffffc00) b = 0x3e0;
-            if (g & 0x7fff8000) g = 0x7c00;
+            r = Channel555::R::saturateNative(r);
+            b = Channel555::B::saturateNative(b);
+            g = Channel555::G::saturateNative(g);
             *pdest = ((g & 0x7c00) | (b & 0x3e0) | (r & 0x1f)) | rs.setMask16;
         } else {
             *pdest = color | rs.setMask16;
