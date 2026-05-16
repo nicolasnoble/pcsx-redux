@@ -3108,7 +3108,8 @@ void PCSX::SoftGPU::SoftRenderer::line_E_SE_Shade(int x0, int y0, int x1, int y1
     const int32_t db_full = (int32_t)b1 - (int32_t)b0;
     const int steps = dx;
 
-    d = 2 * dy - dx;        /* Initial value of d */
+    /* Pixel-center bias: see matching note in line_E_SE_Flat. */
+    d = 3 * dy - dx;        /* Initial value of d (hardware-biased) */
     incrE = 2 * dy;         /* incr. used for move to E */
     incrSE = 2 * (dy - dx); /* incr. used for move to SE */
 
@@ -3342,7 +3343,8 @@ void PCSX::SoftGPU::SoftRenderer::line_E_NE_Shade(int x0, int y0, int x1, int y1
     const int32_t db_full = (int32_t)b1 - (int32_t)b0;
     const int steps = dx;
 
-    d = 2 * dy - dx;        /* Initial value of d */
+    /* Pixel-center bias: see matching note in line_E_SE_Flat. */
+    d = 3 * dy - dx;        /* Initial value of d (hardware-biased) */
     incrE = 2 * dy;         /* incr. used for move to E */
     incrNE = 2 * (dy - dx); /* incr. used for move to NE */
 
@@ -3525,7 +3527,11 @@ void PCSX::SoftGPU::SoftRenderer::line_E_SE_Flat(int x0, int y0, int x1, int y1,
 
     dx = x1 - x0;
     dy = y1 - y0;
-    d = 2 * dy - dx;        /* Initial value of d */
+    /* Pixel-center bias: shallow-axis Bresenham steps the minor axis at the
+       half-pixel crossing rather than the corner. Adding dy to the standard
+       (2*dy - dx) initial makes the minor-axis step decision match hardware
+       for shallow lines with slope < 1. */
+    d = 3 * dy - dx;        /* Initial value of d (hardware-biased) */
     incrE = 2 * dy;         /* incr. used for move to E */
     incrSE = 2 * (dy - dx); /* incr. used for move to SE */
     x = x0;
@@ -3690,7 +3696,11 @@ void PCSX::SoftGPU::SoftRenderer::line_E_NE_Flat(int x0, int y0, int x1, int y1,
 
     dx = x1 - x0;
     dy = -(y1 - y0);
-    d = 2 * dy - dx;        /* Initial value of d */
+    /* Pixel-center bias: shallow-axis Bresenham steps the minor axis at the
+       half-pixel crossing rather than the corner. Adding dy to the standard
+       (2*dy - dx) initial makes the minor-axis step decision match hardware
+       for shallow lines with slope > -1. */
+    d = 3 * dy - dx;        /* Initial value of d (hardware-biased) */
     incrE = 2 * dy;         /* incr. used for move to E */
     incrNE = 2 * (dy - dx); /* incr. used for move to NE */
     x = x0;
@@ -3878,7 +3888,18 @@ void PCSX::SoftGPU::SoftRenderer::drawSoftwareLineFlat(int32_t rgb) {
 
     if (dx == 0) {
         if (dy == 0) {
-            return;  // Nothing to draw
+            // Zero-length line: hardware draws exactly one pixel at the vertex.
+            if ((x0 >= m_drawX) && (x0 < m_drawW) && (y0 >= m_drawY) && (y0 < m_drawH)) {
+                RasterState rs{};
+                rs.abr = m_globalTextABR;
+                rs.checkMask = m_checkMask;
+                rs.setMask16 = m_setMask16;
+                rs.setMask32 = m_setMask32;
+                rs.drawSemiTrans = m_drawSemiTrans;
+                PixelWriter<false, GPU::Shading::Flat, WriteMode::Default>::scalar(
+                    rs, &m_vram16[(y0 << 10) + x0], color);
+            }
+            return;
         } else if (dy > 0) {
             vertLineFlat(x0, y0, y1, color);
         } else {
