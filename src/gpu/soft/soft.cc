@@ -3083,7 +3083,6 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly4TGD(int16_t x1, int16_t y1, int16_t x
 void PCSX::SoftGPU::SoftRenderer::line_E_SE_Shade(int x0, int y0, int x1, int y1, uint32_t rgb0, uint32_t rgb1) {
     int dx, dy, incrE, incrSE, d;
     uint32_t r0, g0, b0, r1, g1, b1;
-    int32_t dr, dg, db;
 
     const auto drawX = m_drawX;
     const auto drawY = m_drawY;
@@ -3100,15 +3099,11 @@ void PCSX::SoftGPU::SoftRenderer::line_E_SE_Shade(int x0, int y0, int x1, int y1
     dx = x1 - x0;
     dy = y1 - y0;
 
-    if (dx > 0) {
-        dr = ((int32_t)r1 - (int32_t)r0) / dx;
-        dg = ((int32_t)g1 - (int32_t)g0) / dx;
-        db = ((int32_t)b1 - (int32_t)b0) / dx;
-    } else {
-        dr = ((int32_t)r1 - (int32_t)r0);
-        dg = ((int32_t)g1 - (int32_t)g0);
-        db = ((int32_t)b1 - (int32_t)b0);
-    }
+    const uint32_t r_init = r0, g_init = g0, b_init = b0;
+    const int32_t dr_full = (int32_t)r1 - (int32_t)r0;
+    const int32_t dg_full = (int32_t)g1 - (int32_t)g0;
+    const int32_t db_full = (int32_t)b1 - (int32_t)b0;
+    const int steps = dx;
 
     d = 2 * dy - dx;        /* Initial value of d */
     incrE = 2 * dy;         /* incr. used for move to E */
@@ -3137,6 +3132,7 @@ void PCSX::SoftGPU::SoftRenderer::line_E_SE_Shade(int x0, int y0, int x1, int y1
                          (uint16_t)(((r0 >> 9) & 0x7c00) | ((g0 >> 14) & 0x03e0) | ((b0 >> 19) & 0x001f)));
     }
 
+    int step_idx = 0;
     while (x0 < x1) {
         if (d <= 0) {
             d = d + incrE; /* Choose E */
@@ -3145,10 +3141,13 @@ void PCSX::SoftGPU::SoftRenderer::line_E_SE_Shade(int x0, int y0, int x1, int y1
             y0++;
         }
         x0++;
+        step_idx++;
 
-        r0 += dr;
-        g0 += dg;
-        b0 += db;
+        if (steps != 0) {
+            r0 = r_init + (int64_t)dr_full * step_idx / steps;
+            g0 = g_init + (int64_t)dg_full * step_idx / steps;
+            b0 = b_init + (int64_t)db_full * step_idx / steps;
+        }
 
         if ((x0 >= drawX) && (x0 < drawW) && (y0 >= drawY) && (y0 < drawH)) {
             PixelWriter<false, GPU::Shading::Flat, WriteMode::Default>::scalar(rs, &vram16[(y0 << 10) + x0],
@@ -3162,7 +3161,6 @@ void PCSX::SoftGPU::SoftRenderer::line_E_SE_Shade(int x0, int y0, int x1, int y1
 void PCSX::SoftGPU::SoftRenderer::line_S_SE_Shade(int x0, int y0, int x1, int y1, uint32_t rgb0, uint32_t rgb1) {
     int dx, dy, incrS, incrSE, d;
     uint32_t r0, g0, b0, r1, g1, b1;
-    int32_t dr, dg, db;
 
     const auto drawX = m_drawX;
     const auto drawY = m_drawY;
@@ -3179,15 +3177,11 @@ void PCSX::SoftGPU::SoftRenderer::line_S_SE_Shade(int x0, int y0, int x1, int y1
     dx = x1 - x0;
     dy = y1 - y0;
 
-    if (dy > 0) {
-        dr = ((int32_t)r1 - (int32_t)r0) / dy;
-        dg = ((int32_t)g1 - (int32_t)g0) / dy;
-        db = ((int32_t)b1 - (int32_t)b0) / dy;
-    } else {
-        dr = ((int32_t)r1 - (int32_t)r0);
-        dg = ((int32_t)g1 - (int32_t)g0);
-        db = ((int32_t)b1 - (int32_t)b0);
-    }
+    const uint32_t r_init = r0, g_init = g0, b_init = b0;
+    const int32_t dr_full = (int32_t)r1 - (int32_t)r0;
+    const int32_t dg_full = (int32_t)g1 - (int32_t)g0;
+    const int32_t db_full = (int32_t)b1 - (int32_t)b0;
+    const int steps = dy;
 
     d = 2 * dx - dy;        /* Initial value of d */
     incrS = 2 * dx;         /* incr. used for move to S */
@@ -3216,6 +3210,7 @@ void PCSX::SoftGPU::SoftRenderer::line_S_SE_Shade(int x0, int y0, int x1, int y1
                          (uint16_t)(((r0 >> 9) & 0x7c00) | ((g0 >> 14) & 0x03e0) | ((b0 >> 19) & 0x001f)));
     }
 
+    int step_idx = 0;
     while (y0 < y1) {
         if (d <= 0) {
             d = d + incrS; /* Choose S */
@@ -3224,10 +3219,13 @@ void PCSX::SoftGPU::SoftRenderer::line_S_SE_Shade(int x0, int y0, int x1, int y1
             x0++;
         }
         y0++;
+        step_idx++;
 
-        r0 += dr;
-        g0 += dg;
-        b0 += db;
+        if (steps != 0) {
+            r0 = r_init + (int64_t)dr_full * step_idx / steps;
+            g0 = g_init + (int64_t)dg_full * step_idx / steps;
+            b0 = b_init + (int64_t)db_full * step_idx / steps;
+        }
 
         if ((x0 >= drawX) && (x0 < drawW) && (y0 >= drawY) && (y0 < drawH)) {
             PixelWriter<false, GPU::Shading::Flat, WriteMode::Default>::scalar(rs, &vram16[(y0 << 10) + x0],
@@ -3241,7 +3239,6 @@ void PCSX::SoftGPU::SoftRenderer::line_S_SE_Shade(int x0, int y0, int x1, int y1
 void PCSX::SoftGPU::SoftRenderer::line_N_NE_Shade(int x0, int y0, int x1, int y1, uint32_t rgb0, uint32_t rgb1) {
     int dx, dy, incrN, incrNE, d;
     uint32_t r0, g0, b0, r1, g1, b1;
-    int32_t dr, dg, db;
 
     const auto drawX = m_drawX;
     const auto drawY = m_drawY;
@@ -3258,15 +3255,11 @@ void PCSX::SoftGPU::SoftRenderer::line_N_NE_Shade(int x0, int y0, int x1, int y1
     dx = x1 - x0;
     dy = -(y1 - y0);
 
-    if (dy > 0) {
-        dr = ((int32_t)r1 - (int32_t)r0) / dy;
-        dg = ((int32_t)g1 - (int32_t)g0) / dy;
-        db = ((int32_t)b1 - (int32_t)b0) / dy;
-    } else {
-        dr = ((int32_t)r1 - (int32_t)r0);
-        dg = ((int32_t)g1 - (int32_t)g0);
-        db = ((int32_t)b1 - (int32_t)b0);
-    }
+    const uint32_t r_init = r0, g_init = g0, b_init = b0;
+    const int32_t dr_full = (int32_t)r1 - (int32_t)r0;
+    const int32_t dg_full = (int32_t)g1 - (int32_t)g0;
+    const int32_t db_full = (int32_t)b1 - (int32_t)b0;
+    const int steps = dy;
 
     d = 2 * dx - dy;        /* Initial value of d */
     incrN = 2 * dx;         /* incr. used for move to N */
@@ -3295,6 +3288,7 @@ void PCSX::SoftGPU::SoftRenderer::line_N_NE_Shade(int x0, int y0, int x1, int y1
                          (uint16_t)(((r0 >> 9) & 0x7c00) | ((g0 >> 14) & 0x03e0) | ((b0 >> 19) & 0x001f)));
     }
 
+    int step_idx = 0;
     while (y0 > y1) {
         if (d <= 0) {
             d = d + incrN; /* Choose N */
@@ -3303,10 +3297,13 @@ void PCSX::SoftGPU::SoftRenderer::line_N_NE_Shade(int x0, int y0, int x1, int y1
             x0++;
         }
         y0--;
+        step_idx++;
 
-        r0 += dr;
-        g0 += dg;
-        b0 += db;
+        if (steps != 0) {
+            r0 = r_init + (int64_t)dr_full * step_idx / steps;
+            g0 = g_init + (int64_t)dg_full * step_idx / steps;
+            b0 = b_init + (int64_t)db_full * step_idx / steps;
+        }
 
         if ((x0 >= drawX) && (x0 < drawW) && (y0 >= drawY) && (y0 < drawH)) {
             PixelWriter<false, GPU::Shading::Flat, WriteMode::Default>::scalar(rs, &vram16[(y0 << 10) + x0],
@@ -3320,7 +3317,6 @@ void PCSX::SoftGPU::SoftRenderer::line_N_NE_Shade(int x0, int y0, int x1, int y1
 void PCSX::SoftGPU::SoftRenderer::line_E_NE_Shade(int x0, int y0, int x1, int y1, uint32_t rgb0, uint32_t rgb1) {
     int dx, dy, incrE, incrNE, d;
     uint32_t r0, g0, b0, r1, g1, b1;
-    int32_t dr, dg, db;
 
     const auto drawX = m_drawX;
     const auto drawY = m_drawY;
@@ -3337,15 +3333,11 @@ void PCSX::SoftGPU::SoftRenderer::line_E_NE_Shade(int x0, int y0, int x1, int y1
     dx = x1 - x0;
     dy = -(y1 - y0);
 
-    if (dx > 0) {
-        dr = ((int32_t)r1 - (int32_t)r0) / dx;
-        dg = ((int32_t)g1 - (int32_t)g0) / dx;
-        db = ((int32_t)b1 - (int32_t)b0) / dx;
-    } else {
-        dr = ((int32_t)r1 - (int32_t)r0);
-        dg = ((int32_t)g1 - (int32_t)g0);
-        db = ((int32_t)b1 - (int32_t)b0);
-    }
+    const uint32_t r_init = r0, g_init = g0, b_init = b0;
+    const int32_t dr_full = (int32_t)r1 - (int32_t)r0;
+    const int32_t dg_full = (int32_t)g1 - (int32_t)g0;
+    const int32_t db_full = (int32_t)b1 - (int32_t)b0;
+    const int steps = dx;
 
     d = 2 * dy - dx;        /* Initial value of d */
     incrE = 2 * dy;         /* incr. used for move to E */
@@ -3374,6 +3366,7 @@ void PCSX::SoftGPU::SoftRenderer::line_E_NE_Shade(int x0, int y0, int x1, int y1
                          (uint16_t)(((r0 >> 9) & 0x7c00) | ((g0 >> 14) & 0x03e0) | ((b0 >> 19) & 0x001f)));
     }
 
+    int step_idx = 0;
     while (x0 < x1) {
         if (d <= 0) {
             d = d + incrE; /* Choose E */
@@ -3382,10 +3375,13 @@ void PCSX::SoftGPU::SoftRenderer::line_E_NE_Shade(int x0, int y0, int x1, int y1
             y0--;
         }
         x0++;
+        step_idx++;
 
-        r0 += dr;
-        g0 += dg;
-        b0 += db;
+        if (steps != 0) {
+            r0 = r_init + (int64_t)dr_full * step_idx / steps;
+            g0 = g_init + (int64_t)dg_full * step_idx / steps;
+            b0 = b_init + (int64_t)db_full * step_idx / steps;
+        }
 
         if ((x0 >= drawX) && (x0 < drawW) && (y0 >= drawY) && (y0 < drawH)) {
             PixelWriter<false, GPU::Shading::Flat, WriteMode::Default>::scalar(rs, &vram16[(y0 << 10) + x0],
@@ -3399,7 +3395,6 @@ void PCSX::SoftGPU::SoftRenderer::line_E_NE_Shade(int x0, int y0, int x1, int y1
 void PCSX::SoftGPU::SoftRenderer::vertLineShade(int x, int y0, int y1, uint32_t rgb0, uint32_t rgb1) {
     int y, dy;
     uint32_t r0, g0, b0, r1, g1, b1;
-    int32_t dr, dg, db;
 
     const auto drawX = m_drawX;
     const auto drawY = m_drawY;
@@ -3415,23 +3410,14 @@ void PCSX::SoftGPU::SoftRenderer::vertLineShade(int x, int y0, int y1, uint32_t 
 
     dy = (y1 - y0);
 
-    if (dy > 0) {
-        dr = ((int32_t)r1 - (int32_t)r0) / dy;
-        dg = ((int32_t)g1 - (int32_t)g0) / dy;
-        db = ((int32_t)b1 - (int32_t)b0) / dy;
-    } else {
-        dr = ((int32_t)r1 - (int32_t)r0);
-        dg = ((int32_t)g1 - (int32_t)g0);
-        db = ((int32_t)b1 - (int32_t)b0);
-    }
+    const uint32_t r_init = r0, g_init = g0, b_init = b0;
+    const int32_t dr_full = (int32_t)r1 - (int32_t)r0;
+    const int32_t dg_full = (int32_t)g1 - (int32_t)g0;
+    const int32_t db_full = (int32_t)b1 - (int32_t)b0;
+    const int steps = dy;
+    const int y0_orig = y0;
 
-    if (y0 < m_drawY) {
-        r0 += dr * (m_drawY - y0);
-        g0 += dg * (m_drawY - y0);
-        b0 += db * (m_drawY - y0);
-        y0 = m_drawY;
-    }
-
+    if (y0 < m_drawY) y0 = m_drawY;
     if (y1 > m_drawH) y1 = m_drawH;
 
     const auto vram = m_vram;
@@ -3453,11 +3439,14 @@ void PCSX::SoftGPU::SoftRenderer::vertLineShade(int x, int y0, int y1, uint32_t 
     rs.drawSemiTrans = m_drawSemiTrans;
 
     for (y = y0; y <= y1; y++) {
+        if (steps != 0) {
+            const int step_idx = y - y0_orig;
+            r0 = r_init + (int64_t)dr_full * step_idx / steps;
+            g0 = g_init + (int64_t)dg_full * step_idx / steps;
+            b0 = b_init + (int64_t)db_full * step_idx / steps;
+        }
         PixelWriter<false, GPU::Shading::Flat, WriteMode::Default>::scalar(rs, &vram16[(y << 10) + x],
                          (uint16_t)(((r0 >> 9) & 0x7c00) | ((g0 >> 14) & 0x03e0) | ((b0 >> 19) & 0x001f)));
-        r0 += dr;
-        g0 += dg;
-        b0 += db;
     }
 }
 
@@ -3466,7 +3455,6 @@ void PCSX::SoftGPU::SoftRenderer::vertLineShade(int x, int y0, int y1, uint32_t 
 void PCSX::SoftGPU::SoftRenderer::horzLineShade(int y, int x0, int x1, uint32_t rgb0, uint32_t rgb1) {
     int x, dx;
     uint32_t r0, g0, b0, r1, g1, b1;
-    int32_t dr, dg, db;
 
     const auto drawX = m_drawX;
     const auto drawY = m_drawY;
@@ -3482,23 +3470,14 @@ void PCSX::SoftGPU::SoftRenderer::horzLineShade(int y, int x0, int x1, uint32_t 
 
     dx = (x1 - x0);
 
-    if (dx > 0) {
-        dr = ((int32_t)r1 - (int32_t)r0) / dx;
-        dg = ((int32_t)g1 - (int32_t)g0) / dx;
-        db = ((int32_t)b1 - (int32_t)b0) / dx;
-    } else {
-        dr = ((int32_t)r1 - (int32_t)r0);
-        dg = ((int32_t)g1 - (int32_t)g0);
-        db = ((int32_t)b1 - (int32_t)b0);
-    }
+    const uint32_t r_init = r0, g_init = g0, b_init = b0;
+    const int32_t dr_full = (int32_t)r1 - (int32_t)r0;
+    const int32_t dg_full = (int32_t)g1 - (int32_t)g0;
+    const int32_t db_full = (int32_t)b1 - (int32_t)b0;
+    const int steps = dx;
+    const int x0_orig = x0;
 
-    if (x0 < m_drawX) {
-        r0 += dr * (m_drawX - x0);
-        g0 += dg * (m_drawX - x0);
-        b0 += db * (m_drawX - x0);
-        x0 = m_drawX;
-    }
-
+    if (x0 < m_drawX) x0 = m_drawX;
     if (x1 > m_drawW) x1 = m_drawW;
 
     const auto vram = m_vram;
@@ -3520,11 +3499,14 @@ void PCSX::SoftGPU::SoftRenderer::horzLineShade(int y, int x0, int x1, uint32_t 
     rs.drawSemiTrans = m_drawSemiTrans;
 
     for (x = x0; x <= x1; x++) {
+        if (steps != 0) {
+            const int step_idx = x - x0_orig;
+            r0 = r_init + (int64_t)dr_full * step_idx / steps;
+            g0 = g_init + (int64_t)dg_full * step_idx / steps;
+            b0 = b_init + (int64_t)db_full * step_idx / steps;
+        }
         PixelWriter<false, GPU::Shading::Flat, WriteMode::Default>::scalar(rs, &vram16[(y << 10) + x],
                          (uint16_t)(((r0 >> 9) & 0x7c00) | ((g0 >> 14) & 0x03e0) | ((b0 >> 19) & 0x001f)));
-        r0 += dr;
-        g0 += dg;
-        b0 += db;
     }
 }
 
