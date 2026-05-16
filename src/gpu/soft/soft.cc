@@ -1924,7 +1924,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly4TEx4(int16_t x1, int16_t y1, int16_t 
                     posX += j * difX;
                     posY += j * difY;
                 }
-                xmax--;
+                xmax = (m_rightX - 1) >> 16;
                 if (drawW < xmax) xmax = drawW;
 
                 for (j = xmin; j < xmax; j += 2) {
@@ -1975,7 +1975,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly4TEx4(int16_t x1, int16_t y1, int16_t 
                 posX += j * difX;
                 posY += j * difY;
             }
-            xmax--;
+            xmax = (m_rightX - 1) >> 16;
             if (drawW < xmax) xmax = drawW;
 
             for (j = xmin; j < xmax; j += 2) {
@@ -2067,7 +2067,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly4TEx4_S(int16_t x1, int16_t y1, int16_
                     posX += j * difX;
                     posY += j * difY;
                 }
-                xmax--;
+                xmax = (m_rightX - 1) >> 16;
                 if (drawW < xmax) xmax = drawW;
 
                 for (j = xmin; j < xmax; j += 2) {
@@ -2118,7 +2118,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly4TEx4_S(int16_t x1, int16_t y1, int16_
                 posX += j * difX;
                 posY += j * difY;
             }
-            xmax--;
+            xmax = (m_rightX - 1) >> 16;
             if (drawW < xmax) xmax = drawW;
 
             for (j = xmin; j < xmax; j += 2) {
@@ -2210,7 +2210,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly4TEx8(int16_t x1, int16_t y1, int16_t 
                     posX += j * difX;
                     posY += j * difY;
                 }
-                xmax--;
+                xmax = (m_rightX - 1) >> 16;
                 if (drawW < xmax) xmax = drawW;
 
                 for (j = xmin; j < xmax; j += 2) {
@@ -2255,7 +2255,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly4TEx8(int16_t x1, int16_t y1, int16_t 
                 posX += j * difX;
                 posY += j * difY;
             }
-            xmax--;
+            xmax = (m_rightX - 1) >> 16;
             if (drawW < xmax) xmax = drawW;
 
             for (j = xmin; j < xmax; j += 2) {
@@ -2342,7 +2342,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly4TEx8_S(int16_t x1, int16_t y1, int16_
                     posX += j * difX;
                     posY += j * difY;
                 }
-                xmax--;
+                xmax = (m_rightX - 1) >> 16;
                 if (drawW < xmax) xmax = drawW;
 
                 for (j = xmin; j < xmax; j += 2) {
@@ -2387,7 +2387,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly4TEx8_S(int16_t x1, int16_t y1, int16_
                 posX += j * difX;
                 posY += j * difY;
             }
-            xmax--;
+            xmax = (m_rightX - 1) >> 16;
             if (drawW < xmax) xmax = drawW;
 
             for (j = xmin; j < xmax; j += 2) {
@@ -2470,7 +2470,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly4TD(int16_t x1, int16_t y1, int16_t x2
                     posX += j * difX;
                     posY += j * difY;
                 }
-                xmax--;
+                xmax = (m_rightX - 1) >> 16;
                 if (drawW < xmax) xmax = drawW;
 
                 for (j = xmin; j < xmax; j += 2) {
@@ -2519,7 +2519,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly4TD(int16_t x1, int16_t y1, int16_t x2
                 posX += j * difX;
                 posY += j * difY;
             }
-            xmax--;
+            xmax = (m_rightX - 1) >> 16;
             if (drawW < xmax) xmax = drawW;
 
             for (j = xmin; j < xmax; j += 2) {
@@ -2604,7 +2604,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly4TD_S(int16_t x1, int16_t y1, int16_t 
                     posX += j * difX;
                     posY += j * difY;
                 }
-                xmax--;
+                xmax = (m_rightX - 1) >> 16;
                 if (drawW < xmax) xmax = drawW;
 
                 for (j = xmin; j < xmax; j += 2) {
@@ -2653,7 +2653,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly4TD_S(int16_t x1, int16_t y1, int16_t 
                 posX += j * difX;
                 posY += j * difY;
             }
-            xmax--;
+            xmax = (m_rightX - 1) >> 16;
             if (drawW < xmax) xmax = drawW;
 
             for (j = xmin; j < xmax; j += 2) {
