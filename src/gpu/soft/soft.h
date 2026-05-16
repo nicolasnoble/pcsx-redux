@@ -22,6 +22,7 @@
 #include <stdint.h>
 
 #include "core/gpu.h"
+#include "gpu/soft/raster-state.h"
 
 namespace PCSX {
 
@@ -165,6 +166,9 @@ struct SoftRenderer {
     void getTextureTransColShadeXSolid(uint16_t *pdest, uint16_t color, int16_t m1, int16_t m2, int16_t m3);
     void getTextureTransColShadeX32Solid(uint32_t *pdest, uint32_t color, int16_t m1, int16_t m2, int16_t m3);
     void drawPoly3Fi(int16_t x1, int16_t y1, int16_t x2, int16_t y2, int16_t x3, int16_t y3, int32_t rgb);
+    template <TexMode Tex>
+    void drawPoly3T(int16_t x1, int16_t y1, int16_t x2, int16_t y2, int16_t x3, int16_t y3, int16_t tx1, int16_t ty1,
+                    int16_t tx2, int16_t ty2, int16_t tx3, int16_t ty3, int16_t clX, int16_t clY);
     void drawPoly3TEx4(int16_t x1, int16_t y1, int16_t x2, int16_t y2, int16_t x3, int16_t y3, int16_t tx1, int16_t ty1,
                        int16_t tx2, int16_t ty2, int16_t tx3, int16_t ty3, int16_t clX, int16_t clY);
     void drawPoly4TEx4(int16_t x1, int16_t y1, int16_t x2, int16_t y2, int16_t x3, int16_t y3, int16_t x4, int16_t y4,
