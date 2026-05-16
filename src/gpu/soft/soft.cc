@@ -1370,148 +1370,6 @@ bool PCSX::SoftGPU::SoftRenderer::setupSections3(const TriInput &in) {
 ////////////////////////////////////////////////////////////////////////
 
 
-int PCSX::SoftGPU::SoftRenderer::rightSectionFlatTextured3() {
-    SoftVertex *v1 = m_rightArray[m_rightSection];
-    SoftVertex *v2 = m_rightArray[m_rightSection - 1];
-
-    int height = v2->y - v1->y;
-    if (height == 0) return 0;
-    m_deltaRightX = (v2->x - v1->x) / height;
-    m_rightX = v1->x;
-
-    m_rightSectionHeight = height;
-    return height;
-}
-
-////////////////////////////////////////////////////////////////////////
-
-int PCSX::SoftGPU::SoftRenderer::leftSectionFlatTextured3() {
-    SoftVertex *v1 = m_leftArray[m_leftSection];
-    SoftVertex *v2 = m_leftArray[m_leftSection - 1];
-
-    int height = v2->y - v1->y;
-    if (height == 0) return 0;
-    m_deltaLeftX = (v2->x - v1->x) / height;
-    m_leftX = v1->x;
-
-    m_deltaLeftU = ((v2->u - v1->u)) / height;
-    m_leftU = v1->u;
-    m_deltaLeftV = ((v2->v - v1->v)) / height;
-    m_leftV = v1->v;
-
-    m_leftSectionHeight = height;
-    return height;
-}
-
-////////////////////////////////////////////////////////////////////////
-
-bool PCSX::SoftGPU::SoftRenderer::nextRowFlatTextured3() {
-    if (--m_leftSectionHeight <= 0) {
-        if (--m_leftSection <= 0) return true;
-        if (leftSectionFlatTextured3() <= 0) return true;
-    } else {
-        m_leftX += m_deltaLeftX;
-        m_leftU += m_deltaLeftU;
-        m_leftV += m_deltaLeftV;
-    }
-
-    if (--m_rightSectionHeight <= 0) {
-        if (--m_rightSection <= 0) return true;
-        if (rightSectionFlatTextured3() <= 0) return true;
-    } else {
-        m_rightX += m_deltaRightX;
-    }
-    return false;
-}
-
-////////////////////////////////////////////////////////////////////////
-
-bool PCSX::SoftGPU::SoftRenderer::setupSectionsFlatTextured3(int16_t x1, int16_t y1, int16_t x2, int16_t y2, int16_t x3,
-                                                             int16_t y3, int16_t tx1, int16_t ty1, int16_t tx2,
-                                                             int16_t ty2, int16_t tx3, int16_t ty3) {
-    SoftVertex *v1, *v2, *v3;
-    int height, longest, temp;
-
-    v1 = m_vtx;
-    v1->x = x1 << 16;
-    v1->y = y1;
-    v1->u = tx1 << 16;
-    v1->v = ty1 << 16;
-    v2 = m_vtx + 1;
-    v2->x = x2 << 16;
-    v2->y = y2;
-    v2->u = tx2 << 16;
-    v2->v = ty2 << 16;
-    v3 = m_vtx + 2;
-    v3->x = x3 << 16;
-    v3->y = y3;
-    v3->u = tx3 << 16;
-    v3->v = ty3 << 16;
-
-    if (v1->y > v2->y) {
-        SoftVertex *v = v1;
-        v1 = v2;
-        v2 = v;
-    }
-    if (v1->y > v3->y) {
-        SoftVertex *v = v1;
-        v1 = v3;
-        v3 = v;
-    }
-    if (v2->y > v3->y) {
-        SoftVertex *v = v2;
-        v2 = v3;
-        v3 = v;
-    }
-
-    height = v3->y - v1->y;
-    if (height == 0) return false;
-
-    temp = (((v2->y - v1->y) << 16) / height);
-    longest = temp * ((v3->x - v1->x) >> 16) + (v1->x - v2->x);
-
-    if (longest == 0) return false;
-
-    if (longest < 0) {
-        m_rightArray[0] = v3;
-        m_rightArray[1] = v2;
-        m_rightArray[2] = v1;
-        m_rightSection = 2;
-        m_leftArray[0] = v3;
-        m_leftArray[1] = v1;
-        m_leftSection = 1;
-
-        if (leftSectionFlatTextured3() <= 0) return false;
-        if (rightSectionFlatTextured3() <= 0) {
-            m_rightSection--;
-            if (rightSectionFlatTextured3() <= 0) return false;
-        }
-        if (longest > -0x1000) longest = -0x1000;
-    } else {
-        m_leftArray[0] = v3;
-        m_leftArray[1] = v2;
-        m_leftArray[2] = v1;
-        m_leftSection = 2;
-        m_rightArray[0] = v3;
-        m_rightArray[1] = v1;
-        m_rightSection = 1;
-
-        if (rightSectionFlatTextured3() <= 0) return false;
-        if (leftSectionFlatTextured3() <= 0) {
-            m_leftSection--;
-            if (leftSectionFlatTextured3() <= 0) return false;
-        }
-        if (longest < 0x1000) longest = 0x1000;
-    }
-
-    m_yMin = v1->y;
-    m_yMax = std::min(v3->y - 1, m_drawH);
-
-    m_deltaRightU = shl10idiv(temp * ((v3->u - v1->u) >> 10) + ((v1->u - v2->u) << 6), longest);
-    m_deltaRightV = shl10idiv(temp * ((v3->v - v1->v) >> 10) + ((v1->v - v2->v) << 6), longest);
-
-    return true;
-}
 
 ////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////
@@ -2474,12 +2332,12 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3T(int16_t x1, int16_t y1, int16_t x2,
     if (drawY >= drawH) return;
     if (drawX >= drawW) return;
 
-    if (!setupSectionsFlatTextured3(x1, y1, x2, y2, x3, y3, tx1, ty1, tx2, ty2, tx3, ty3)) return;
+    if (!setupSections3<true, false>(TriInput{{x1, x2, x3}, {y1, y2, y3}, {tx1, tx2, tx3}, {ty1, ty2, ty3}})) return;
 
     ymax = m_yMax;
 
     for (ymin = m_yMin; ymin < drawY; ymin++) {
-        if (nextRowFlatTextured3()) return;
+        if (nextRow3<true, false>()) return;
     }
 
     RasterState rs{};
@@ -2546,7 +2404,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3T(int16_t x1, int16_t y1, int16_t x2,
                         rs, &vram16[(i << 10) + j], Sampler<Tex>::scalar(rs, yAdj, posX, posY));
                 }
             }
-            if (nextRowFlatTextured3()) return;
+            if (nextRow3<true, false>()) return;
         }
         return;
     }
@@ -2580,7 +2438,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3T(int16_t x1, int16_t y1, int16_t x2,
                     rs, &vram16[(i << 10) + j], Sampler<Tex>::scalar(rs, yAdj, posX, posY));
             }
         }
-        if (nextRowFlatTextured3()) return;
+        if (nextRow3<true, false>()) return;
     }
 }
 

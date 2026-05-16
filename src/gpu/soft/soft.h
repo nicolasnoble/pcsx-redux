@@ -132,8 +132,6 @@ struct SoftRenderer {
     int16_t m_yMin;
     int16_t m_yMax;
 
-    bool setupSectionsFlatTextured3(int16_t x1, int16_t y1, int16_t x2, int16_t y2, int16_t x3, int16_t y3, int16_t tx1,
-                                    int16_t ty1, int16_t tx2, int16_t ty2, int16_t tx3, int16_t ty3);
     bool setupSectionsShadeTextured3(int16_t x1, int16_t y1, int16_t x2, int16_t y2, int16_t x3, int16_t y3,
                                      int16_t tx1, int16_t ty1, int16_t tx2, int16_t ty2, int16_t tx3, int16_t ty3,
                                      int32_t rgb1, int32_t rgb2, int32_t rgb3);
@@ -250,9 +248,6 @@ struct SoftRenderer {
     template <bool HasUV, bool HasRGB>
     bool nextRow3();
 
-    int rightSectionFlatTextured3();
-    int leftSectionFlatTextured3();
-    bool nextRowFlatTextured3();
     int rightSectionShadeTextured3();
     int leftSectionShadeTextured3();
     bool nextRowShadeTextured3();
