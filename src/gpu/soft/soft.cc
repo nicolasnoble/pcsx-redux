@@ -272,7 +272,15 @@ void PCSX::SoftGPU::SoftRenderer::applyOffset4() {
     m_y3 += m_softDisplay.DrawOffset.y;
 }
 
-static constexpr uint8_t s_dithertable[16] = {7, 0, 6, 1, 2, 5, 3, 4, 1, 6, 0, 7, 4, 3, 5, 2};
+// Signed 4x4 Bayer dither offsets, applied in 8-bit space before the
+// 5-bit truncation. Indexed by (sy & 3) * 4 + (sx & 3). Values match
+// the hardware-verified table reproduced in psx-spx.
+static constexpr int8_t s_dithertable[16] = {
+    -4,  0, -3,  1,
+     2, -2,  3, -1,
+    -3,  1, -4,  0,
+     3, -1,  2, -2,
+};
 
 static uint16_t *s_ditherLUT = nullptr;
 
@@ -285,26 +293,17 @@ static void prepareDitherLut() {
         for (g = 0; g < 256; g++) {
             for (b = 0; b < 256; b++) {
                 for (s = 0; s < 16; s++) {
-                    uint8_t coeff;
-                    uint8_t rlow, glow, blow;
-                    uint8_t rc, gc, bc;
-                    rc = r;
-                    gc = g;
-                    bc = b;
+                    int32_t offset = s_dithertable[s];
+                    int32_t ra = (int32_t)r + offset;
+                    int32_t ga = (int32_t)g + offset;
+                    int32_t ba = (int32_t)b + offset;
+                    if (ra < 0) ra = 0; else if (ra > 0xff) ra = 0xff;
+                    if (ga < 0) ga = 0; else if (ga > 0xff) ga = 0xff;
+                    if (ba < 0) ba = 0; else if (ba > 0xff) ba = 0xff;
 
-                    coeff = s_dithertable[s];
-
-                    rlow = rc & 7;
-                    glow = gc & 7;
-                    blow = bc & 7;
-
-                    rc >>= 3;
-                    gc >>= 3;
-                    bc >>= 3;
-
-                    if ((rc < 0x1f) && rlow > coeff) rc++;
-                    if ((gc < 0x1f) && glow > coeff) gc++;
-                    if ((bc < 0x1f) && blow > coeff) bc++;
+                    uint32_t rc = (uint32_t)ra >> 3;
+                    uint32_t gc = (uint32_t)ga >> 3;
+                    uint32_t bc = (uint32_t)ba >> 3;
 
                     *ditherLUT++ = ((uint16_t)bc << 10) | ((uint16_t)gc << 5) | (uint16_t)rc;
                 }
@@ -346,29 +345,26 @@ static void applyDitherCached(uint16_t *pdest, uint16_t *base, uint32_t r, uint3
 }
 
 static void applyDither(uint16_t *pdest, uint16_t *base, uint32_t r, uint32_t g, uint32_t b, uint16_t sM) {
-    uint8_t coeff;
-    uint8_t rlow, glow, blow;
     int x, y;
 
     x = pdest - base;
     y = x >> 10;
     x -= (y << 10);
 
-    coeff = s_dithertable[(y & 3) * 4 + (x & 3)];
+    int32_t offset = s_dithertable[(y & 3) * 4 + (x & 3)];
 
-    rlow = r & 7;
-    glow = g & 7;
-    blow = b & 7;
+    int32_t ra = (int32_t)r + offset;
+    int32_t ga = (int32_t)g + offset;
+    int32_t ba = (int32_t)b + offset;
+    if (ra < 0) ra = 0; else if (ra > 0xff) ra = 0xff;
+    if (ga < 0) ga = 0; else if (ga > 0xff) ga = 0xff;
+    if (ba < 0) ba = 0; else if (ba > 0xff) ba = 0xff;
 
-    r >>= 3;
-    g >>= 3;
-    b >>= 3;
+    uint32_t r5 = (uint32_t)ra >> 3;
+    uint32_t g5 = (uint32_t)ga >> 3;
+    uint32_t b5 = (uint32_t)ba >> 3;
 
-    if ((r < 0x1f) && rlow > coeff) r++;
-    if ((g < 0x1f) && glow > coeff) g++;
-    if ((b < 0x1f) && blow > coeff) b++;
-
-    *pdest = ((uint16_t)b << 10) | ((uint16_t)g << 5) | (uint16_t)r | sM;
+    *pdest = ((uint16_t)b5 << 10) | ((uint16_t)g5 << 5) | (uint16_t)r5 | sM;
 }
 
 /////////////////////////////////////////////////////////////////
