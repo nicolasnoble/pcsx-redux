@@ -3647,16 +3647,34 @@ void PCSX::SoftGPU::SoftRenderer::drawPolyShade4(int32_t rgb1, int32_t rgb2, int
 ////////////////////////////////////////////////////////////////////////
 
 template <bool useCachedDither>
-void PCSX::SoftGPU::SoftRenderer::drawPoly3TGEx4i(int16_t x1, int16_t y1, int16_t x2, int16_t y2, int16_t x3,
-                                                  int16_t y3, int16_t tx1, int16_t ty1, int16_t tx2, int16_t ty2,
-                                                  int16_t tx3, int16_t ty3, int16_t clX, int16_t clY, int32_t col1,
-                                                  int32_t col2, int32_t col3) {
+// Unified 3-vertex gouraud-textured rasterizer. Compile-time dispatch on
+// texture sampling mode + cached-dither template parameter collapses what
+// used to be three separate <useCachedDither>-templated functions
+// (drawPoly3TGEx4i, drawPoly3TGEx8i, drawPoly3TGDi) into one body.
+//
+// Same xmax / fast-path / slow-path structure as drawPoly3T<TexMode>:
+//   - fast path (!checkMask && !drawSemiTrans && !ditherMode) does packed
+//     pair writes through PixelWriter<true, Gouraud, Solid> with per-pixel
+//     gouraud-interpolated modulation
+//   - slow path iterates one pixel at a time (color changes per pixel,
+//     packed pair unavailable); dither branch calls the legacy
+//     getTextureTransColShadeXDither<useCachedDither>, non-dither branch
+//     calls PixelWriter<true, Gouraud, Default>
+//
+// xmax handling matches the rest of the family: \`xmax = (m_rightX >> 16)
+// - 1;\` in both fast and slow paths. The legacy TG functions all had
+// this already (no fast-path conditional decrement), so no behavioral
+// change vs the pre-unification state.
+template <PCSX::SoftGPU::TexMode Tex, bool useCachedDither>
+void PCSX::SoftGPU::SoftRenderer::drawPoly3TG(int16_t x1, int16_t y1, int16_t x2, int16_t y2, int16_t x3, int16_t y3,
+                                              int16_t tx1, int16_t ty1, int16_t tx2, int16_t ty2, int16_t tx3,
+                                              int16_t ty3, int16_t clX, int16_t clY, int32_t col1, int32_t col2,
+                                              int32_t col3) {
     int i, j, xmin, xmax, ymin, ymax;
     int32_t cR1, cG1, cB1;
     int32_t difR, difB, difG, difR2, difB2, difG2;
     int32_t difX, difY, difX2, difY2;
-    int32_t posX, posY, YAdjust, clutP, XAdjust;
-    int16_t tC1, tC2;
+    int32_t posX, posY;
 
     const auto drawX = m_drawX;
     const auto drawY = m_drawY;
@@ -3678,41 +3696,13 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3TGEx4i(int16_t x1, int16_t y1, int16_
         if (nextRowShadeTextured3()) return;
     }
 
-    clutP = (clY << 10) + clX;
-
-    YAdjust = ((m_globalTextAddrY) << 11) + (m_globalTextAddrX << 1);
-    YAdjust += (m_textureWindow.y0 << 11) + (m_textureWindow.x0 >> 1);
-
-    difR = m_deltaRightR;
-    difG = m_deltaRightG;
-    difB = m_deltaRightB;
-    difR2 = difR << 1;
-    difG2 = difG << 1;
-    difB2 = difB << 1;
-
-    difX = m_deltaRightU;
-    difX2 = difX << 1;
-    difY = m_deltaRightV;
-    difY2 = difY << 1;
-
-    const auto vram = m_vram;
-    const auto vram16 = m_vram16;
-    const auto maskX = m_textureWindow.x1 - 1;
-    const auto maskY = m_textureWindow.y1 - 1;
-    const auto globalTextAddrX = m_globalTextAddrX;
-    const auto globalTextAddrY = m_globalTextAddrY;
-    const auto textureWindow = m_textureWindow;
-    const auto setMask16 = m_setMask16;
-    const auto setMask32 = m_setMask32;
-    const auto ditherMode = m_ditherMode;
-
     RasterState rs{};
     rs.vram = m_vram;
     rs.vram16 = m_vram16;
     rs.texWindowX0 = m_textureWindow.x0;
     rs.texWindowY0 = m_textureWindow.y0;
-    rs.maskX = maskX;
-    rs.maskY = maskY;
+    rs.maskX = m_textureWindow.x1 - 1;
+    rs.maskY = m_textureWindow.y1 - 1;
     rs.texBaseX = m_globalTextAddrX;
     rs.texBaseY = m_globalTextAddrY;
     rs.abr = m_globalTextABR;
@@ -3721,19 +3711,35 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3TGEx4i(int16_t x1, int16_t y1, int16_
     rs.drawW = drawW;
     rs.drawH = drawH;
     rs.checkMask = m_checkMask;
-    rs.setMask16 = setMask16;
-    rs.setMask32 = setMask32;
+    rs.setMask16 = m_setMask16;
+    rs.setMask32 = m_setMask32;
     rs.drawSemiTrans = m_drawSemiTrans;
     rs.m1 = m_m1;
     rs.m2 = m_m2;
     rs.m3 = m_m3;
-    rs.clutP = clutP;
-    const int32_t yAdj = Sampler<TexMode::Clut4>::yAdjust(rs);
+    if constexpr (Tex == TexMode::Direct15) {
+        rs.clutP = 0;
+    } else {
+        rs.clutP = (clY << 10) + clX;
+    }
+    const int32_t yAdj = Sampler<Tex>::yAdjust(rs);
+    const auto vram16 = rs.vram16;
 
-    if (!m_checkMask && !m_drawSemiTrans && !ditherMode) {
+    difR = m_deltaRightR;
+    difG = m_deltaRightG;
+    difB = m_deltaRightB;
+    difR2 = difR << 1;
+    difG2 = difG << 1;
+    difB2 = difB << 1;
+    difX = m_deltaRightU;
+    difX2 = difX << 1;
+    difY = m_deltaRightV;
+    difY2 = difY << 1;
+
+    if (!m_checkMask && !m_drawSemiTrans && !m_ditherMode) {
         for (i = ymin; i <= ymax; i++) {
-            xmin = ((m_leftX) >> 16);
-            xmax = ((m_rightX) >> 16) - 1;  //!!!!!!!!!!!!!
+            xmin = (m_leftX >> 16);
+            xmax = (m_rightX >> 16) - 1;
             if (drawW < xmax) xmax = drawW;
 
             if (xmax >= xmin) {
@@ -3755,7 +3761,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3TGEx4i(int16_t x1, int16_t y1, int16_
 
                 for (j = xmin; j < xmax; j += 2) {
                     uint32_t *pdest = (uint32_t *)&vram16[(i << 10) + j];
-                    const uint32_t color = Sampler<TexMode::Clut4>::packed(rs, yAdj, posX, posY, difX, difY);
+                    const uint32_t color = Sampler<Tex>::packed(rs, yAdj, posX, posY, difX, difY);
                     PixelWriter<true, GPU::Shading::Gouraud, WriteMode::Solid>::packed(
                         rs, pdest, color, (cB1 >> 16) | ((cB1 + difB) & 0xff0000),
                         (cG1 >> 16) | ((cG1 + difG) & 0xff0000), (cR1 >> 16) | ((cR1 + difR) & 0xff0000));
@@ -3767,8 +3773,8 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3TGEx4i(int16_t x1, int16_t y1, int16_
                 }
                 if (j == xmax) {
                     PixelWriter<true, GPU::Shading::Gouraud, WriteMode::Solid>::scalar(
-                        rs, &vram16[(i << 10) + j], Sampler<TexMode::Clut4>::scalar(rs, yAdj, posX, posY),
-                        (cB1 >> 16), (cG1 >> 16), (cR1 >> 16));
+                        rs, &vram16[(i << 10) + j], Sampler<Tex>::scalar(rs, yAdj, posX, posY), (cB1 >> 16),
+                        (cG1 >> 16), (cR1 >> 16));
                 }
             }
             if (nextRowShadeTextured3()) return;
@@ -3778,7 +3784,7 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3TGEx4i(int16_t x1, int16_t y1, int16_
 
     for (i = ymin; i <= ymax; i++) {
         xmin = (m_leftX >> 16);
-        xmax = (m_rightX >> 16) - 1;  //!!!!!!!!!!!!!!!!
+        xmax = (m_rightX >> 16) - 1;
         if (drawW < xmax) xmax = drawW;
 
         if (xmax >= xmin) {
@@ -3799,15 +3805,13 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3TGEx4i(int16_t x1, int16_t y1, int16_
             }
 
             for (j = xmin; j <= xmax; j++) {
-                XAdjust = (posX >> 16) & maskX;
-                tC1 = vram[static_cast<int32_t>((((posY >> 16) & maskY) << 11) + YAdjust + (XAdjust >> 1))];
-                tC1 = (tC1 >> ((XAdjust & 1) << 2)) & 0xf;
-                if (ditherMode) {
-                    getTextureTransColShadeXDither<useCachedDither>(&vram16[(i << 10) + j], vram16[clutP + tC1],
-                                                                    (cB1 >> 16), (cG1 >> 16), (cR1 >> 16));
+                const uint16_t color = Sampler<Tex>::scalar(rs, yAdj, posX, posY);
+                if (m_ditherMode) {
+                    getTextureTransColShadeXDither<useCachedDither>(&vram16[(i << 10) + j], color, (cB1 >> 16),
+                                                                    (cG1 >> 16), (cR1 >> 16));
                 } else {
                     PixelWriter<true, GPU::Shading::Gouraud, WriteMode::Default>::scalar(
-                        rs, &vram16[(i << 10) + j], vram16[clutP + tC1], (cB1 >> 16), (cG1 >> 16), (cR1 >> 16));
+                        rs, &vram16[(i << 10) + j], color, (cB1 >> 16), (cG1 >> 16), (cR1 >> 16));
                 }
                 posX += difX;
                 posY += difY;
@@ -3818,6 +3822,16 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3TGEx4i(int16_t x1, int16_t y1, int16_
         }
         if (nextRowShadeTextured3()) return;
     }
+}
+
+////////////////////////////////////////////////////////////////////////
+
+void PCSX::SoftGPU::SoftRenderer::drawPoly3TGEx4i(int16_t x1, int16_t y1, int16_t x2, int16_t y2, int16_t x3,
+                                                  int16_t y3, int16_t tx1, int16_t ty1, int16_t tx2, int16_t ty2,
+                                                  int16_t tx3, int16_t ty3, int16_t clX, int16_t clY, int32_t col1,
+                                                  int32_t col2, int32_t col3) {
+    drawPoly3TG<TexMode::Clut4, useCachedDither>(x1, y1, x2, y2, x3, y3, tx1, ty1, tx2, ty2, tx3, ty3, clX, clY, col1,
+                                                 col2, col3);
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -3854,170 +3868,8 @@ void PCSX::SoftGPU::SoftRenderer::drawPoly3TGEx8i(int16_t x1, int16_t y1, int16_
                                                   int16_t y3, int16_t tx1, int16_t ty1, int16_t tx2, int16_t ty2,
                                                   int16_t tx3, int16_t ty3, int16_t clX, int16_t clY, int32_t col1,
                                                   int32_t col2, int32_t col3) {
-    int i, j, xmin, xmax, ymin, ymax;
-    int32_t cR1, cG1, cB1;
-    int32_t difR, difB, difG, difR2, difB2, difG2;
-    int32_t difX, difY, difX2, difY2;
-    int32_t posX, posY, YAdjust, clutP;
-    int16_t tC1, tC2;
-
-    const auto drawX = m_drawX;
-    const auto drawY = m_drawY;
-    const auto drawH = m_drawH;
-    const auto drawW = m_drawW;
-
-    if (x1 > drawW && x2 > drawW && x3 > drawW) return;
-    if (y1 > drawH && y2 > drawH && y3 > drawH) return;
-    if (x1 < drawX && x2 < drawX && x3 < drawX) return;
-    if (y1 < drawY && y2 < drawY && y3 < drawY) return;
-    if (drawY >= drawH) return;
-    if (drawX >= drawW) return;
-
-    if (!setupSectionsShadeTextured3(x1, y1, x2, y2, x3, y3, tx1, ty1, tx2, ty2, tx3, ty3, col1, col2, col3)) return;
-
-    ymax = m_yMax;
-
-    for (ymin = m_yMin; ymin < drawY; ymin++) {
-        if (nextRowShadeTextured3()) return;
-    }
-
-    clutP = (clY << 10) + clX;
-
-    YAdjust = ((m_globalTextAddrY) << 11) + (m_globalTextAddrX << 1);
-    YAdjust += (m_textureWindow.y0 << 11) + (m_textureWindow.x0);
-
-    difR = m_deltaRightR;
-    difG = m_deltaRightG;
-    difB = m_deltaRightB;
-    difR2 = difR << 1;
-    difG2 = difG << 1;
-    difB2 = difB << 1;
-    difX = m_deltaRightU;
-    difX2 = difX << 1;
-    difY = m_deltaRightV;
-    difY2 = difY << 1;
-
-    const auto vram = m_vram;
-    const auto vram16 = m_vram16;
-    const auto maskX = m_textureWindow.x1 - 1;
-    const auto maskY = m_textureWindow.y1 - 1;
-    const auto globalTextAddrX = m_globalTextAddrX;
-    const auto globalTextAddrY = m_globalTextAddrY;
-    const auto textureWindow = m_textureWindow;
-    const auto setMask16 = m_setMask16;
-    const auto setMask32 = m_setMask32;
-    const auto ditherMode = m_ditherMode;
-
-    RasterState rs{};
-    rs.vram = m_vram;
-    rs.vram16 = m_vram16;
-    rs.texWindowX0 = m_textureWindow.x0;
-    rs.texWindowY0 = m_textureWindow.y0;
-    rs.maskX = maskX;
-    rs.maskY = maskY;
-    rs.texBaseX = m_globalTextAddrX;
-    rs.texBaseY = m_globalTextAddrY;
-    rs.abr = m_globalTextABR;
-    rs.drawX = drawX;
-    rs.drawY = drawY;
-    rs.drawW = drawW;
-    rs.drawH = drawH;
-    rs.checkMask = m_checkMask;
-    rs.setMask16 = setMask16;
-    rs.setMask32 = setMask32;
-    rs.drawSemiTrans = m_drawSemiTrans;
-    rs.m1 = m_m1;
-    rs.m2 = m_m2;
-    rs.m3 = m_m3;
-    rs.clutP = clutP;
-    const int32_t yAdj = Sampler<TexMode::Clut8>::yAdjust(rs);
-
-    if (!m_checkMask && !m_drawSemiTrans && !m_ditherMode) {
-        for (i = ymin; i <= ymax; i++) {
-            xmin = (m_leftX >> 16);
-            xmax = (m_rightX >> 16) - 1;  // !!!!!!!!!!!!!
-            if (drawW < xmax) xmax = drawW;
-
-            if (xmax >= xmin) {
-                posX = m_leftU;
-                posY = m_leftV;
-                cR1 = m_leftR;
-                cG1 = m_leftG;
-                cB1 = m_leftB;
-
-                if (xmin < drawX) {
-                    j = drawX - xmin;
-                    xmin = drawX;
-                    posX += j * difX;
-                    posY += j * difY;
-                    cR1 += j * difR;
-                    cG1 += j * difG;
-                    cB1 += j * difB;
-                }
-
-                for (j = xmin; j < xmax; j += 2) {
-                    uint32_t *pdest = (uint32_t *)&vram16[(i << 10) + j];
-                    const uint32_t color = Sampler<TexMode::Clut8>::packed(rs, yAdj, posX, posY, difX, difY);
-                    PixelWriter<true, GPU::Shading::Gouraud, WriteMode::Solid>::packed(
-                        rs, pdest, color, (cB1 >> 16) | ((cB1 + difB) & 0xff0000),
-                        (cG1 >> 16) | ((cG1 + difG) & 0xff0000), (cR1 >> 16) | ((cR1 + difR) & 0xff0000));
-                    posX += difX2;
-                    posY += difY2;
-                    cR1 += difR2;
-                    cG1 += difG2;
-                    cB1 += difB2;
-                }
-                if (j == xmax) {
-                    PixelWriter<true, GPU::Shading::Gouraud, WriteMode::Solid>::scalar(
-                        rs, &vram16[(i << 10) + j], Sampler<TexMode::Clut8>::scalar(rs, yAdj, posX, posY),
-                        (cB1 >> 16), (cG1 >> 16), (cR1 >> 16));
-                }
-            }
-            if (nextRowShadeTextured3()) return;
-        }
-        return;
-    }
-
-    for (i = ymin; i <= ymax; i++) {
-        xmin = (m_leftX >> 16);
-        xmax = (m_rightX >> 16) - 1;  //!!!!!!!!!!!!!!!!!!!!!!!
-        if (drawW < xmax) xmax = drawW;
-
-        if (xmax >= xmin) {
-            posX = m_leftU;
-            posY = m_leftV;
-            cR1 = m_leftR;
-            cG1 = m_leftG;
-            cB1 = m_leftB;
-
-            if (xmin < drawX) {
-                j = drawX - xmin;
-                xmin = drawX;
-                posX += j * difX;
-                posY += j * difY;
-                cR1 += j * difR;
-                cG1 += j * difG;
-                cB1 += j * difB;
-            }
-
-            for (j = xmin; j <= xmax; j++) {
-                tC1 = vram[static_cast<int32_t>((((posY >> 16) & maskY) << 11) + YAdjust + ((posX >> 16) & maskX))];
-                if (ditherMode) {
-                    getTextureTransColShadeXDither<useCachedDither>(&vram16[(i << 10) + j], vram16[clutP + tC1],
-                                                                    (cB1 >> 16), (cG1 >> 16), (cR1 >> 16));
-                } else {
-                    PixelWriter<true, GPU::Shading::Gouraud, WriteMode::Default>::scalar(
-                        rs, &vram16[(i << 10) + j], vram16[clutP + tC1], (cB1 >> 16), (cG1 >> 16), (cR1 >> 16));
-                }
-                posX += difX;
-                posY += difY;
-                cR1 += difR;
-                cG1 += difG;
-                cB1 += difB;
-            }
-        }
-        if (nextRowShadeTextured3()) return;
-    }
+    drawPoly3TG<TexMode::Clut8, useCachedDither>(x1, y1, x2, y2, x3, y3, tx1, ty1, tx2, ty2, tx3, ty3, clX, clY, col1,
+                                                 col2, col3);
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -4053,169 +3905,8 @@ template <bool useCachedDither>
 void PCSX::SoftGPU::SoftRenderer::drawPoly3TGDi(int16_t x1, int16_t y1, int16_t x2, int16_t y2, int16_t x3, int16_t y3,
                                                 int16_t tx1, int16_t ty1, int16_t tx2, int16_t ty2, int16_t tx3,
                                                 int16_t ty3, int32_t col1, int32_t col2, int32_t col3) {
-    int i, j, xmin, xmax, ymin, ymax;
-    int32_t cR1, cG1, cB1;
-    int32_t difR, difB, difG, difR2, difB2, difG2;
-    int32_t difX, difY, difX2, difY2;
-    int32_t posX, posY;
-
-    const auto drawX = m_drawX;
-    const auto drawY = m_drawY;
-    const auto drawH = m_drawH;
-    const auto drawW = m_drawW;
-
-    if (x1 > drawW && x2 > drawW && x3 > drawW) return;
-    if (y1 > drawH && y2 > drawH && y3 > drawH) return;
-    if (x1 < drawX && x2 < drawX && x3 < drawX) return;
-    if (y1 < drawY && y2 < drawY && y3 < drawY) return;
-    if (drawY >= drawH) return;
-    if (drawX >= drawW) return;
-
-    if (!setupSectionsShadeTextured3(x1, y1, x2, y2, x3, y3, tx1, ty1, tx2, ty2, tx3, ty3, col1, col2, col3)) return;
-
-    ymax = m_yMax;
-
-    for (ymin = m_yMin; ymin < drawY; ymin++) {
-        if (nextRowShadeTextured3()) return;
-    }
-
-    difR = m_deltaRightR;
-    difG = m_deltaRightG;
-    difB = m_deltaRightB;
-    difR2 = difR << 1;
-    difG2 = difG << 1;
-    difB2 = difB << 1;
-    difX = m_deltaRightU;
-    difX2 = difX << 1;
-    difY = m_deltaRightV;
-    difY2 = difY << 1;
-
-    const auto vram = m_vram;
-    const auto vram16 = m_vram16;
-    const auto maskX = m_textureWindow.x1 - 1;
-    const auto maskY = m_textureWindow.y1 - 1;
-    const auto globalTextAddrX = m_globalTextAddrX;
-    const auto globalTextAddrY = m_globalTextAddrY;
-    const auto textureWindow = m_textureWindow;
-    const auto setMask16 = m_setMask16;
-    const auto setMask32 = m_setMask32;
-    const auto ditherMode = m_ditherMode;
-
-    RasterState rs{};
-    rs.vram = m_vram;
-    rs.vram16 = m_vram16;
-    rs.texWindowX0 = m_textureWindow.x0;
-    rs.texWindowY0 = m_textureWindow.y0;
-    rs.maskX = maskX;
-    rs.maskY = maskY;
-    rs.texBaseX = m_globalTextAddrX;
-    rs.texBaseY = m_globalTextAddrY;
-    rs.abr = m_globalTextABR;
-    rs.drawX = drawX;
-    rs.drawY = drawY;
-    rs.drawW = drawW;
-    rs.drawH = drawH;
-    rs.checkMask = m_checkMask;
-    rs.setMask16 = setMask16;
-    rs.setMask32 = setMask32;
-    rs.drawSemiTrans = m_drawSemiTrans;
-    rs.m1 = m_m1;
-    rs.m2 = m_m2;
-    rs.m3 = m_m3;
-    rs.clutP = 0;  // unused for Direct15
-    const int32_t yAdj = Sampler<TexMode::Direct15>::yAdjust(rs);
-
-    if (!m_checkMask && !m_drawSemiTrans && !m_ditherMode) {
-        for (i = ymin; i <= ymax; i++) {
-            xmin = (m_leftX >> 16);
-            xmax = (m_rightX >> 16) - 1;  //!!!!!!!!!!!!!!!!!!!!
-            if (drawW < xmax) xmax = drawW;
-
-            if (xmax >= xmin) {
-                posX = m_leftU;
-                posY = m_leftV;
-                cR1 = m_leftR;
-                cG1 = m_leftG;
-                cB1 = m_leftB;
-
-                if (xmin < drawX) {
-                    j = drawX - xmin;
-                    xmin = drawX;
-                    posX += j * difX;
-                    posY += j * difY;
-                    cR1 += j * difR;
-                    cG1 += j * difG;
-                    cB1 += j * difB;
-                }
-
-                for (j = xmin; j < xmax; j += 2) {
-                    uint32_t *pdest = (uint32_t *)&vram16[(i << 10) + j];
-                    const uint32_t color = Sampler<TexMode::Direct15>::packed(rs, yAdj, posX, posY, difX, difY);
-                    PixelWriter<true, GPU::Shading::Gouraud, WriteMode::Solid>::packed(
-                        rs, pdest, color, (cB1 >> 16) | ((cB1 + difB) & 0xff0000),
-                        (cG1 >> 16) | ((cG1 + difG) & 0xff0000), (cR1 >> 16) | ((cR1 + difR) & 0xff0000));
-                    posX += difX2;
-                    posY += difY2;
-                    cR1 += difR2;
-                    cG1 += difG2;
-                    cB1 += difB2;
-                }
-                if (j == xmax) {
-                    PixelWriter<true, GPU::Shading::Gouraud, WriteMode::Solid>::scalar(
-                        rs, &vram16[(i << 10) + j], Sampler<TexMode::Direct15>::scalar(rs, yAdj, posX, posY),
-                        (cB1 >> 16), (cG1 >> 16), (cR1 >> 16));
-                }
-            }
-            if (nextRowShadeTextured3()) return;
-        }
-        return;
-    }
-
-    for (i = ymin; i <= ymax; i++) {
-        xmin = (m_leftX >> 16);
-        xmax = (m_rightX >> 16) - 1;  //!!!!!!!!!!!!!!!!!!
-        if (drawW < xmax) xmax = drawW;
-
-        if (xmax >= xmin) {
-            posX = m_leftU;
-            posY = m_leftV;
-            cR1 = m_leftR;
-            cG1 = m_leftG;
-            cB1 = m_leftB;
-
-            if (xmin < drawX) {
-                j = drawX - xmin;
-                xmin = drawX;
-                posX += j * difX;
-                posY += j * difY;
-                cR1 += j * difR;
-                cG1 += j * difG;
-                cB1 += j * difB;
-            }
-
-            for (j = xmin; j <= xmax; j++) {
-                if (ditherMode) {
-                    getTextureTransColShadeXDither<useCachedDither>(
-                        &vram16[(i << 10) + j],
-                        vram16[((((posY >> 16) & maskY) + globalTextAddrY + textureWindow.y0) << 10) +
-                               ((posX >> 16) & maskX) + globalTextAddrX + textureWindow.x0],
-                        (cB1 >> 16), (cG1 >> 16), (cR1 >> 16));
-                } else {
-                    PixelWriter<true, GPU::Shading::Gouraud, WriteMode::Default>::scalar(
-                        rs, &vram16[(i << 10) + j],
-                        vram16[((((posY >> 16) & maskY) + globalTextAddrY + textureWindow.y0) << 10) +
-                               ((posX >> 16) & maskX) + globalTextAddrX + textureWindow.x0],
-                        (cB1 >> 16), (cG1 >> 16), (cR1 >> 16));
-                }
-                posX += difX;
-                posY += difY;
-                cR1 += difR;
-                cG1 += difG;
-                cB1 += difB;
-            }
-        }
-        if (nextRowShadeTextured3()) return;
-    }
+    drawPoly3TG<TexMode::Direct15, useCachedDither>(x1, y1, x2, y2, x3, y3, tx1, ty1, tx2, ty2, tx3, ty3, 0, 0, col1,
+                                                    col2, col3);
 }
 
 ////////////////////////////////////////////////////////////////////////
