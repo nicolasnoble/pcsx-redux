@@ -128,19 +128,36 @@ struct PackedPair555 {
 // of the round-trip stay consistent.
 namespace Channel555 {
 
-template <uint32_t Mask, uint32_t Overflow>
+template <uint32_t Mask, uint32_t Overflow, int Shift>
 struct Trait {
     static constexpr uint32_t mask = Mask;
     static constexpr uint32_t overflowMask = Overflow;
+    static constexpr int shift = Shift;
     static inline int32_t saturateNative(int32_t c) {
         if (c & Overflow) c = Mask;
         return c;
     }
+    // Native-position extract: returns the channel still at its source
+    // bit range (R: bits 0..4, B: 5..9, G: 10..14). Replaces legacy
+    // XCOL1/2/3.
+    static inline int32_t extractNative(uint32_t c) { return c & Mask; }
+    // Right-aligned extract: shifts the channel down to bits 0..4 so
+    // the result is in 0..0x1f regardless of which channel. Replaces
+    // legacy XCOL1D/2D/3D.
+    static inline int32_t extractRightAligned(uint32_t c) { return (c >> Shift) & 0x1f; }
 };
 
-using R = Trait<0x1f, 0x7fffffe0>;
-using B = Trait<0x3e0, 0x7ffffc00>;
-using G = Trait<0x7c00, 0x7fff8000>;
+using R = Trait<0x1f, 0x7fffffe0, 0>;
+using B = Trait<0x3e0, 0x7ffffc00, 5>;
+using G = Trait<0x7c00, 0x7fff8000, 10>;
+
+// Pack three native-position channels into a BGR555 scalar pixel,
+// masking each to its own range. Replaces the legacy XPSXCOL macro.
+// Argument order matches PackedPair555::packBGR (r, b, g) - the macro
+// took (r, g, b), so migrations swap the last two arguments.
+inline uint16_t packBGRMasked(int32_t r, int32_t b, int32_t g) {
+    return static_cast<uint16_t>((g & 0x7c00) | (b & 0x3e0) | (r & 0x1f));
+}
 
 }  // namespace Channel555
 

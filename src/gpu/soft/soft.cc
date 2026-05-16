@@ -25,16 +25,6 @@
 #include "gpu/soft/raster-state.h"
 #include "gpu/soft/soft.h"
 
-#define XCOL1(x) (x & 0x1f)
-#define XCOL2(x) (x & 0x3e0)
-#define XCOL3(x) (x & 0x7c00)
-
-#define XCOL1D(x) (x & 0x1f)
-#define XCOL2D(x) ((x >> 5) & 0x1f)
-#define XCOL3D(x) ((x >> 10) & 0x1f)
-
-#define XPSXCOL(r, g, b) ((g & 0x7c00) | (b & 0x3e0) | (r & 0x1f))
-
 static constexpr int CHKMAX_X = 1024;
 static constexpr int CHKMAX_Y = 512;
 
@@ -328,9 +318,9 @@ void PCSX::SoftGPU::SoftRenderer::getShadeTransColDither(uint16_t *pdest, int32_
     if (m_checkMask && *pdest & 0x8000) return;
 
     if (m_drawSemiTrans) {
-        r = ((XCOL1D(*pdest)) << 3);
-        b = ((XCOL2D(*pdest)) << 3);
-        g = ((XCOL3D(*pdest)) << 3);
+        r = ((Channel555::R::extractRightAligned(*pdest)) << 3);
+        b = ((Channel555::B::extractRightAligned(*pdest)) << 3);
+        g = ((Channel555::G::extractRightAligned(*pdest)) << 3);
 
         if (m_globalTextABR == GPU::BlendFunction::HalfBackAndHalfFront) {
             // (B + F) / 2 preserving each channel's bit-0 carry
@@ -399,32 +389,32 @@ void PCSX::SoftGPU::SoftRenderer::getTextureTransColShade(uint16_t *pdest, uint1
             b = ((Bb + Fb) >> 1) << 5;
             g = ((Bg + Fg) >> 1) << 10;
         } else if (m_globalTextABR == GPU::BlendFunction::FullBackAndFullFront) {
-            r = (XCOL1(*pdest)) + ((((XCOL1(color))) * m_m1) >> 7);
-            b = (XCOL2(*pdest)) + ((((XCOL2(color))) * m_m2) >> 7);
-            g = (XCOL3(*pdest)) + ((((XCOL3(color))) * m_m3) >> 7);
+            r = (Channel555::R::extractNative(*pdest)) + ((((Channel555::R::extractNative(color))) * m_m1) >> 7);
+            b = (Channel555::B::extractNative(*pdest)) + ((((Channel555::B::extractNative(color))) * m_m2) >> 7);
+            g = (Channel555::G::extractNative(*pdest)) + ((((Channel555::G::extractNative(color))) * m_m3) >> 7);
         } else if (m_globalTextABR == GPU::BlendFunction::FullBackSubFullFront) {
-            r = (XCOL1(*pdest)) - ((((XCOL1(color))) * m_m1) >> 7);
-            b = (XCOL2(*pdest)) - ((((XCOL2(color))) * m_m2) >> 7);
-            g = (XCOL3(*pdest)) - ((((XCOL3(color))) * m_m3) >> 7);
+            r = (Channel555::R::extractNative(*pdest)) - ((((Channel555::R::extractNative(color))) * m_m1) >> 7);
+            b = (Channel555::B::extractNative(*pdest)) - ((((Channel555::B::extractNative(color))) * m_m2) >> 7);
+            g = (Channel555::G::extractNative(*pdest)) - ((((Channel555::G::extractNative(color))) * m_m3) >> 7);
             if (r & 0x80000000) r = 0;
             if (b & 0x80000000) b = 0;
             if (g & 0x80000000) g = 0;
         } else {
-            r = (XCOL1(*pdest)) + ((((XCOL1(color)) >> 2) * m_m1) >> 7);
-            b = (XCOL2(*pdest)) + ((((XCOL2(color)) >> 2) * m_m2) >> 7);
-            g = (XCOL3(*pdest)) + ((((XCOL3(color)) >> 2) * m_m3) >> 7);
+            r = (Channel555::R::extractNative(*pdest)) + ((((Channel555::R::extractNative(color)) >> 2) * m_m1) >> 7);
+            b = (Channel555::B::extractNative(*pdest)) + ((((Channel555::B::extractNative(color)) >> 2) * m_m2) >> 7);
+            g = (Channel555::G::extractNative(*pdest)) + ((((Channel555::G::extractNative(color)) >> 2) * m_m3) >> 7);
         }
     } else {
-        r = ((XCOL1(color)) * m_m1) >> 7;
-        b = ((XCOL2(color)) * m_m2) >> 7;
-        g = ((XCOL3(color)) * m_m3) >> 7;
+        r = ((Channel555::R::extractNative(color)) * m_m1) >> 7;
+        b = ((Channel555::B::extractNative(color)) * m_m2) >> 7;
+        g = ((Channel555::G::extractNative(color)) * m_m3) >> 7;
     }
 
     if (r & 0x7fffffe0) r = 0x1f;
     if (b & 0x7ffffc00) b = 0x3e0;
     if (g & 0x7fff8000) g = 0x7c00;
 
-    *pdest = (XPSXCOL(r, g, b)) | l;
+    *pdest = (Channel555::packBGRMasked(r, b, g)) | l;
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -437,15 +427,15 @@ inline void PCSX::SoftGPU::SoftRenderer::getTextureTransColShadeSolid(uint16_t *
 
     l = m_setMask16 | (color & 0x8000);
 
-    r = ((XCOL1(color)) * m_m1) >> 7;
-    b = ((XCOL2(color)) * m_m2) >> 7;
-    g = ((XCOL3(color)) * m_m3) >> 7;
+    r = ((Channel555::R::extractNative(color)) * m_m1) >> 7;
+    b = ((Channel555::B::extractNative(color)) * m_m2) >> 7;
+    g = ((Channel555::G::extractNative(color)) * m_m3) >> 7;
 
     if (r & 0x7fffffe0) r = 0x1f;
     if (b & 0x7ffffc00) b = 0x3e0;
     if (g & 0x7fff8000) g = 0x7c00;
 
-    *pdest = (XPSXCOL(r, g, b)) | l;
+    *pdest = (Channel555::packBGRMasked(r, b, g)) | l;
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -474,32 +464,32 @@ void PCSX::SoftGPU::SoftRenderer::getTextureTransColShadeSemi(uint16_t *pdest, u
             b = ((Bb + Fb) >> 1) << 5;
             g = ((Bg + Fg) >> 1) << 10;
         } else if (m_globalTextABR == GPU::BlendFunction::FullBackAndFullFront) {
-            r = (XCOL1(*pdest)) + ((((XCOL1(color))) * m_m1) >> 7);
-            b = (XCOL2(*pdest)) + ((((XCOL2(color))) * m_m2) >> 7);
-            g = (XCOL3(*pdest)) + ((((XCOL3(color))) * m_m3) >> 7);
+            r = (Channel555::R::extractNative(*pdest)) + ((((Channel555::R::extractNative(color))) * m_m1) >> 7);
+            b = (Channel555::B::extractNative(*pdest)) + ((((Channel555::B::extractNative(color))) * m_m2) >> 7);
+            g = (Channel555::G::extractNative(*pdest)) + ((((Channel555::G::extractNative(color))) * m_m3) >> 7);
         } else if (m_globalTextABR == GPU::BlendFunction::FullBackSubFullFront) {
-            r = (XCOL1(*pdest)) - ((((XCOL1(color))) * m_m1) >> 7);
-            b = (XCOL2(*pdest)) - ((((XCOL2(color))) * m_m2) >> 7);
-            g = (XCOL3(*pdest)) - ((((XCOL3(color))) * m_m3) >> 7);
+            r = (Channel555::R::extractNative(*pdest)) - ((((Channel555::R::extractNative(color))) * m_m1) >> 7);
+            b = (Channel555::B::extractNative(*pdest)) - ((((Channel555::B::extractNative(color))) * m_m2) >> 7);
+            g = (Channel555::G::extractNative(*pdest)) - ((((Channel555::G::extractNative(color))) * m_m3) >> 7);
             if (r & 0x80000000) r = 0;
             if (b & 0x80000000) b = 0;
             if (g & 0x80000000) g = 0;
         } else {
-            r = (XCOL1(*pdest)) + ((((XCOL1(color)) >> 2) * m_m1) >> 7);
-            b = (XCOL2(*pdest)) + ((((XCOL2(color)) >> 2) * m_m2) >> 7);
-            g = (XCOL3(*pdest)) + ((((XCOL3(color)) >> 2) * m_m3) >> 7);
+            r = (Channel555::R::extractNative(*pdest)) + ((((Channel555::R::extractNative(color)) >> 2) * m_m1) >> 7);
+            b = (Channel555::B::extractNative(*pdest)) + ((((Channel555::B::extractNative(color)) >> 2) * m_m2) >> 7);
+            g = (Channel555::G::extractNative(*pdest)) + ((((Channel555::G::extractNative(color)) >> 2) * m_m3) >> 7);
         }
     } else {
-        r = ((XCOL1(color)) * m_m1) >> 7;
-        b = ((XCOL2(color)) * m_m2) >> 7;
-        g = ((XCOL3(color)) * m_m3) >> 7;
+        r = ((Channel555::R::extractNative(color)) * m_m1) >> 7;
+        b = ((Channel555::B::extractNative(color)) * m_m2) >> 7;
+        g = ((Channel555::G::extractNative(color)) * m_m3) >> 7;
     }
 
     if (r & 0x7fffffe0) r = 0x1f;
     if (b & 0x7ffffc00) b = 0x3e0;
     if (g & 0x7fff8000) g = 0x7c00;
 
-    *pdest = (XPSXCOL(r, g, b)) | l;
+    *pdest = (Channel555::packBGRMasked(r, b, g)) | l;
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -729,14 +719,14 @@ void PCSX::SoftGPU::SoftRenderer::getTextureTransColShadeXDither(uint16_t *pdest
 
     if (m_checkMask && *pdest & 0x8000) return;
 
-    m1 = (((XCOL1D(color))) * m1) >> 4;
-    m2 = (((XCOL2D(color))) * m2) >> 4;
-    m3 = (((XCOL3D(color))) * m3) >> 4;
+    m1 = (((Channel555::R::extractRightAligned(color))) * m1) >> 4;
+    m2 = (((Channel555::B::extractRightAligned(color))) * m2) >> 4;
+    m3 = (((Channel555::G::extractRightAligned(color))) * m3) >> 4;
 
     if (m_drawSemiTrans && (color & 0x8000)) {
-        r = ((XCOL1D(*pdest)) << 3);
-        b = ((XCOL2D(*pdest)) << 3);
-        g = ((XCOL3D(*pdest)) << 3);
+        r = ((Channel555::R::extractRightAligned(*pdest)) << 3);
+        b = ((Channel555::B::extractRightAligned(*pdest)) << 3);
+        g = ((Channel555::G::extractRightAligned(*pdest)) << 3);
 
         if (m_globalTextABR == GPU::BlendFunction::HalfBackAndHalfFront) {
             // (B + F) / 2 preserving each channel's bit-0 carry
@@ -804,32 +794,32 @@ void PCSX::SoftGPU::SoftRenderer::getTextureTransColShadeX(uint16_t *pdest, uint
             b = ((Bb + Fb) >> 1) << 5;
             g = ((Bg + Fg) >> 1) << 10;
         } else if (m_globalTextABR == GPU::BlendFunction::FullBackAndFullFront) {
-            r = (XCOL1(*pdest)) + ((((XCOL1(color))) * m1) >> 7);
-            b = (XCOL2(*pdest)) + ((((XCOL2(color))) * m2) >> 7);
-            g = (XCOL3(*pdest)) + ((((XCOL3(color))) * m3) >> 7);
+            r = (Channel555::R::extractNative(*pdest)) + ((((Channel555::R::extractNative(color))) * m1) >> 7);
+            b = (Channel555::B::extractNative(*pdest)) + ((((Channel555::B::extractNative(color))) * m2) >> 7);
+            g = (Channel555::G::extractNative(*pdest)) + ((((Channel555::G::extractNative(color))) * m3) >> 7);
         } else if (m_globalTextABR == GPU::BlendFunction::FullBackSubFullFront) {
-            r = (XCOL1(*pdest)) - ((((XCOL1(color))) * m1) >> 7);
-            b = (XCOL2(*pdest)) - ((((XCOL2(color))) * m2) >> 7);
-            g = (XCOL3(*pdest)) - ((((XCOL3(color))) * m3) >> 7);
+            r = (Channel555::R::extractNative(*pdest)) - ((((Channel555::R::extractNative(color))) * m1) >> 7);
+            b = (Channel555::B::extractNative(*pdest)) - ((((Channel555::B::extractNative(color))) * m2) >> 7);
+            g = (Channel555::G::extractNative(*pdest)) - ((((Channel555::G::extractNative(color))) * m3) >> 7);
             if (r & 0x80000000) r = 0;
             if (b & 0x80000000) b = 0;
             if (g & 0x80000000) g = 0;
         } else {
-            r = (XCOL1(*pdest)) + ((((XCOL1(color)) >> 2) * m1) >> 7);
-            b = (XCOL2(*pdest)) + ((((XCOL2(color)) >> 2) * m2) >> 7);
-            g = (XCOL3(*pdest)) + ((((XCOL3(color)) >> 2) * m3) >> 7);
+            r = (Channel555::R::extractNative(*pdest)) + ((((Channel555::R::extractNative(color)) >> 2) * m1) >> 7);
+            b = (Channel555::B::extractNative(*pdest)) + ((((Channel555::B::extractNative(color)) >> 2) * m2) >> 7);
+            g = (Channel555::G::extractNative(*pdest)) + ((((Channel555::G::extractNative(color)) >> 2) * m3) >> 7);
         }
     } else {
-        r = ((XCOL1(color)) * m1) >> 7;
-        b = ((XCOL2(color)) * m2) >> 7;
-        g = ((XCOL3(color)) * m3) >> 7;
+        r = ((Channel555::R::extractNative(color)) * m1) >> 7;
+        b = ((Channel555::B::extractNative(color)) * m2) >> 7;
+        g = ((Channel555::G::extractNative(color)) * m3) >> 7;
     }
 
     if (r & 0x7fffffe0) r = 0x1f;
     if (b & 0x7ffffc00) b = 0x3e0;
     if (g & 0x7fff8000) g = 0x7c00;
 
-    *pdest = (XPSXCOL(r, g, b)) | l;
+    *pdest = (Channel555::packBGRMasked(r, b, g)) | l;
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -840,15 +830,15 @@ inline void PCSX::SoftGPU::SoftRenderer::getTextureTransColShadeXSolid(uint16_t 
 
     if (color == 0) return;
 
-    r = ((XCOL1(color)) * m1) >> 7;
-    b = ((XCOL2(color)) * m2) >> 7;
-    g = ((XCOL3(color)) * m3) >> 7;
+    r = ((Channel555::R::extractNative(color)) * m1) >> 7;
+    b = ((Channel555::B::extractNative(color)) * m2) >> 7;
+    g = ((Channel555::G::extractNative(color)) * m3) >> 7;
 
     if (r & 0x7fffffe0) r = 0x1f;
     if (b & 0x7ffffc00) b = 0x3e0;
     if (g & 0x7fff8000) g = 0x7c00;
 
-    *pdest = (XPSXCOL(r, g, b)) | m_setMask16 | (color & 0x8000);
+    *pdest = (Channel555::packBGRMasked(r, b, g)) | m_setMask16 | (color & 0x8000);
 }
 
 ////////////////////////////////////////////////////////////////////////
