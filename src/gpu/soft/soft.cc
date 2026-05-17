@@ -266,24 +266,9 @@ static void applyDither(uint16_t *pdest, uint16_t *base, uint32_t r, uint32_t g,
 
     int32_t offset = s_dithertable[(y & 3) * 4 + (x & 3)];
 
-    int32_t ra = (int32_t)r + offset;
-    int32_t ga = (int32_t)g + offset;
-    int32_t ba = (int32_t)b + offset;
-    if (ra < 0) {
-        ra = 0;
-    } else if (ra > 0xff) {
-        ra = 0xff;
-    }
-    if (ga < 0) {
-        ga = 0;
-    } else if (ga > 0xff) {
-        ga = 0xff;
-    }
-    if (ba < 0) {
-        ba = 0;
-    } else if (ba > 0xff) {
-        ba = 0xff;
-    }
+    int32_t ra = std::clamp((int32_t)r + offset, 0, 0xff);
+    int32_t ga = std::clamp((int32_t)g + offset, 0, 0xff);
+    int32_t ba = std::clamp((int32_t)b + offset, 0, 0xff);
 
     uint32_t r5 = (uint32_t)ra >> 3;
     uint32_t g5 = (uint32_t)ga >> 3;
