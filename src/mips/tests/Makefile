@@ -5,6 +5,7 @@ all:
 	$(MAKE) -C cop0 all
 	$(MAKE) -C dcache all
 	$(MAKE) -C dma all
+	$(MAKE) -C icache all
 	$(MAKE) -C gpu-raster-phase1 all
 	$(MAKE) -C gpu-raster-phase2 all
 	$(MAKE) -C gpu-raster-phase3 all
@@ -49,6 +50,7 @@ clean:
 	$(MAKE) -C cop0 clean
 	$(MAKE) -C dcache clean
 	$(MAKE) -C dma clean
+	$(MAKE) -C icache clean
 	$(MAKE) -C gpu-raster-phase1 clean
 	$(MAKE) -C gpu-raster-phase2 clean
 	$(MAKE) -C gpu-raster-phase3 clean
