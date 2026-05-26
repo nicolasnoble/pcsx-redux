@@ -107,10 +107,15 @@ local function slz2Decompress(file, sizeIn, sizeOut)
     return out
 end
 
+-- SLZ3 wraps a raw UCL-NRV2E compressed payload. The decoder is the
+-- PCSX.Misc.uclUnpack Lua binding (ucl_nrv2e_decompress_safe_8 under the hood);
+-- on the PSX side the SLZ-aware runtime gets the equivalent decoder via the
+-- slz3_patch table injected into SLUS.
 local function slz3Decompress(file, sizeIn, sizeOut)
-    local compressedData = file:read(sizeIn)
+    local compressed = file:read(sizeIn)
     local out = Support.NewLuaBuffer(sizeOut)
-    error 'Unimplemented'
+    PCSX.Misc.uclUnpack(compressed, sizeOut, out)
+    return out
 end
 
 function slzDecompress(file)
