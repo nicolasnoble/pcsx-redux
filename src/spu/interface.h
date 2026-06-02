@@ -249,7 +249,6 @@ class impl final : public SPUInterface {
 
     // certain globals (were local before, but with the new timeproc I need em global)
 
-    const int f[5][2] = {{0, 0}, {60, 0}, {115, -52}, {98, -55}, {122, -60}};
     int SSumR[NSSIZE];
     int SSumL[NSSIZE];
     int iFMod[NSSIZE];

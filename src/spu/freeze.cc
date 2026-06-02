@@ -73,10 +73,14 @@ void PCSX::SPU::impl::save(SaveStates::SPU &spu) {
         data = s_chan[i].data;
         channel.get<SaveStates::ADSRInfo>() = s_chan[i].adsr.legacy();
         channel.get<SaveStates::ADSRInfoEx>() = s_chan[i].adsr.ex();
+        // The ADPCM decode cursor and IIR history live in the decoder now; mirror
+        // them back into the channel-data fields that hold their savestate form.
+        data.get<Chan::s_1>().value = s_chan[i].adpcm.history1();
+        data.get<Chan::s_2>().value = s_chan[i].adpcm.history2();
         auto storePtr = [this](uint8_t *ptr, Protobuf::Int32 &val) { val.value = ptr ? ptr - spuMemC : -1; };
-        storePtr(s_chan[i].pStart, data.get<Chan::StartPtr>());
-        storePtr(s_chan[i].pCurr, data.get<Chan::CurrPtr>());
-        storePtr(s_chan[i].pLoop, data.get<Chan::LoopPtr>());
+        storePtr(s_chan[i].adpcm.start(), data.get<Chan::StartPtr>());
+        storePtr(s_chan[i].adpcm.curr(), data.get<Chan::CurrPtr>());
+        storePtr(s_chan[i].adpcm.loop(), data.get<Chan::LoopPtr>());
     }
 
     spu.get<SaveStates::SPUAddr>().value = spuAddr;
@@ -121,12 +125,13 @@ void PCSX::SPU::impl::load(const SaveStates::SPU &spu) {
         s_chan[i].data = data;
         s_chan[i].adsr.legacy() = channel.get<SaveStates::ADSRInfo>();
         s_chan[i].adsr.ex() = channel.get<SaveStates::ADSRInfoEx>();
-        auto restorePtr = [this](uint8_t *&ptr, const Protobuf::Int32 &val) {
-            ptr = val.value == -1 ? nullptr : val.value + spuMemC;
+        s_chan[i].adpcm.setHistory(data.get<Chan::s_1>().value, data.get<Chan::s_2>().value);
+        auto restorePtr = [this](const Protobuf::Int32 &val) -> uint8_t * {
+            return val.value == -1 ? nullptr : val.value + spuMemC;
         };
-        restorePtr(s_chan[i].pStart, data.get<Chan::StartPtr>());
-        restorePtr(s_chan[i].pCurr, data.get<Chan::CurrPtr>());
-        restorePtr(s_chan[i].pLoop, data.get<Chan::LoopPtr>());
+        s_chan[i].adpcm.setStart(restorePtr(data.get<Chan::StartPtr>()));
+        s_chan[i].adpcm.setCurr(restorePtr(data.get<Chan::CurrPtr>()));
+        s_chan[i].adpcm.setLoop(restorePtr(data.get<Chan::LoopPtr>()));
         s_chan[i].data.get<Chan::Mute>().value = false;
         s_chan[i].data.get<Chan::Solo>().value = false;
         s_chan[i].data.get<Chan::IrqDone>().value = 0;

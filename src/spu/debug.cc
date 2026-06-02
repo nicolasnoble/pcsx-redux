@@ -321,11 +321,11 @@ void DrawTablePosition(SPU_CHANNELS_INFO channels, const float rowHeight, const 
             ImGui::AlignTextToFramePadding();
             // @formatter:off
             ImGui::TableNextColumn();
-            ImGui::Text("%i", static_cast<int>(chan.pStart - spuMemC));
+            ImGui::Text("%i", static_cast<int>(chan.adpcm.start() - spuMemC));
             ImGui::TableNextColumn();
-            ImGui::Text("%i", static_cast<int>(chan.pCurr - spuMemC));
+            ImGui::Text("%i", static_cast<int>(chan.adpcm.curr() - spuMemC));
             ImGui::TableNextColumn();
-            ImGui::Text("%i", static_cast<int>(chan.pLoop - spuMemC));
+            ImGui::Text("%i", static_cast<int>(chan.adpcm.loop() - spuMemC));
             // @formatter:on
         }
         ImGui::EndTable();

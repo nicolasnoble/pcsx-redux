@@ -93,7 +93,7 @@ void PCSX::SPU::impl::writeRegister(uint32_t reg, uint16_t val) {
             case 6:  // Sample start address
                 // Brain Dead 13 - align to 16 boundary
                 PCSX::PSXSPU_LOGGER::Log("SPU.write, Voice[%02i] ADPCM Start Address = %04x\n", ch, val);
-                s_chan[ch].pStart = spuMemC + (uint32_t)((val << 3) & ~0xf);
+                s_chan[ch].adpcm.setStart(spuMemC + (uint32_t)((val << 3) & ~0xf));
                 break;
             case 8: {  // Attack/Decay/Sustain/Release (ADSR)
                 //---------------------------------------------//
@@ -198,7 +198,7 @@ void PCSX::SPU::impl::writeRegister(uint32_t reg, uint16_t val) {
             case 14:  // loop?
                 // WaitForSingleObject(s_chan[ch].hMutex,2000);        // -> no multithread fuckups
                 // align to 16-byte boundary
-                s_chan[ch].pLoop = spuMemC + ((uint32_t)((val << 3) & ~0xf));
+                s_chan[ch].adpcm.setLoop(spuMemC + ((uint32_t)((val << 3) & ~0xf)));
                 s_chan[ch].data.get<Chan::IgnoreLoop>().value = true;
                 //  ReleaseMutex(s_chan[ch].hMutex);                    // -> oki, on with the thread
                 PCSX::PSXSPU_LOGGER::Log("SPU.write, Voice[%02i] ADPCM Repeat Address = %04x\n", ch, val);
@@ -525,13 +525,13 @@ uint16_t PCSX::SPU::impl::readRegister(uint32_t reg) {
             case 14:  // get loop address
             {
                 const int ch = (r >> 4) - 0xc0;
-                if (s_chan[ch].pLoop == nullptr) {
+                if (s_chan[ch].adpcm.loop() == nullptr) {
                     PCSX::PSXSPU_LOGGER::Log("SPU.read, Voice[%02i] ADPCM Repeat Address = 00000\n", ch);
                     return 0;
                 }
                 PCSX::PSXSPU_LOGGER::Log("SPU.read, Voice[%02i] ADPCM Repeat Address = %04x\n", ch,
-                                         (uint16_t)((s_chan[ch].pLoop - spuMemC) >> 3));
-                return (uint16_t)((s_chan[ch].pLoop - spuMemC) >> 3);
+                                         (uint16_t)((s_chan[ch].adpcm.loop() - spuMemC) >> 3));
+                return (uint16_t)((s_chan[ch].adpcm.loop() - spuMemC) >> 3);
             }
         }
     }
@@ -573,7 +573,7 @@ uint16_t PCSX::SPU::impl::readRegister(uint32_t reg) {
 // Start ADSR for voices [start, end] depending on val
 void PCSX::SPU::impl::SoundOn(int start, int end, uint16_t val) {
     for (int ch = start; ch < end; ch++, val >>= 1) {
-        if ((val & 1) && s_chan[ch].pStart) {  // mmm... start has to be set before key on !?!
+        if ((val & 1) && s_chan[ch].adpcm.start()) {  // mmm... start has to be set before key on !?!
             s_chan[ch].data.get<Chan::IgnoreLoop>().value = false;
             s_chan[ch].data.get<Chan::New>().value = true;
             dwNewChannel |= (1 << ch);  // bitfield for faster testing

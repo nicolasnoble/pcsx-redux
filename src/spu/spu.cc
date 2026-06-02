@@ -224,10 +224,8 @@ inline void PCSX::SPU::impl::StartSound(SPUCHAN *pChannel) {
     pChannel->adsr.keyOn();
     StartREVERB(pChannel);
 
-    pChannel->pCurr = pChannel->pStart;  // set sample start
+    pChannel->adpcm.keyOn();  // rewind decode cursor to sample start, clear IIR history
 
-    pChannel->data.get<PCSX::SPU::Chan::s_1>().value = 0;  // init mixing vars
-    pChannel->data.get<PCSX::SPU::Chan::s_2>().value = 0;
     pChannel->data.get<PCSX::SPU::Chan::SBPos>().value = 28;
 
     pChannel->data.get<PCSX::SPU::Chan::New>().value = false;  // init channel flags
@@ -437,10 +435,9 @@ inline int PCSX::SPU::impl::iGetInterpolationVal(SPUCHAN *pChannel) {
 ////////////////////////////////////////////////////////////////////////
 
 void PCSX::SPU::impl::MainThread() {
-    int s_1, s_2, fa, ns;
+    int fa, ns;
     uint8_t *start;
-    unsigned int nSample;
-    int ch, predict_nr, shift_factor, flags, d, s;
+    int ch, flags, d;
     int bIRQReturn = 0;
     int32_t tmpCapVoice1Index = 0;
     int32_t tmpCapVoice3Index = 0;
@@ -536,7 +533,7 @@ void PCSX::SPU::impl::MainThread() {
                     while (pChannel->data.get<PCSX::SPU::Chan::spos>().value >= 0x10000L) {
                         if (pChannel->data.get<PCSX::SPU::Chan::SBPos>().value == 28)  // 28 reached?
                         {
-                            start = pChannel->pCurr;  // set up the current pos
+                            start = pChannel->adpcm.curr();  // set up the current pos
 
                             if (start == (uint8_t *)-1)  // special "stop" sign
                             {
@@ -561,38 +558,11 @@ void PCSX::SPU::impl::MainThread() {
 
                             //////////////////////////////////////////// spu irq handler here? mmm... do it later
 
-                            s_1 = pChannel->data.get<PCSX::SPU::Chan::s_1>().value;
-                            s_2 = pChannel->data.get<PCSX::SPU::Chan::s_2>().value;
-
-                            predict_nr = (int)*start;
-                            start++;
-                            shift_factor = predict_nr & 0xf;
-                            predict_nr >>= 4;
-                            flags = (int)*start;
-                            start++;
-
-                            // -------------------------------------- //
-                            for (nSample = 0; nSample < 28; start++) {
-                                d = (int)*start;
-                                s = ((d & 0xf) << 12);
-                                if (s & 0x8000) s |= 0xffff0000;
-
-                                fa = (s >> shift_factor);
-                                fa = fa + ((s_1 * f[predict_nr][0]) >> 6) + ((s_2 * f[predict_nr][1]) >> 6);
-                                s_2 = s_1;
-                                s_1 = fa;
-                                s = ((d & 0xf0) << 8);
-
-                                pChannel->data.get<PCSX::SPU::Chan::SB>().value[nSample++].value = fa;
-
-                                if (s & 0x8000) s |= 0xffff0000;
-                                fa = (s >> shift_factor);
-                                fa = fa + ((s_1 * f[predict_nr][0]) >> 6) + ((s_2 * f[predict_nr][1]) >> 6);
-                                s_2 = s_1;
-                                s_1 = fa;
-
-                                pChannel->data.get<PCSX::SPU::Chan::SB>().value[nSample++].value = fa;
-                            }
+                            // Decode the 16-byte ADPCM block at the cursor into the 28-sample buffer.
+                            // The decoder owns the predictor/shift parse and the s_1/s_2 IIR history;
+                            // it advances start to one past the block and hands back the flag byte.
+                            flags = pChannel->adpcm.decodeBlock(
+                                start, pChannel->data.get<PCSX::SPU::Chan::SB>().value.data(), start);
 
                             //////////////////////////////////////////// irq check
 
@@ -601,7 +571,7 @@ void PCSX::SPU::impl::MainThread() {
                                 if ((pSpuIrq > start - 16 &&  // irq address reached?
                                      pSpuIrq <= start) ||
                                     ((flags & 1) &&  // special: irq on looping addr, when stop/loop flag is set
-                                     (pSpuIrq > pChannel->pLoop - 16 && pSpuIrq <= pChannel->pLoop))) {
+                                     (pSpuIrq > pChannel->adpcm.loop() - 16 && pSpuIrq <= pChannel->adpcm.loop()))) {
                                     pChannel->data.get<PCSX::SPU::Chan::IrqDone>().value = 1;  // -> debug flag
                                     scheduleInterrupt();                                       // -> call main emu
 
@@ -616,25 +586,23 @@ void PCSX::SPU::impl::MainThread() {
                             //////////////////////////////////////////// flag handler
 
                             if ((flags & 4) && (!pChannel->data.get<PCSX::SPU::Chan::IgnoreLoop>().value))
-                                pChannel->pLoop = start - 16;  // loop adress
+                                pChannel->adpcm.setLoop(start - 16);  // loop adress
 
                             if (flags & 1)  // 1: stop/loop
                             {
                                 // We play this block out first...
                                 // if(!(flags&2))                          // 1+2: do loop... otherwise: stop
                                 if (flags != 3 ||
-                                    pChannel->pLoop == NULL)  // PETE: if we don't check exactly for 3, loop hang
-                                                              // ups will happen (DQ4, for example)
-                                {                             // and checking if pLoop is set avoids crashes, yeah
+                                    pChannel->adpcm.loop() == NULL)  // PETE: if we don't check exactly for 3, loop hang
+                                                                     // ups will happen (DQ4, for example)
+                                {  // and checking if pLoop is set avoids crashes, yeah
                                     start = (uint8_t *)-1;
                                 } else {
-                                    start = pChannel->pLoop;
+                                    start = pChannel->adpcm.loop();
                                 }
                             }
 
-                            pChannel->pCurr = start;  // store values for next cycle
-                            pChannel->data.get<PCSX::SPU::Chan::s_1>().value = s_1;
-                            pChannel->data.get<PCSX::SPU::Chan::s_2>().value = s_2;
+                            pChannel->adpcm.setCurr(start);  // store cursor for next cycle
 
                             ////////////////////////////////////////////
 
@@ -901,10 +869,8 @@ long PCSX::SPU::impl::init(void) {
 void PCSX::SPU::impl::wipeChannels() {
     for (unsigned i = 0; i < MAXCHAN; i++) {
         s_chan[i].adsr.reset();
+        s_chan[i].adpcm.reset();
         s_chan[i].data.reset();
-        s_chan[i].pCurr = nullptr;
-        s_chan[i].pLoop = nullptr;
-        s_chan[i].pStart = nullptr;
     }
     memset((void *)&rvb, 0, sizeof(REVERBInfo));
 }
@@ -974,9 +940,9 @@ void PCSX::SPU::impl::SetupStreams() {
         s_chan[i].data.get<PCSX::SPU::Chan::Mute>().value = false;
         s_chan[i].data.get<PCSX::SPU::Chan::Solo>().value = false;
         s_chan[i].data.get<PCSX::SPU::Chan::IrqDone>().value = 0;
-        s_chan[i].pLoop = spuMemC;
-        s_chan[i].pStart = spuMemC;
-        s_chan[i].pCurr = spuMemC;
+        s_chan[i].adpcm.setLoop(spuMemC);
+        s_chan[i].adpcm.setStart(spuMemC);
+        s_chan[i].adpcm.setCurr(spuMemC);
     }
 }
 

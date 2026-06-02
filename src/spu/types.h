@@ -19,6 +19,7 @@
 
 #pragma once
 
+#include "spu/adpcm.h"
 #include "spu/adsr.h"
 #include "support/protobuf.h"
 #include "support/settings.h"
@@ -98,12 +99,9 @@ typedef Protobuf::Message<TYPESTRING("ChannelData"), New, SBPos, spos, sinc, SB,
 }  // namespace Chan
 
 struct SPUCHAN {
-    uint8_t *pStart;  // start ptr into sound mem
-    uint8_t *pCurr;   // current pos in sound mem
-    uint8_t *pLoop;   // loop ptr in sound mem
-
     Chan::Data data;
-    AdsrEnvelope adsr;  // per-voice ADSR envelope: state + four-phase machine
+    AdpcmDecoder adpcm;  // per-voice ADPCM decoder: cursor + IIR history + block decode
+    AdsrEnvelope adsr;   // per-voice ADSR envelope: state + four-phase machine
 };
 
 struct REVERBInfo {
