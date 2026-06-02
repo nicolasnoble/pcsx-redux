@@ -128,7 +128,7 @@ class impl final : public SPUInterface {
             DMAWriteRequest = 1 << 8,  // 8 Data Transfer DMA Write Request (0=No, 1=Yes)
             DMAReadRequest = 1 << 9,   // 9 Data Transfer DMA Read Request (0=No, 1=Yes)
             DMABusy = 1 << 10,         // 10 Data Transfer Busy Flag (0=Ready, 1=Busy)
-            CBIndex = 11 << 11,        // 11 Writing to First/Second half of Capture Buffers (0=First, 1=Second)
+            CBIndex = 1 << 11,         // 11 Writing to First/Second half of Capture Buffers (0=First, 1=Second)
             // 15-12 Unknown/Unused (seems to be usually zero)
         };
     };

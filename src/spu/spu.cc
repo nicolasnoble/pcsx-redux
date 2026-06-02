@@ -726,6 +726,17 @@ void PCSX::SPU::impl::MainThread() {
         // Write from our temporary capture buffer to the actual SPU RAM.
         writeCaptureBufferCD(NSSIZE);
 
+        // Advance the persistent capture write pointer by one batch and reflect
+        // which half of the 0x200-sample capture buffer it now points at in
+        // SPUSTAT bit 11 (0=first half 0x000-0x0ff, 1=second half 0x100-0x1ff).
+        // Hardware toggles this bit as the 44.1kHz capture pointer crosses the
+        // half boundary; guests sync capture reads on its edge.
+        capBufVoiceIndex = (capBufVoiceIndex + NSSIZE) % 0x200;
+        if (capBufVoiceIndex & 0x100)
+            spuStat |= StatusFlags::CBIndex;
+        else
+            spuStat &= ~StatusFlags::CBIndex;
+
         //---------------------------------------------------//
         //- here we have another 1 ms of sound data
         //---------------------------------------------------//
