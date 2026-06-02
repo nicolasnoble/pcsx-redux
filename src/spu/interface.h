@@ -237,8 +237,6 @@ class impl final : public SPUInterface {
     int iCycle = 0;
     int16_t *pS;
 
-    int lastch = -1;       // last channel processed on spu irq in timer mode
-    int lastns = 0;        // last ns pos
     int iSecureStart = 0;  // secure start counter
     int iSpuAsyncWait = 0;
 

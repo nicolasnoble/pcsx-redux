@@ -216,17 +216,6 @@ void PCSX::SPU::impl::MainThread() {
                     1;  // if a new channel kicks in (or, of course, sound buffer runs low), we will leave the loop
         }
 
-        //--------------------------------------------------// continue from irq handling in timer mode?
-
-        if (lastch >= 0)  // will be -1 if no continue is pending
-        {
-            ch = lastch;
-            ns = lastns;
-            lastch = -1;  // -> setup all kind of vars to continue
-            pChannel = &s_chan[ch];
-            goto GOON;  // -> directly jump to the continue point
-        }
-
         tmpCapVoice1Index = capBufVoiceIndex;
         tmpCapVoice3Index = capBufVoiceIndex;
 
@@ -301,7 +290,7 @@ void PCSX::SPU::impl::MainThread() {
                             // Decode the 16-byte ADPCM block at the cursor into the 28-sample buffer.
                             // The decoder owns the predictor/shift parse and the s_1/s_2 IIR history;
                             // it hands back the address just past the block and the flag byte. (The
-                            // scope keeps `decoded` from straddling the goto into GOON below.)
+                            // scope keeps `decoded` from straddling the goto into ENDX below.)
                             {
                                 auto decoded = pChannel->adpcm.decodeBlock(
                                     start, pChannel->data.get<PCSX::SPU::Chan::SB>().value.data());
@@ -363,8 +352,6 @@ void PCSX::SPU::impl::MainThread() {
                             }
 
                             ////////////////////////////////////////////
-
-                        GOON:;
                         }
 
                         fa = pChannel->data.get<PCSX::SPU::Chan::SB>()
