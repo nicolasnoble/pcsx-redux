@@ -42,21 +42,23 @@ swi_return:
     ldmfd   sp!, {r12, pc}^        @ restore r12, pop return addr into PC, CPSR <- SPSR (exception return)
 
     /*
-     * Milestone SWI handlers. These are deliberately CUSTOM (not the documented 00h-18h ABI yet):
-     * just enough to prove the dispatch round-trips. They run in SVC mode and return via `bx lr`.
-     * The documented PocketStation SWI table grows here as OpenPSK and the emulator co-evolve.
+     * Custom milestone SWI handlers. These prove the dispatch round-trips but are NOT part of the
+     * documented PocketStation ABI, so they live at 1Ah/1Bh - clear of the documented 00h-18h range.
+     * The documented SWIs (0Ch/0Dh/0Eh date-time so far) are C functions in swi_handlers.c, indexed
+     * at their real numbers in the table below. They run in SVC mode and return via `bx lr`.
      */
 
     .global swi_handler_magic
-swi_handler_magic:                 @ SWI #0: return a fixed magic constant (proves a SWI dispatched)
+swi_handler_magic:                 @ SWI 1Ah: return a fixed magic constant (proves a SWI dispatched)
     ldr     r0, =0xABCD1234
     bx      lr
 
     .global swi_handler_xform
-swi_handler_xform:                 @ SWI #1: return arg + 0x100 (proves arg-in/result-out round-trip
-    add     r0, r0, #0x100         @         AND that comment 1 indexed a *different* table slot)
+swi_handler_xform:                 @ SWI 1Bh: return arg + 0x100 (proves arg-in/result-out round-trip
+    add     r0, r0, #0x100         @          AND that the comment indexed a *different* table slot)
     bx      lr
 
+    .global swi_handler_default
 swi_handler_default:               @ unused slots: a visibly-wrong sentinel so a stray SWI is obvious
     ldr     r0, =0xDEADBEEF
     bx      lr
@@ -65,12 +67,36 @@ swi_handler_default:               @ unused slots: a visibly-wrong sentinel so a
     .section .rodata
     .align  2
     .global swi_table
-swi_table:                         @ indexed by SWI number; 8 slots, only 0/1 are live for now
-    .word   swi_handler_magic      @ 0
-    .word   swi_handler_xform      @ 1
-    .word   swi_handler_default    @ 2
-    .word   swi_handler_default    @ 3
-    .word   swi_handler_default    @ 4
-    .word   swi_handler_default    @ 5
-    .word   swi_handler_default    @ 6
-    .word   swi_handler_default    @ 7
+swi_table:                                @ indexed by SWI number (low 8 bits of the comment field)
+    .word   swi_handler_default           @ 00h
+    .word   swi_handler_default           @ 01h SetCallbacks            (TODO)
+    .word   swi_handler_default           @ 02h
+    .word   swi_handler_default           @ 03h
+    .word   swi_handler_default           @ 04h
+    .word   swi_handler_default           @ 05h SenseAutoCom            (TODO)
+    .word   swi_handler_default           @ 06h GetPtrToComFlags        (TODO)
+    .word   swi_handler_default           @ 07h ChangeAutoDocking       (TODO)
+    .word   swi_handler_default           @ 08h PrepareExecute          (TODO)
+    .word   swi_handler_default           @ 09h DoExecute               (TODO)
+    .word   swi_handler_default           @ 0Ah                         (TODO)
+    .word   swi_handler_default           @ 0Bh ClearComFlagsBit10      (TODO)
+    .word   swi_handler_set_bcd_date_time @ 0Ch SetBcdDateTime(date,time)
+    .word   swi_handler_get_bcd_date      @ 0Dh GetBcdDate()
+    .word   swi_handler_get_bcd_time      @ 0Eh GetBcdTime()
+    .word   swi_handler_default           @ 0Fh
+    .word   swi_handler_default           @ 10h
+    .word   swi_handler_default           @ 11h SetComOnOff             (TODO)
+    .word   swi_handler_default           @ 12h
+    .word   swi_handler_default           @ 13h GetPtrToAlarmSetting    (TODO)
+    .word   swi_handler_default           @ 14h
+    .word   swi_handler_default           @ 15h
+    .word   swi_handler_default           @ 16h
+    .word   swi_handler_default           @ 17h GetPtrToFunc3addr       (TODO)
+    .word   swi_handler_default           @ 18h
+    .word   swi_handler_default           @ 19h
+    .word   swi_handler_magic             @ 1Ah custom: dispatch-proof magic constant
+    .word   swi_handler_xform             @ 1Bh custom: dispatch-proof arg transform
+    .word   swi_handler_default           @ 1Ch
+    .word   swi_handler_default           @ 1Dh
+    .word   swi_handler_default           @ 1Eh
+    .word   swi_handler_default           @ 1Fh

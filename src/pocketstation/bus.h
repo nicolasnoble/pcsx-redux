@@ -184,6 +184,11 @@ public:
                 irqFlags &= ~(1u << 9);  // falling edge: drop the level only (leave the latch).
             } else {
                 requestInterrupt(9);     // rising edge: raise the level AND latch the RTC IRQ.
+                // In RUN mode (RTC_MODE.0=0) the square wave is 1 Hz, so this rising edge is the
+                // once-per-second calendar tick: advance the BCD clock. In PAUSE mode (4096 Hz) the
+                // edge is just the fast wave the boot loop phase-aligns to and must NOT advance time
+                // (otherwise the kernel's brisk field-set loop would clock real seconds under it).
+                if ((rtcMode & 1) == 0) rtcAdvanceOneSecond();
             }
         }
     }
@@ -219,6 +224,14 @@ public:
 
     void reset();
     void requestInterrupt(int bit);
+
+    // RTC time-of-day de-fake. seedRtcFromHostClock() initialises the BCD calendar from the host
+    // wall clock at reset (so the displayed time is real); rtcAdvanceOneSecond() propagates a
+    // one-second carry through seconds/minutes/hours/day-of-week/day/month/year and is called from
+    // tickRtc() on each 1 Hz RTC rising edge. (Cycle-exact realtime vs host drift is expected; exact
+    // rate + calendar/century fidelity wait for HW ground truth per the bootstrap order.)
+    void seedRtcFromHostClock();
+    void rtcAdvanceOneSecond();
 
     u8 read8Slow(u32 addr);
     u16 read16Slow(u32 addr);

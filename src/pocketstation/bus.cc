@@ -1,6 +1,8 @@
 #include "bus.h"
 #include "io.h"
 
+#include <ctime>
+
 // Focused COM/INT tracing for reversing the kernel's handshake. Gated by comTrace. COM register
 // accesses are always logged; INT mask/ack writes always; INT_INPUT/LATCH reads only while a
 // command is active (they fire every loop iteration otherwise and would flood the log).
@@ -31,9 +33,10 @@ void Bus::reset() {
     dacCtrl = 0; // Mute audio
     clkMode = 7; // Set CPU to 3.997696 MHz
 
-    rtc.reset();
+    rtc.reset();              // deterministic fallback values...
+    seedRtcFromHostClock();   // ...then overwrite with the real host wall-clock time.
     rtcMode = 0;
-    
+
     flash.enabledBanks = 0; // Disable all FLASH banks
     flash.bankMappings.fill(0);
     flash.f_wait1 = 0;
@@ -45,6 +48,67 @@ void Bus::reset() {
     }
 
     rtcCountdown = kRtcHalfPeriodPaused;  // restart the RTC square-wave phase brisk (bit 9 low).
+}
+
+// ---- RTC time-of-day -----------------------------------------------------------------------------
+// The RTC fields are stored as BCD bytes (00h..99h) in u32 slots, matching the RTC_TIME/RTC_DATE
+// register layout and the RTC_ADJUST increment path.
+static u8 bcdToBin(u8 v) { return u8((v >> 4) * 10 + (v & 0x0f)); }
+
+static u8 daysInMonthBin(u8 monthBin, u8 yearBin) {
+    static const u8 dim[12] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+    if (monthBin < 1 || monthBin > 12) return 31;
+    u8 d = dim[monthBin - 1];
+    // 2-digit year 00..99 -> 2000..2099, where every year%4==0 is a leap year (2000 included).
+    // TODO: real century handling + the full Gregorian leap rule wait for HW ground truth.
+    if (monthBin == 2 && (yearBin % 4) == 0) d = 29;
+    return d;
+}
+
+// Seed the BCD calendar from the host wall clock so the displayed time is real. It then advances
+// with emulated time via rtcAdvanceOneSecond(). TODO: this makes reset() non-deterministic (each
+// run starts at a different time) - revisit when the module joins the savestate path.
+void Bus::seedRtcFromHostClock() {
+    const std::time_t t = std::time(nullptr);
+    std::tm lt{};
+#if defined(_WIN32)
+    localtime_s(&lt, &t);
+#else
+    localtime_r(&t, &lt);
+#endif
+    const auto toBcd = [](int v) -> u32 { return u32(((v / 10) << 4) | (v % 10)); };
+    rtc.seconds = toBcd(lt.tm_sec >= 60 ? 59 : lt.tm_sec);  // clamp a leap second into range.
+    rtc.minutes = toBcd(lt.tm_min);
+    rtc.hours = toBcd(lt.tm_hour);
+    rtc.dayOfWeek = u32(lt.tm_wday + 1);  // tm_wday 0=Sunday -> RTC_TIME day-of-week 1=Sunday..7.
+    rtc.days = toBcd(lt.tm_mday);
+    rtc.months = toBcd(lt.tm_mon + 1);    // tm_mon is 0..11.
+    rtc.years = toBcd(lt.tm_year % 100);  // RTC_DATE stores a 2-digit year (century lives elsewhere).
+}
+
+// Advance the BCD calendar by one second, propagating carries. Mirrors the field ranges the
+// RTC_ADJUST path enforces (seconds/minutes 00..59, hours 00..23, day-of-week 1..7, day
+// 01..len(month), month 01..12, year 00..99). Called once per 1 Hz RTC rising edge while running.
+void Bus::rtcAdvanceOneSecond() {
+    rtc.seconds = Helpers::incBCDByte(u8(rtc.seconds));
+    if (rtc.seconds <= 0x59) return;
+    rtc.seconds = 0;
+    rtc.minutes = Helpers::incBCDByte(u8(rtc.minutes));
+    if (rtc.minutes <= 0x59) return;
+    rtc.minutes = 0;
+    rtc.hours = Helpers::incBCDByte(u8(rtc.hours));
+    if (rtc.hours <= 0x23) return;
+    rtc.hours = 0;
+    // A new day: advance day-of-week (1..7, wrapping) and the calendar day.
+    rtc.dayOfWeek = (rtc.dayOfWeek % 7) + 1;
+    rtc.days = Helpers::incBCDByte(u8(rtc.days));
+    if (bcdToBin(u8(rtc.days)) <= daysInMonthBin(bcdToBin(u8(rtc.months)), bcdToBin(u8(rtc.years)))) return;
+    rtc.days = 1;
+    rtc.months = Helpers::incBCDByte(u8(rtc.months));
+    if (rtc.months <= 0x12) return;
+    rtc.months = 1;
+    rtc.years = Helpers::incBCDByte(u8(rtc.years));
+    if (rtc.years > 0x99) rtc.years = 0;
 }
 
 void Bus::requestInterrupt(int bit) {

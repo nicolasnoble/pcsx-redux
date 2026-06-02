@@ -18,7 +18,7 @@ CFLAGS    = $(ARCHFLAGS) -ffreestanding -nostdlib -fno-builtin -Os -Wall -Wextra
             -fomit-frame-pointer
 LDFLAGS   = $(ARCHFLAGS) -nostdlib -T openpsk.ld -Wl,--build-id=none
 
-OBJS = crt0.o swi.o main.o
+OBJS = crt0.o swi.o swi_handlers.o main.o
 
 all: $(TARGET).bin
 
@@ -27,6 +27,9 @@ crt0.o: crt0.S
 
 swi.o: swi.S
 	$(CC) $(ARCHFLAGS) -c $< -o $@
+
+swi_handlers.o: swi_handlers.c hardware.h
+	$(CC) $(CFLAGS) -c $< -o $@
 
 main.o: main.c hardware.h swi.h
 	$(CC) $(CFLAGS) -c $< -o $@
