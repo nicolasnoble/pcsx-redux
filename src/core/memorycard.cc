@@ -36,11 +36,25 @@ void PCSX::MemoryCard::enablePocketstation() {
 
 void PCSX::MemoryCard::disablePocketstation() {
     m_pocketstationEnabled = false;
+    m_pocketstationDocked = false;
     m_pocketstation.reset();
+}
+
+void PCSX::MemoryCard::deselect() {
+    memset(&m_tempBuffer, 0, c_sectorSize);
+    m_currentCommand = Commands::None;
+    m_commandTicks = 0;
+    m_dataOffset = 0;
+    m_sector = 0;
+    m_spdr = Responses::IdleHighZ;
+    // /SEL inactive ends any in-progress COM command so the next byte re-arms FIQ-6. The device
+    // stays docked (deselect is the chip-select line, not undocking).
+    if (m_pocketstation) m_pocketstation->comDeselect();
 }
 
 void PCSX::MemoryCard::createPocketstation() {
     m_pocketstation.reset();
+    m_pocketstationDocked = false;
 
     // The ARM7 needs a 16 KiB PocketStation BIOS dump, configured via SettingPocketstationBios.
     // If it is unset or unreadable, leave the device absent rather than crashing.
@@ -74,6 +88,24 @@ void PCSX::MemoryCard::createPocketstation() {
 void PCSX::MemoryCard::acknowledge() { m_sio->acknowledge(); }
 
 uint8_t PCSX::MemoryCard::transceive(uint8_t value) {
+    // Real PocketStation docked: route the SPI byte exchange to the device's COM shift registers.
+    // The kernel's COM/FIQ handler (advanced by the inter-burst cycle-delta catch-up, NOT here)
+    // produces the reply on its own clock. This is non-blocking: we push the incoming byte and pop
+    // whatever reply the kernel had loaded (one-transaction SPI pipeline delay). The tickPS_*/tick
+    // stub handlers below are the fallback for a faked card (no real device).
+    if (m_pocketstation) {
+        // First exchange after the device exists = it's now docked into the PSX slot. The device
+        // has been booting via the catch-up since creation, so its GUI has set up the interrupt
+        // mask; the dock edge (IRQ-11) latches, and the GUI's next per-frame SWI 05h enables COM.
+        if (!m_pocketstationDocked) {
+            m_pocketstation->setDocked(true);
+            m_pocketstationDocked = true;
+        }
+        uint8_t reply = m_pocketstation->comExchange(value);
+        acknowledge();  // keep SIO byte pacing identical to a normal card
+        return reply;
+    }
+
     uint8_t data_out = m_spdr;
 
     if (m_currentCommand == Commands::None || m_currentCommand == Commands::Access) {

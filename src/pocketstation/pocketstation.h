@@ -53,6 +53,25 @@ class PocketStation {
 
     void setButtons(uint32_t mask);  // bits 0..4 -> INT_INPUT.0..4 (live levels).
 
+    // ---- COM link (PS1 card-slot bridge) ----------------------------------------------------
+    // One bidirectional SPI byte exchange from the host (PS1/SIO) side. Returns the byte the
+    // device had loaded before this exchange (one-transaction pipeline delay), queues the
+    // incoming byte for the kernel, and arms the COM FIQ. Non-blocking: the caller must run the
+    // ARM7 (via the cycle-delta catch-up / runCycles) between exchanges for the kernel to react.
+    uint8_t comExchange(uint8_t in) { return m_bus.comExchange(in); }
+    // Card (de)select edge from the SIO. Deselect ends an in-progress command.
+    void comDeselect() { m_bus.comDeselect(); }
+    // Dock state: drives INT_INPUT.11 and fires IRQ-11 on a transition (kernel enables COM).
+    void setDocked(bool docked) { m_bus.setDocked(docked); }
+
+    void setComTrace(bool on) { m_bus.comTrace = on; }   // log every COM/INT reg access with PC.
+    uint32_t comUnderruns() const { return m_bus.com.hostUnderruns; }  // MISO-empty-at-exchange count.
+
+    // Diagnostics for reversing the docking/COM-enable handshake.
+    uint32_t peekComFlags() const { return *reinterpret_cast<const uint32_t*>(&m_bus.wram[0xC0]); }
+    uint32_t peekIrqMask() const { return m_bus.irqMask; }
+    uint32_t peekIntInput() const { return m_bus.irqFlags; }
+
   private:
     // Init order matters: LCD first, then Bus(lcd), then CPU(bus). Members are constructed
     // in declaration order, so this declaration order IS the construction contract.

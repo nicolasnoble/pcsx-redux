@@ -1,9 +1,31 @@
 #include "bus.h"
 #include "io.h"
 
+// Focused COM/INT tracing for reversing the kernel's handshake. Gated by comTrace. COM register
+// accesses are always logged; INT mask/ack writes always; INT_INPUT/LATCH reads only while a
+// command is active (they fire every loop iteration otherwise and would flood the log).
+static const char* pskRegName(u32 addr) {
+    switch (addr) {
+        case IO::COM_MODE: return "COM_MODE";
+        case IO::COM_STAT1: return "COM_STAT1";
+        case IO::COM_DATA: return "COM_DATA";
+        case IO::COM_CTRL1: return "COM_CTRL1";
+        case IO::COM_STAT2: return "COM_STAT2";
+        case IO::COM_CTRL2: return "COM_CTRL2";
+        case IO::INT_INPUT: return "INT_INPUT";
+        case IO::INT_LATCH: return "INT_LATCH";
+        case IO::INT_MASK_SET: return "INT_MASK_SET/READ";
+        case IO::INT_MASK_CLR: return "INT_MASK_CLR";
+        case IO::INT_ACK: return "INT_ACK";
+        default: return "?";
+    }
+}
+
 void Bus::reset() {
+    com.reset();
     irqMask = 0;
     irqFlags = 0;
+    irqLatch = 0;
     iopData = 0;
     iopCtrl = 0;
     dacCtrl = 0; // Mute audio
@@ -52,6 +74,30 @@ u16 Bus::read16Slow(u32 addr) {
 
 u32 Bus::read32Slow(u32 addr) {
     switch (addr) {
+        // ---- COM link reads ------------------------------------------------------------------
+        case IO::COM_DATA: {
+            // Kernel reads the RX shift register (last byte clocked in). Reading does NOT change
+            // ready: ready models "a byte transfer completed" and is the kernel's TX pacing signal
+            // (cleared when it loads the next TX via a COM_DATA write, set when the host clocks the
+            // next byte). The kernel only reads RX for bytes it cares about (command/address);
+            // during the data phase it sends without reading, and those incoming dummies are simply
+            // overwritten - no queue.
+            if (comTrace) printf("[PSK] PC=%08X RD COM_DATA -> %02X\n", curPC, com.rx);
+            return com.rx;
+        }
+        case IO::COM_STAT1:
+            if (comTrace) printf("[PSK] PC=%08X RD COM_STAT1 -> %02X\n", curPC, com.error ? 2u : 0u);
+            return com.error ? 0x2 : 0x0;  // bit1 = error.
+        case IO::COM_STAT2:
+            if (comTrace) printf("[PSK] PC=%08X RD COM_STAT2 -> %02X (ready=%d)\n", curPC, com.ready ? 1u : 0u, com.ready);
+            return com.ready ? 0x1 : 0x0;  // bit0 = ready (a MOSI byte is waiting).
+        case IO::COM_CTRL1:
+            return com.ctrl1;
+        case IO::COM_CTRL2:
+            return com.ctrl2;
+        case IO::COM_MODE:
+            return com.mode;
+
         case IO::INT_INPUT: {
             static int tries = 0;
             tries++;
@@ -60,6 +106,7 @@ u32 Bus::read32Slow(u32 addr) {
                 tries = 0;
                 requestInterrupt(9); // Stub RTC IRQ
             }
+            if (comTrace && com.cmdActive) printf("[PSK] PC=%08X RD INT_INPUT -> %08X\n", curPC, irqFlags);
             return irqFlags;
         }
         case IO::INT_LATCH: return irqLatch;
@@ -126,16 +173,19 @@ void Bus::write32Slow(u32 addr, u32 val) {
         switch (addr) {
             case IO::INT_MASK_SET:
                 irqMask |= val;
+                if (comTrace && (val & 0x40)) printf("[PSK] PC=%08X WR INT_MASK_SET = %08X (COM-6 enabled)\n", curPC, val);
                 break;
 
             case IO::INT_MASK_CLR:
                 irqMask &= ~val;  // Clear interrupt masks based on value (1 = clear)
+                if (comTrace && (val & 0x40)) printf("[PSK] PC=%08X WR INT_MASK_CLR = %08X (COM-6 disabled)\n", curPC, val);
                 break;
 
             case IO::INT_ACK:  // Acknowledge interrupts
                                // INT_INPUT.11 constantly reflects the dock status and is unaffected by ack
                 irqFlags &= (~val) | (1 << 11);
                 irqLatch &= ~val;
+                if (comTrace && (val & 0x40)) printf("[PSK] PC=%08X WR INT_ACK = %08X (ack COM-6)\n", curPC, val);
                 break;
 
             case IO::LCD_MODE:
@@ -182,19 +232,29 @@ void Bus::write32Slow(u32 addr, u32 val) {
                 break;
 
             case IO::COM_MODE:
-                printf("Wrote %08X to COM_MODE\n", val);
+                com.mode = val;
+                if (comTrace) printf("[PSK] PC=%08X WR COM_MODE = %08X\n", curPC, val);
                 break;
 
             case IO::COM_DATA:
-                printf("Wrote %08X to COM_DATA\n", val);
+                // Kernel loads its TX reply -> PS1 (MISO shift reg). One-byte SPI pipeline delay:
+                // the host reads this on its NEXT exchange. Loading the next TX clears ready (the
+                // kernel is now waiting for the host to clock this byte out, which re-sets ready)
+                // and marks the reply fresh. This paces the kernel to one byte per host exchange.
+                com.tx = val & 0xFF;
+                com.txFresh = true;
+                com.ready = false;
+                if (comTrace) printf("[PSK] PC=%08X WR COM_DATA = %02X\n", curPC, val & 0xFF);
                 break;
 
             case IO::COM_CTRL1:
-                printf("Wrote %08X to COM_CTRL1\n", val);
+                com.ctrl1 = val;
+                if (comTrace) printf("[PSK] PC=%08X WR COM_CTRL1 = %08X\n", curPC, val);
                 break;
 
             case IO::COM_CTRL2:
-                printf("Wrote %08X to COM_CTRL2\n", val);
+                com.ctrl2 = val;
+                if (comTrace) printf("[PSK] PC=%08X WR COM_CTRL2 = %08X\n", curPC, val);
                 break;
 
             case IO::IOP_CTRL:

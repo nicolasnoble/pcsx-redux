@@ -31,17 +31,12 @@
 #include "pocketstation/pocketstation.h"
 #include "support/sjis_conv.h"
 
-PCSX::SIO::SIO() : m_listener(g_system->m_eventBus) {
-    reset();
-    // Advance any docked PocketStation once per emulated frame. VSync is signalled from the
-    // counter code while m_regs.cycle is current, so the cycle delta we read at fire time is
-    // accurate. Listener does nothing while no device is docked -> zero cost when off.
-    m_listener.listen<Events::GPU::VSync>([this](const auto &) { stepPocketstation(); });
-}
+PCSX::SIO::SIO() { reset(); }
 
-// Event-driven ARM7 catch-up. Reads the R3000A cycle delta since the last frame, scales it by the
-// ARM/PSX clock ratio, and runs each docked PocketStation that far. See sio.h for why this is here
-// and not in the per-instruction loop.
+// ARM7 cycle-delta catch-up, driven from R3000Acpu::branchTest() (the inter-burst boundary). Reads
+// the R3000A cycle delta since the last catch-up, scales it by the ARM/PSX clock ratio, and runs
+// each docked PocketStation that far. See sio.h for why this is at the inter-burst boundary and not
+// per-instruction or per-frame. Cheap when nothing is docked (early return).
 void PCSX::SIO::stepPocketstation() {
     PocketStation::PocketStation *devs[c_cardCount];
     bool any = false;
@@ -56,16 +51,19 @@ void PCSX::SIO::stepPocketstation() {
 
     const uint64_t now = g_emulator->m_cpu->m_regs.cycle;
     if (!m_psxCycleValid || now < m_lastPsxCycle) {
-        // First frame with a device docked, or the counter went backwards (reset/savestate load):
-        // re-anchor without running a bogus delta.
+        // First catch-up with a device docked, or the counter went backwards (reset/savestate
+        // load): re-anchor without running a bogus delta.
         m_lastPsxCycle = now;
         m_psxCycleValid = true;
         return;
     }
     const uint64_t psxDelta = now - m_lastPsxCycle;
-    m_lastPsxCycle = now;
     const uint64_t armCycles = psxDelta * kArmClockHz / kPsxClockHz;
-    if (armCycles == 0) return;
+    if (armCycles == 0) return;  // keep the anchor; let the sub-1-ARM-cycle delta accumulate.
+    // Advance the anchor only by the PSX cycles actually consumed, so the fractional remainder
+    // carries to the next call (frequent small deltas at the inter-burst boundary must not starve
+    // the device by repeatedly discarding a <1 ARM-cycle remainder).
+    m_lastPsxCycle += armCycles * kPsxClockHz / kArmClockHz;
 
     for (unsigned i = 0; i < c_cardCount; i++) {
         if (devs[i]) devs[i]->runCycles(armCycles);

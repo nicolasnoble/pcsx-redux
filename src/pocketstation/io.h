@@ -28,8 +28,10 @@ enum {
     RTC_TIME = 0x0B800008,
     RTC_DATE = 0x0B80000C,
     COM_MODE = 0x0C000000,
-    COM_DATA = 0x0C000008,
+    COM_STAT1 = 0x0C000004,  // bit1 = error
+    COM_DATA = 0x0C000008,   // RX/TX byte
     COM_CTRL1 = 0x0C000010,
+    COM_STAT2 = 0x0C000014,  // bit0 = ready (8 bits transferred)
     COM_CTRL2 = 0x0C000018,
     LCD_MODE = 0x0D000000,
     LCD_CAL = 0x0D000004,

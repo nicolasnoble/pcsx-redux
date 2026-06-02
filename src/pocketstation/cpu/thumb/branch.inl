@@ -38,7 +38,7 @@ void Thumb_conditionalBranch (u32 instruction) {
 
     else {
         if (condition == 0xF) { // Thumb mode SWI
-            //printf("SWI %xh\n", instruction & 0xff);
+            if (bus.comTrace) printf("[PSK] SWI %02Xh (thumb, PC=%08X)\n", instruction & 0xff, registers[15] - 2);
 
             const auto lr = registers[15] - 2;
             const auto newSPSR = cpsr.raw;

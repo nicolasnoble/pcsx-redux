@@ -25,7 +25,7 @@ void ARM_BX (u32 instruction) {
 }
 
 void ARM_SWI (u32 instruction) {
-    //printf("SWI %d\n", instruction & 0xff);
+    if (bus.comTrace) printf("[PSK] SWI %02Xh (arm, PC=%08X)\n", instruction & 0xff, registers[15] - 4);
 
     const auto lr = registers[15] - 4;
     const auto newSPSR = cpsr.raw;

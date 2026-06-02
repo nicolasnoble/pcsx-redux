@@ -41,6 +41,10 @@ struct SIORegisters {
 
 class SIO {
   public:
+    // Advance any docked PocketStation by the elapsed R3000A cycles. Called from
+    // R3000Acpu::branchTest() (the inter-burst boundary); public so the CPU can drive it.
+    void stepPocketstation();
+
     struct McdBlock {
         McdBlock() { reset(); }
         int mcd;
@@ -268,15 +272,18 @@ class SIO {
 
     FIFO<uint8_t, 8> m_rxFIFO;
 
-    // ---- PocketStation event-driven catch-up ------------------------------------------------
-    // A docked PocketStation runs its ARM7 off the shared R3000A cycle counter. Once per emulated
-    // frame (VSync), we read the cycle delta, scale it by the ARM/PSX clock ratio, and advance
-    // each docked device by that many ARM cycles. This stays OUT of the R3000A per-instruction
-    // hot path; when no device is docked the listener does nothing, so cost is zero when off.
-    void stepPocketstation();
-    EventBus::Listener m_listener;
-    uint64_t m_lastPsxCycle = 0;   // R3000A cycle at the previous catch-up.
-    bool m_psxCycleValid = false;  // false until the first VSync after a reset re-syncs the anchor.
+    // ---- PocketStation cycle-delta catch-up -------------------------------------------------
+    // A docked PocketStation runs its ARM7 off the shared R3000A cycle counter. The catch-up is
+    // driven from R3000Acpu::branchTest() (the inter-burst boundary both backends funnel through),
+    // NOT from VSync: a whole card transaction (138 byte exchanges) fits inside one frame, so a
+    // per-frame catch-up would never advance the ARM7 *between* SIO bytes and the kernel's COM/FIQ
+    // handler could not keep up. At the inter-burst boundary the ARM7 stays within a few cycles of
+    // current always, so its COM poll loop services each byte in time. When no device is docked the
+    // call early-returns, so cost is ~zero when off. Sub-1-ARM-cycle deltas are accumulated (the
+    // anchor only advances by the PSX cycles actually consumed) so frequent small calls don't
+    // starve the device. (Declaration is in the public section above.)
+    uint64_t m_lastPsxCycle = 0;   // R3000A cycle at the previous catch-up (advances by consumed).
+    bool m_psxCycleValid = false;  // false until the first catch-up after a reset re-syncs the anchor.
     // ARM7 default clock and the R3000A clock; the PS clock is software-configurable via clkMode,
     // TODO(de-fake): read the live divisor instead of assuming the default ratio.
     static constexpr uint64_t kArmClockHz = 3997696;

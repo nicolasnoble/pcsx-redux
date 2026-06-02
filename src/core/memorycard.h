@@ -43,14 +43,10 @@ class MemoryCard {
 
     // Hardware events
     void acknowledge();
-    void deselect() {
-        memset(&m_tempBuffer, 0, c_sectorSize);
-        m_currentCommand = Commands::None;
-        m_commandTicks = 0;
-        m_dataOffset = 0;
-        m_sector = 0;
-        m_spdr = Responses::IdleHighZ;
-    }
+    // Out-of-line (memorycard.cc): when a real PocketStation is docked, deselect also ends the
+    // in-progress COM command (re-arms FIQ-6 for the next one), which needs the complete device
+    // type. The POD reset is unchanged.
+    void deselect();
 
     // File system / data manipulation
     void commit(const PCSX::u8string path) {
@@ -140,6 +136,7 @@ class MemoryCard {
 
     // PocketStation Specific
     bool m_pocketstationEnabled = false;
+    bool m_pocketstationDocked = false;  // device has been docked (IRQ-11 fired) since creation.
     uint16_t m_directoryIndex = 0;
 
     // Owned ARM7 device, present only while pocketstation mode is enabled AND a valid kernel

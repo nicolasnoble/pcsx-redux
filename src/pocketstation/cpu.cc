@@ -78,11 +78,24 @@ u32 CPU::read32 (u32 addr) {
 }
 
 void CPU::pollInterrupts() {
-    // Get the interrupts which have been masked and fired
-    const auto interrupts = bus.irqMask & bus.irqFlags;
+    // Dispatch off the LATCH, not the raw INT_INPUT level. The PocketStation interrupts are
+    // edge-triggered (psx-spx: request bits set on a 0-to-1 transition) and cleared via INT_ACK;
+    // INT_INPUT mirrors the raw signal LEVELS (readable, but must not re-trigger). The donor
+    // dispatched off (irqMask & irqFlags) = the raw level, which works for self-clearing sources
+    // (timers) but STORMS on a stuck level: INT_INPUT.11 (Docked) stays high while docked and
+    // INT_ACK deliberately preserves it, so a level-based dispatch re-enters IRQ-11 every
+    // instruction and starves the GUI (so SWI 05h never sets ComFlags.9 / enables COM). Using the
+    // ack-clearable latch matches the hardware and fixes the storm. (Verified 2026-06-02.)
+    const auto interrupts = bus.irqLatch & bus.irqMask;
     if (likely(interrupts == 0)) return;
 
     // Check if an FIQ has is to be fired, otherwise check if an IRQ is to be fired
+    if (bus.comTrace) {
+        if (!cpsr.fiqDisable && (interrupts & 0x2040))
+            printf("[PSK] DISPATCH FIQ bits=%08X (mask=%08X)\n", interrupts & 0x2040, bus.irqMask);
+        else if (!cpsr.irqDisable && (interrupts & 0x1F9F))
+            printf("[PSK] DISPATCH IRQ bits=%08X (mask=%08X)\n", interrupts & 0x1F9F, bus.irqMask);
+    }
     if (!cpsr.fiqDisable && (interrupts & 0x2040)) {
         const auto lr = cpsr.thumb ? registers[15] : registers[15] - 4;
 
@@ -97,7 +110,7 @@ void CPU::pollInterrupts() {
         registers[15] = 0x1C; // Jump to FIQ vector
 
         registers[15] += 8; // Fake pipeline
-    } else if (!cpsr.irqDisable && (bus.irqMask & bus.irqFlags & 0x1F9F)) {
+    } else if (!cpsr.irqDisable && (interrupts & 0x1F9F)) {
         const auto lr = cpsr.thumb ? registers[15] : registers[15] - 4;
 
         const auto newSPSR = cpsr.raw;
@@ -123,6 +136,7 @@ void CPU::step() {
 }
 
 void CPU::executeARM() {
+    if (bus.comTrace) bus.curPC = registers[15] - 8;  // stash fetch PC for COM/INT access tracing.
     const auto instruction = read32 (registers[15] - 8);
     //printf("Hello. PC: %08X. Instruction %08X\n", registers[15] - 8, instruction);
 
@@ -139,6 +153,7 @@ void CPU::executeARM() {
 }
 
 void CPU::executeThumb() {
+    if (bus.comTrace) bus.curPC = registers[15] - 4;  // stash fetch PC for COM/INT access tracing.
     const auto instruction = read16 (registers[15] - 4);
     //printf("Hello. PC: %08X. Instruction: %04X\n", registers[15] - 4, instruction);
     const auto index = instruction >> 8;
