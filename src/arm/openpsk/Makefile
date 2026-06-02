@@ -18,14 +18,17 @@ CFLAGS    = $(ARCHFLAGS) -ffreestanding -nostdlib -fno-builtin -Os -Wall -Wextra
             -fomit-frame-pointer
 LDFLAGS   = $(ARCHFLAGS) -nostdlib -T openpsk.ld -Wl,--build-id=none
 
-OBJS = crt0.o main.o
+OBJS = crt0.o swi.o main.o
 
 all: $(TARGET).bin
 
 crt0.o: crt0.S
 	$(CC) $(ARCHFLAGS) -c $< -o $@
 
-main.o: main.c hardware.h
+swi.o: swi.S
+	$(CC) $(ARCHFLAGS) -c $< -o $@
+
+main.o: main.c hardware.h swi.h
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(TARGET).elf: $(OBJS) openpsk.ld

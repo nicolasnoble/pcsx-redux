@@ -32,6 +32,25 @@ _start:
     mov     r1, #0x06000000        @ F_CTRL
     strb    r0, [r1]
 
+    /*
+     * Install the SWI exception vector + dispatch-table pointer in WRAM (retail-faithful layout).
+     *   0x08 = SWI vector opcode "ldr pc,[pc,#0x18]" -> loads the absolute service-routine
+     *          address from 0x28 (when it executes, PC = 0x08+8, so [PC,#0x18] = [0x28]).
+     *          A direct branch can't reach the ROM service routine at 0x040000xx from low WRAM,
+     *          so the retail kernel uses this same load-PC-from-a-literal vectoring.
+     *   0x28 = absolute address of swi_service (the literal the trampoline loads).
+     *   0xE0 = pointer to the SWI dispatch table (the slot the retail kernel uses; the service
+     *          routine indexes *(0xE0) by the 8-bit SWI comment).
+     */
+    ldr     r0, =0xE59FF018        @ opcode: ldr pc,[pc,#0x18]
+    mov     r1, #0x08
+    str     r0, [r1]               @ WRAM[0x08] = SWI vector trampoline
+    ldr     r0, =swi_service
+    str     r0, [r1, #0x20]        @ WRAM[0x28] = &swi_service
+    ldr     r0, =swi_table
+    mov     r1, #0xE0
+    str     r0, [r1]               @ WRAM[0xE0] = &swi_table
+
     /* Per-mode stacks in WRAM (mirror the retail boot). CPSR control byte: mode + I/F bits. */
     msr     cpsr_c, #0xD1          @ FIQ  mode, IRQ+FIQ disabled
     ldr     sp, =0x200
