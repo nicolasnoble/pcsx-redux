@@ -16,83 +16,7 @@
  *                                                                         *
  ***************************************************************************/
 
-//*************************************************************************//
-// History of changes:
-//
-// 2004/09/19 - Pete
-// - added option: IRQ handling in the decoded sound buffer areas (Crash Team Racing)
-//
-// 2004/09/18 - Pete
-// - changed global channel var handling to local pointers (hopefully it will help LDChen's port)
-//
-// 2004/04/22 - Pete
-// - finally fixed frequency modulation and made some cleanups
-//
-// 2003/04/07 - Eric
-// - adjusted cubic interpolation algorithm
-//
-// 2003/03/16 - Eric
-// - added cubic interpolation
-//
-// 2003/03/01 - linuzappz
-// - libraryName changes using ALSA
-//
-// 2003/02/28 - Pete
-// - added option for type of interpolation
-// - adjusted spu irqs again (Thousant Arms, Valkyrie Profile)
-// - added MONO support for MSWindows DirectSound
-//
-// 2003/02/20 - kode54
-// - amended interpolation code, goto GOON could skip initialization of gpos and cause segfault
-//
-// 2003/02/19 - kode54
-// - moved SPU IRQ handler and changed sample flag processing
-//
-// 2003/02/18 - kode54
-// - moved ADSR calculation outside of the sample decode loop, somehow I doubt that
-//   ADSR timing is relative to the frequency at which a sample is played... I guess
-//   this remains to be seen, and I don't know whether ADSR is applied to noise channels...
-//
-// 2003/02/09 - kode54
-// - one-shot samples now process the end block before stopping
-// - in light of removing fmod hack, now processing ADSR on frequency channel as well
-//
-// 2003/02/08 - kode54
-// - replaced easy interpolation with gaussian
-// - removed fmod averaging hack
-// - changed .sinc to be updated from .iRawPitch, no idea why it wasn't done this way already (<- Pete: because I
-// sometimes fail to see the obvious, haharhar :)
-//
-// 2003/02/08 - linuzappz
-// - small bugfix for one usleep that was 1 instead of 1000
-// - added settings.get<Mono>() for no stereo (Linux)
-//
-// 2003/01/22 - Pete
-// - added easy interpolation & small noise adjustments
-//
-// 2003/01/19 - Pete
-// - added Neill's reverb
-//
-// 2003/01/12 - Pete
-// - added recording window handlers
-//
-// 2003/01/06 - Pete
-// - added Neill's ADSR timings
-//
-// 2002/12/28 - Pete
-// - adjusted spu irq handling, fmod handling and loop handling
-//
-// 2002/08/14 - Pete
-// - added extra reverb
-//
-// 2002/06/08 - linuzappz
-// - SPUupdate changed for SPUasync
-//
-// 2002/05/15 - Pete
-// - generic cleanup for the Peops release
-//
-//*************************************************************************//
-
+#include <algorithm>
 #include <chrono>
 #include <thread>
 
@@ -100,13 +24,29 @@
 #include "spu/externals.h"
 #include "spu/interface.h"
 
-////////////////////////////////////////////////////////////////////////
-// globals
-////////////////////////////////////////////////////////////////////////
-
-////////////////////////////////////////////////////////////////////////
-// CODE AREA
-////////////////////////////////////////////////////////////////////////
+namespace {
+// One 16-byte ADPCM block decodes to 28 PCM samples; SBPos walks 0..27 and a
+// value of 28 means "the decode buffer is exhausted, fetch the next block".
+constexpr int kSamplesPerAdpcmBlock = 28;
+// The voice pitch counter (Chan::spos) is 16.16 fixed point: 0x10000 == one
+// whole source sample consumed.
+constexpr int32_t kPitchCounterUnity = 0x10000;
+// The ADSR step returns a 0..1023 gain; the enveloped sample is sample*gain/1023.
+constexpr int kAdsrMixDivisor = 1023;
+// Per-voice volume is a 0..0x3fff level with 0x4000 as unity.
+constexpr int kVoiceVolumeUnity = 0x4000;
+// The capture area mirrors are 0x200 samples each; voice 1 lands at +0x400 and
+// voice 3 at +0x600 (half-word sample indices into spuMem). The write pointer
+// wraps every 0x200 samples and bit 11 of SPUSTAT tracks which half it is in.
+constexpr int kCaptureRegionSamples = 0x200;
+constexpr int kCaptureHalfMarker = kCaptureRegionSamples / 2;  // 0x100
+constexpr int kCaptureVoice1Offset = 0x400;
+constexpr int kCaptureVoice3Offset = 0x600;
+// The post-ADSR sample is clamped to +/- this before it lands in the capture mirror.
+constexpr int kCaptureSampleClamp = 0xffff;
+// The final stereo mix is clamped to this symmetric signed-16-bit range.
+constexpr int kMixSampleClamp = 32767;
+}  // namespace
 
 ////////////////////////////////////////////////////////////////////////
 // START SOUND... called by main thread to setup a new sound on a channel
@@ -119,7 +59,7 @@ inline void PCSX::SPU::impl::StartSound(SPUCHAN *pChannel) {
 
     pChannel->adpcm.keyOn();  // rewind decode cursor to sample start, clear IIR history
 
-    pChannel->data.get<PCSX::SPU::Chan::SBPos>().value = 28;
+    pChannel->data.get<PCSX::SPU::Chan::SBPos>().value = kSamplesPerAdpcmBlock;  // force a block decode on first sample
 
     pChannel->data.get<PCSX::SPU::Chan::New>().value = false;  // init channel flags
     pChannel->data.get<PCSX::SPU::Chan::Stop>().value = false;
@@ -177,7 +117,7 @@ inline void PCSX::SPU::impl::FModChangeFrequency(SPUCHAN *pChannel, int ns) {
 void PCSX::SPU::impl::MainThread() {
     int fa, ns;
     uint8_t *start;
-    int ch, flags, d;
+    int ch, flags;
     int bIRQReturn = 0;
     int32_t tmpCapVoice1Index = 0;
     int32_t tmpCapVoice3Index = 0;
@@ -185,7 +125,7 @@ void PCSX::SPU::impl::MainThread() {
     SPUCHAN *pChannel;
     while (!bEndThread)  // until we are shutting down
     {
-        int voldiv = 4 - settings.get<Volume>();
+        int volumeDivisor = 4 - settings.get<Volume>();
         //--------------------------------------------------//
         // ok, at the beginning we are looking if there is
         // enuff free place in the dsound/oss buffer to
@@ -236,12 +176,12 @@ void PCSX::SPU::impl::MainThread() {
                     // Although the voices may stop outputting audio, the capture buffer is still filling up.
                     if (pMixIrq && ch == 1) {
                         std::unique_lock<std::mutex> lock(cbMtx);
-                        for (int c = 0; c < NSSIZE; c++) spuMem[tmpCapVoice1Index + c + 0x400] = 0;
-                        tmpCapVoice1Index = (tmpCapVoice1Index + NSSIZE) % 0x200;
+                        for (int c = 0; c < NSSIZE; c++) spuMem[tmpCapVoice1Index + c + kCaptureVoice1Offset] = 0;
+                        tmpCapVoice1Index = (tmpCapVoice1Index + NSSIZE) % kCaptureRegionSamples;
                     } else if (pMixIrq && ch == 3) {
                         std::unique_lock<std::mutex> lock(cbMtx);
-                        for (int c = 0; c < NSSIZE; c++) spuMem[tmpCapVoice3Index + c + 0x600] = 0;
-                        tmpCapVoice3Index = (tmpCapVoice3Index + NSSIZE) % 0x200;
+                        for (int c = 0; c < NSSIZE; c++) spuMem[tmpCapVoice3Index + c + kCaptureVoice3Offset] = 0;
+                        tmpCapVoice3Index = (tmpCapVoice3Index + NSSIZE) % kCaptureRegionSamples;
                     }
                     continue;  // channel not playing? next
                 }
@@ -259,9 +199,8 @@ void PCSX::SPU::impl::MainThread() {
                     if (pChannel->data.get<PCSX::SPU::Chan::FMod>().value == 1 && iFMod[ns])  // fmod freq channel
                         FModChangeFrequency(pChannel, ns);
 
-                    while (pChannel->data.get<PCSX::SPU::Chan::spos>().value >= 0x10000L) {
-                        if (pChannel->data.get<PCSX::SPU::Chan::SBPos>().value == 28)  // 28 reached?
-                        {
+                    while (pChannel->data.get<PCSX::SPU::Chan::spos>().value >= kPitchCounterUnity) {
+                        if (pChannel->data.get<PCSX::SPU::Chan::SBPos>().value == kSamplesPerAdpcmBlock) {
                             start = pChannel->adpcm.curr();  // set up the current pos
 
                             if (start == AdpcmDecoder::kStopped)  // voice stopped on a previous pass?
@@ -273,19 +212,17 @@ void PCSX::SPU::impl::MainThread() {
                                 // up. At this point, ns samples are already filled, we need (NSSIZE-ns) more samples.
                                 if (pMixIrq && ch == 1) {
                                     std::unique_lock<std::mutex> lock(cbMtx);
-                                    for (int c = ns; c < NSSIZE; c++) spuMem[tmpCapVoice1Index + c + 0x400] = 0;
-                                    tmpCapVoice1Index = (tmpCapVoice1Index + (NSSIZE - ns)) % 0x200;
+                                    for (int c = ns; c < NSSIZE; c++) spuMem[tmpCapVoice1Index + c + kCaptureVoice1Offset] = 0;
+                                    tmpCapVoice1Index = (tmpCapVoice1Index + (NSSIZE - ns)) % kCaptureRegionSamples;
                                 } else if (pMixIrq && ch == 3) {
                                     std::unique_lock<std::mutex> lock(cbMtx);
-                                    for (int c = ns; c < NSSIZE; c++) spuMem[tmpCapVoice3Index + c + 0x600] = 0;
-                                    tmpCapVoice3Index = (tmpCapVoice3Index + (NSSIZE - ns)) % 0x200;
+                                    for (int c = ns; c < NSSIZE; c++) spuMem[tmpCapVoice3Index + c + kCaptureVoice3Offset] = 0;
+                                    tmpCapVoice3Index = (tmpCapVoice3Index + (NSSIZE - ns)) % kCaptureRegionSamples;
                                 }
                                 goto ENDX;  // -> and done for this channel
                             }
 
                             pChannel->data.get<PCSX::SPU::Chan::SBPos>().value = 0;
-
-                            //////////////////////////////////////////// spu irq handler here? mmm... do it later
 
                             // Decode the 16-byte ADPCM block at the cursor into the 28-sample buffer.
                             // The decoder owns the predictor/shift parse and the s_1/s_2 IIR history;
@@ -320,16 +257,14 @@ void PCSX::SPU::impl::MainThread() {
                             //////////////////////////////////////////// flag handler
 
                             if ((flags & 4) && (!pChannel->data.get<PCSX::SPU::Chan::IgnoreLoop>().value))
-                                pChannel->adpcm.setLoop(start - 16);  // loop adress
+                                pChannel->adpcm.setLoop(start - 16);  // latch the loop (repeat) address
 
-                            if (flags & 1)  // 1: stop/loop
+                            if (flags & 1)  // stop/loop flag: this is the last block of the sample
                             {
-                                // We play this block out first...
-                                // if(!(flags&2))                          // 1+2: do loop... otherwise: stop
-                                if (flags != 3 ||
-                                    pChannel->adpcm.loop() == nullptr)  // PETE: if we don't check exactly for 3, loop
-                                                                        // hang ups will happen (DQ4, for example)
-                                {  // and checking if pLoop is set avoids crashes, yeah
+                                // Only loop when the flag byte is exactly 3 (loop-end + repeat) and a loop
+                                // address was latched. Requiring exactly 3 avoids loop hang-ups (e.g. DQ4),
+                                // and the null-loop guard avoids following an address that was never set.
+                                if (flags != 3 || pChannel->adpcm.loop() == nullptr) {
                                     start = AdpcmDecoder::kStopped;
                                 } else {
                                     start = pChannel->adpcm.loop();
@@ -363,7 +298,7 @@ void PCSX::SPU::impl::MainThread() {
                                                   pChannel->data.get<PCSX::SPU::Chan::FMod>().value,
                                                   (spuCtrl & ControlFlags::Mute) != 0);  // store val for interpolation
 
-                        pChannel->data.get<PCSX::SPU::Chan::spos>().value -= 0x10000L;
+                        pChannel->data.get<PCSX::SPU::Chan::spos>().value -= kPitchCounterUnity;
                     }
 
                     ////////////////////////////////////////////////
@@ -381,20 +316,20 @@ void PCSX::SPU::impl::MainThread() {
                     int32_t mixedSample = (pChannel->adsr.step(pChannel->data.get<PCSX::SPU::Chan::Stop>().value,
                                                                pChannel->data.get<PCSX::SPU::Chan::On>().value) *
                                            fa) /
-                                          1023;  // mix adsr
+                                          kAdsrMixDivisor;  // apply the ADSR envelope
                     pChannel->data.get<PCSX::SPU::Chan::sval>().value = mixedSample;
 
                     // Capture buffer should contain voice1/3 sample after any adsr processing but before volume
                     // processing?
-                    mixedSample = std::min(0xFFFF, std::max(-0xFFFF, mixedSample));
+                    mixedSample = std::clamp(mixedSample, -kCaptureSampleClamp, kCaptureSampleClamp);
                     if (pMixIrq && ch == 1) {
                         std::unique_lock<std::mutex> lock(cbMtx);
-                        spuMem[tmpCapVoice1Index + 0x400] = mixedSample;
-                        tmpCapVoice1Index = (tmpCapVoice1Index + 1) % 0x200;
+                        spuMem[tmpCapVoice1Index + kCaptureVoice1Offset] = mixedSample;
+                        tmpCapVoice1Index = (tmpCapVoice1Index + 1) % kCaptureRegionSamples;
                     } else if (pMixIrq && ch == 3) {
                         std::unique_lock<std::mutex> lock(cbMtx);
-                        spuMem[tmpCapVoice3Index + 0x600] = mixedSample;
-                        tmpCapVoice3Index = (tmpCapVoice3Index + 1) % 0x200;
+                        spuMem[tmpCapVoice3Index + kCaptureVoice3Offset] = mixedSample;
+                        tmpCapVoice3Index = (tmpCapVoice3Index + 1) % kCaptureRegionSamples;
                     }
 
                     if (pChannel->data.get<PCSX::SPU::Chan::FMod>().value == 2)  // fmod freq channel
@@ -409,10 +344,10 @@ void PCSX::SPU::impl::MainThread() {
                             !pChannel->data.get<PCSX::SPU::Chan::Solo>().value)
                             pChannel->data.get<PCSX::SPU::Chan::sval>().value = 0;  // debug mute
                         else {
-                            SSumL[ns] +=
-                                (pChannel->data.get<PCSX::SPU::Chan::sval>().value * pChannel->volume.left()) / 0x4000L;
-                            SSumR[ns] +=
-                                (pChannel->data.get<PCSX::SPU::Chan::sval>().value * pChannel->volume.right()) / 0x4000L;
+                            SSumL[ns] += (pChannel->data.get<PCSX::SPU::Chan::sval>().value * pChannel->volume.left()) /
+                                         kVoiceVolumeUnity;
+                            SSumR[ns] += (pChannel->data.get<PCSX::SPU::Chan::sval>().value * pChannel->volume.right()) /
+                                         kVoiceVolumeUnity;
                         }
 
                         //////////////////////////////////////////////
@@ -440,8 +375,8 @@ void PCSX::SPU::impl::MainThread() {
         // SPUSTAT bit 11 (0=first half 0x000-0x0ff, 1=second half 0x100-0x1ff).
         // Hardware toggles this bit as the 44.1kHz capture pointer crosses the
         // half boundary; guests sync capture reads on its edge.
-        capBufVoiceIndex = (capBufVoiceIndex + NSSIZE) % 0x200;
-        if (capBufVoiceIndex & 0x100)
+        capBufVoiceIndex = (capBufVoiceIndex + NSSIZE) % kCaptureRegionSamples;
+        if (capBufVoiceIndex & kCaptureHalfMarker)
             spuStat |= StatusFlags::CBIndex;
         else
             spuStat &= ~StatusFlags::CBIndex;
@@ -455,20 +390,12 @@ void PCSX::SPU::impl::MainThread() {
 
         for (ns = 0; ns < NSSIZE; ns++) {
             SSumL[ns] += MixREVERBLeft(ns);
-
-            d = SSumL[ns] / voldiv;
+            *pS++ = std::clamp(SSumL[ns] / volumeDivisor, -kMixSampleClamp, kMixSampleClamp);
             SSumL[ns] = 0;
-            if (d < -32767) d = -32767;
-            if (d > 32767) d = 32767;
-            *pS++ = d;
 
             SSumR[ns] += MixREVERBRight();
-
-            d = SSumR[ns] / voldiv;
+            *pS++ = std::clamp(SSumR[ns] / volumeDivisor, -kMixSampleClamp, kMixSampleClamp);
             SSumR[ns] = 0;
-            if (d < -32767) d = -32767;
-            if (d > 32767) d = 32767;
-            *pS++ = d;
         }
 
         //////////////////////////////////////////////////////
