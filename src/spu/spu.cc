@@ -98,7 +98,6 @@
 
 #include "spu/adsr.h"
 #include "spu/externals.h"
-#include "spu/gauss.h"
 #include "spu/interface.h"
 
 ////////////////////////////////////////////////////////////////////////
@@ -107,112 +106,6 @@
 
 ////////////////////////////////////////////////////////////////////////
 // CODE AREA
-////////////////////////////////////////////////////////////////////////
-
-////////////////////////////////////////////////////////////////////////
-// helpers for simple interpolation
-
-//
-// easy interpolation on upsampling, no special filter, just "Pete's common sense" tm
-//
-// instead of having n equal sample values in a row like:
-//       ____
-//           |____
-//
-// we compare the current delta change with the next delta change.
-//
-// if curr_delta is positive,
-//
-//  - and next delta is smaller (or changing direction):
-//         \.
-//          -__
-//
-//  - and next delta significant (at least twice) bigger:
-//         --_
-//            \.
-//
-//  - and next delta is nearly same:
-//          \.
-//           \.
-//
-//
-// if curr_delta is negative,
-//
-//  - and next delta is smaller (or changing direction):
-//          _--
-//         /
-//
-//  - and next delta significant (at least twice) bigger:
-//            /
-//         __-
-//
-//  - and next delta is nearly same:
-//           /
-//          /
-//
-
-static inline void InterpolateUp(PCSX::SPU::SPUCHAN *pChannel) {
-    auto &SB = pChannel->data.get<PCSX::SPU::Chan::SB>().value;
-    if (SB[32].value == 1)  // flag == 1? calc step and set flag... and don't change the value in this pass
-    {
-        const int id1 = SB[30].value - SB[29].value;  // curr delta to next val
-        const int id2 = SB[31].value - SB[30].value;  // and next delta to next-next val :)
-
-        SB[32].value = 0;
-
-        if (id1 > 0)  // curr delta positive
-        {
-            if (id2 < id1) {
-                SB[28].value = id1;
-                SB[32].value = 2;
-            } else if (id2 < (id1 << 1))
-                SB[28].value = (id1 * pChannel->data.get<PCSX::SPU::Chan::sinc>().value) / 0x10000L;
-            else
-                SB[28].value = (id1 * pChannel->data.get<PCSX::SPU::Chan::sinc>().value) / 0x20000L;
-        } else  // curr delta negative
-        {
-            if (id2 > id1) {
-                SB[28].value = id1;
-                SB[32].value = 2;
-            } else if (id2 > (id1 << 1))
-                SB[28].value = (id1 * pChannel->data.get<PCSX::SPU::Chan::sinc>().value) / 0x10000L;
-            else
-                SB[28].value = (id1 * pChannel->data.get<PCSX::SPU::Chan::sinc>().value) / 0x20000L;
-        }
-    } else if (SB[32].value == 2)  // flag 1: calc step and set flag... and don't change the value in this pass
-    {
-        SB[32].value = 0;
-
-        SB[28].value = (SB[28].value * pChannel->data.get<PCSX::SPU::Chan::sinc>().value) / 0x20000L;
-        if (pChannel->data.get<PCSX::SPU::Chan::sinc>().value <= 0x8000)
-            SB[29].value =
-                SB[30].value - (SB[28].value * ((0x10000 / pChannel->data.get<PCSX::SPU::Chan::sinc>().value) - 1));
-        else
-            SB[29].value += SB[28].value;
-    } else  // no flags? add bigger val (if possible), calc smaller step, set flag1
-        SB[29].value += SB[28].value;
-}
-
-//
-// even easier interpolation on downsampling, also no special filter, again just "Pete's common sense" tm
-//
-
-static inline void InterpolateDown(PCSX::SPU::SPUCHAN *pChannel) {
-    auto &SB = pChannel->data.get<PCSX::SPU::Chan::SB>().value;
-    if (pChannel->data.get<PCSX::SPU::Chan::sinc>().value >= 0x20000L)  // we would skip at least one val?
-    {
-        SB[29].value += (SB[30].value - SB[29].value) / 2;                  // add easy weight
-        if (pChannel->data.get<PCSX::SPU::Chan::sinc>().value >= 0x30000L)  // we would skip even more vals?
-            SB[29].value += (SB[31].value - SB[30].value) / 2;              // add additional next weight
-    }
-}
-
-////////////////////////////////////////////////////////////////////////
-// helpers for gauss interpolation
-
-#define gval0 (((int16_t *)(&SB[29].value))[gpos])
-#define gval(x) (((int16_t *)(&SB[29].value))[(gpos + x) & 3])
-
 ////////////////////////////////////////////////////////////////////////
 
 ////////////////////////////////////////////////////////////////////////
@@ -232,18 +125,8 @@ inline void PCSX::SPU::impl::StartSound(SPUCHAN *pChannel) {
     pChannel->data.get<PCSX::SPU::Chan::Stop>().value = false;
     pChannel->data.get<PCSX::SPU::Chan::On>().value = true;
 
-    SB[29].value = 0;  // init our interpolation helpers
-    SB[30].value = 0;
-
-    if (settings.get<Interpolation>() >= 2)  // gauss interpolation?
-    {
-        pChannel->data.get<PCSX::SPU::Chan::spos>().value = 0x30000L;
-        SB[28].value = 0;
-    }  // -> start with more decoding
-    else {
-        pChannel->data.get<PCSX::SPU::Chan::spos>().value = 0x10000L;
-        SB[31].value = 0;
-    }  // -> no/simple interpolation starts with one 44100 decoding
+    pChannel->interp.keyOn(SB.data(), &pChannel->data.get<PCSX::SPU::Chan::spos>().value,
+                           settings.get<Interpolation>());
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -256,7 +139,8 @@ inline void PCSX::SPU::impl::VoiceChangeFrequency(SPUCHAN *pChannel) {
         pChannel->data.get<PCSX::SPU::Chan::ActFreq>().value;  // -> take it and calc steps
     pChannel->data.get<PCSX::SPU::Chan::sinc>().value = pChannel->data.get<PCSX::SPU::Chan::RawPitch>().value << 4;
     if (!pChannel->data.get<PCSX::SPU::Chan::sinc>().value) pChannel->data.get<PCSX::SPU::Chan::sinc>().value = 1;
-    if (settings.get<Interpolation>() == 1) SB[32].value = 1;  // -> freq change in simle imterpolation mode: set flag
+    // -> freq change in simple interpolation mode: set the recompute flag
+    pChannel->interp.onFrequencyChanged(SB.data(), settings.get<Interpolation>());
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -276,7 +160,8 @@ inline void PCSX::SPU::impl::FModChangeFrequency(SPUCHAN *pChannel, int ns) {
     pChannel->data.get<PCSX::SPU::Chan::UsedFreq>().value = NP;
     pChannel->data.get<PCSX::SPU::Chan::sinc>().value = (((NP / 10) << 16) / 4410);
     if (!pChannel->data.get<PCSX::SPU::Chan::sinc>().value) pChannel->data.get<PCSX::SPU::Chan::sinc>().value = 1;
-    if (settings.get<Interpolation>() == 1) SB[32].value = 1;  // freq change in simple interpolation mode
+    // freq change in simple interpolation mode: set the recompute flag
+    pChannel->interp.onFrequencyChanged(SB.data(), settings.get<Interpolation>());
 
     iFMod[ns] = 0;
 }
@@ -328,102 +213,6 @@ void PCSX::SPU::impl::NoiseClock() {
         // Dr. Hell - form
         m_noiseVal = (m_noiseVal << 1) | NoiseWaveAdd[(m_noiseVal >> 10) & 63];
     }
-}
-
-////////////////////////////////////////////////////////////////////////
-
-inline void PCSX::SPU::impl::StoreInterpolationVal(SPUCHAN *pChannel, int fa) {
-    auto &SB = pChannel->data.get<PCSX::SPU::Chan::SB>().value;
-    if (pChannel->data.get<PCSX::SPU::Chan::FMod>().value == 2)  // fmod freq channel
-        SB[29].value = fa;
-    else {
-        if ((spuCtrl & ControlFlags::Mute) == 0)
-            fa = 0;  // muted?
-        else         // else adjust
-        {
-            if (fa > 32767L) fa = 32767L;
-            if (fa < -32767L) fa = -32767L;
-        }
-
-        if (settings.get<Interpolation>() >= 2)  // gauss/cubic interpolation
-        {
-            int gpos = SB[28].value;
-            gval0 = fa;
-            gpos = (gpos + 1) & 3;
-            SB[28].value = gpos;
-        } else if (settings.get<Interpolation>() == 1)  // simple interpolation
-        {
-            SB[28].value = 0;
-            SB[29].value = SB[30].value;  // -> helpers for simple linear interpolation: delay real val for two slots,
-                                          // and calc the two deltas, for a 'look at the future behaviour'
-            SB[30].value = SB[31].value;
-            SB[31].value = fa;
-            SB[32].value = 1;  // -> flag: calc new interolation
-        } else
-            SB[29].value = fa;  // no interpolation
-    }
-}
-
-////////////////////////////////////////////////////////////////////////
-
-inline int PCSX::SPU::impl::iGetInterpolationVal(SPUCHAN *pChannel) {
-    auto &SB = pChannel->data.get<PCSX::SPU::Chan::SB>().value;
-    int fa;
-
-    if (pChannel->data.get<PCSX::SPU::Chan::FMod>().value == 2) return SB[29].value;
-
-    switch (settings.get<Interpolation>()) {
-        //--------------------------------------------------//
-        case 3:  // cubic interpolation
-        {
-            long xd;
-            int gpos;
-            xd = ((pChannel->data.get<PCSX::SPU::Chan::spos>().value) >> 1) + 1;
-            gpos = SB[28].value;
-
-            fa = gval(3) - 3 * gval(2) + 3 * gval(1) - gval0;
-            fa *= (xd - (2 << 15)) / 6;
-            fa >>= 15;
-            fa += gval(2) - gval(1) - gval(1) + gval0;
-            fa *= (xd - (1 << 15)) >> 1;
-            fa >>= 15;
-            fa += gval(1) - gval0;
-            fa *= xd;
-            fa >>= 15;
-            fa = fa + gval0;
-
-        } break;
-        //--------------------------------------------------//
-        case 2:  // gauss interpolation
-        {
-            int vl, vr;
-            int gpos;
-            vl = (pChannel->data.get<PCSX::SPU::Chan::spos>().value >> 6) & ~3;
-            gpos = SB[28].value;
-            vr = (Gauss::gauss[vl] * gval0) & ~2047;
-            vr += (Gauss::gauss[vl + 1] * gval(1)) & ~2047;
-            vr += (Gauss::gauss[vl + 2] * gval(2)) & ~2047;
-            vr += (Gauss::gauss[vl + 3] * gval(3)) & ~2047;
-            fa = vr >> 11;
-        } break;
-        //--------------------------------------------------//
-        case 1:  // simple interpolation
-        {
-            if (pChannel->data.get<PCSX::SPU::Chan::sinc>().value < 0x10000L)  // -> upsampling?
-                InterpolateUp(pChannel);                                       // --> interpolate up
-            else
-                InterpolateDown(pChannel);  // --> else down
-            fa = SB[29].value;
-        } break;
-        //--------------------------------------------------//
-        default:  // no interpolation
-        {
-            fa = SB[29].value;
-        } break;
-            //--------------------------------------------------//
-    }
-
-    return fa;
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -626,7 +415,10 @@ void PCSX::SPU::impl::MainThread() {
                                  .value[pChannel->data.get<PCSX::SPU::Chan::SBPos>().value++]
                                  .value;  // get sample data
 
-                        StoreInterpolationVal(pChannel, fa);  // store val for later interpolation
+                        pChannel->interp.storeVal(pChannel->data.get<PCSX::SPU::Chan::SB>().value.data(), fa,
+                                                  settings.get<Interpolation>(),
+                                                  pChannel->data.get<PCSX::SPU::Chan::FMod>().value,
+                                                  (spuCtrl & ControlFlags::Mute) != 0);  // store val for interpolation
 
                         pChannel->data.get<PCSX::SPU::Chan::spos>().value -= 0x10000L;
                     }
@@ -636,7 +428,11 @@ void PCSX::SPU::impl::MainThread() {
                     if (pChannel->data.get<PCSX::SPU::Chan::Noise>().value)
                         fa = iGetNoiseVal(pChannel);  // get noise val
                     else
-                        fa = iGetInterpolationVal(pChannel);  // get sample val
+                        fa = pChannel->interp.getVal(pChannel->data.get<PCSX::SPU::Chan::SB>().value.data(),
+                                                     pChannel->data.get<PCSX::SPU::Chan::spos>().value,
+                                                     pChannel->data.get<PCSX::SPU::Chan::sinc>().value,
+                                                     settings.get<Interpolation>(),
+                                                     pChannel->data.get<PCSX::SPU::Chan::FMod>().value);  // get sample
 
                     int32_t mixedSample = (pChannel->adsr.step(pChannel->data.get<PCSX::SPU::Chan::Stop>().value,
                                                                pChannel->data.get<PCSX::SPU::Chan::On>().value) *

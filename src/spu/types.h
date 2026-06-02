@@ -21,6 +21,7 @@
 
 #include "spu/adpcm.h"
 #include "spu/adsr.h"
+#include "spu/interpolation.h"
 #include "support/protobuf.h"
 #include "support/settings.h"
 
@@ -100,8 +101,9 @@ typedef Protobuf::Message<TYPESTRING("ChannelData"), New, SBPos, spos, sinc, SB,
 
 struct SPUCHAN {
     Chan::Data data;
-    AdpcmDecoder adpcm;  // per-voice ADPCM decoder: cursor + IIR history + block decode
-    AdsrEnvelope adsr;   // per-voice ADSR envelope: state + four-phase machine
+    AdpcmDecoder adpcm;   // per-voice ADPCM decoder: cursor + IIR history + block decode
+    AdsrEnvelope adsr;    // per-voice ADSR envelope: state + four-phase machine
+    Interpolator interp;  // per-voice resampler: none/simple/gauss/cubic interpolation
 };
 
 struct REVERBInfo {

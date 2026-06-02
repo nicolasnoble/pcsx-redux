@@ -166,8 +166,6 @@ class impl final : public SPUInterface {
     void VoiceChangeFrequency(SPUCHAN *pChannel);
     void FModChangeFrequency(SPUCHAN *pChannel, int ns);
     int iGetNoiseVal(SPUCHAN *pChannel);
-    void StoreInterpolationVal(SPUCHAN *pChannel, int fa);
-    int iGetInterpolationVal(SPUCHAN *pChannel);
     void NoiseClock();
 
     // registers
