@@ -20,6 +20,16 @@
 
 #include "spu/gauss.h"
 
+namespace PCSX::SPU {
+namespace {
+// The four-tap gaussian/cubic window is four int16 samples packed into the two
+// int32 slots sb[29] and sb[30], addressed as a ring by the index in sb[28].
+int16_t &gaussWindow(Protobuf::Int32 *sb, int index) {
+    return reinterpret_cast<int16_t *>(&sb[29].value)[index & 3];
+}
+}  // namespace
+}  // namespace PCSX::SPU
+
 ////////////////////////////////////////////////////////////////////////
 // helpers for simple interpolation
 
@@ -116,12 +126,6 @@ void PCSX::SPU::Interpolator::interpolateDown(Protobuf::Int32 *sb, int32_t sinc)
 }
 
 ////////////////////////////////////////////////////////////////////////
-// helpers for gauss interpolation
-
-#define gval0 (((int16_t *)(&sb[29].value))[gpos])
-#define gval(x) (((int16_t *)(&sb[29].value))[(gpos + x) & 3])
-
-////////////////////////////////////////////////////////////////////////
 
 void PCSX::SPU::Interpolator::storeVal(Protobuf::Int32 *sb, int fa, int interpolationType, int fmod, bool unmuted) {
     if (fmod == 2)  // fmod freq channel
@@ -138,7 +142,7 @@ void PCSX::SPU::Interpolator::storeVal(Protobuf::Int32 *sb, int fa, int interpol
         if (interpolationType >= 2)  // gauss/cubic interpolation
         {
             int gpos = sb[28].value;
-            gval0 = fa;
+            gaussWindow(sb, gpos) = fa;
             gpos = (gpos + 1) & 3;
             sb[28].value = gpos;
         } else if (interpolationType == 1)  // simple interpolation
@@ -165,34 +169,31 @@ int PCSX::SPU::Interpolator::getVal(Protobuf::Int32 *sb, int32_t spos, int32_t s
         //--------------------------------------------------//
         case 3:  // cubic interpolation
         {
-            long xd;
-            int gpos;
-            xd = (spos >> 1) + 1;
-            gpos = sb[28].value;
+            const int gpos = sb[28].value;
+            const int64_t xd = (spos >> 1) + 1;
 
-            fa = gval(3) - 3 * gval(2) + 3 * gval(1) - gval0;
+            fa = gaussWindow(sb, gpos + 3) - 3 * gaussWindow(sb, gpos + 2) + 3 * gaussWindow(sb, gpos + 1) -
+                 gaussWindow(sb, gpos);
             fa *= (xd - (2 << 15)) / 6;
             fa >>= 15;
-            fa += gval(2) - gval(1) - gval(1) + gval0;
+            fa += gaussWindow(sb, gpos + 2) - gaussWindow(sb, gpos + 1) - gaussWindow(sb, gpos + 1) +
+                  gaussWindow(sb, gpos);
             fa *= (xd - (1 << 15)) >> 1;
             fa >>= 15;
-            fa += gval(1) - gval0;
+            fa += gaussWindow(sb, gpos + 1) - gaussWindow(sb, gpos);
             fa *= xd;
             fa >>= 15;
-            fa = fa + gval0;
-
+            fa = fa + gaussWindow(sb, gpos);
         } break;
         //--------------------------------------------------//
         case 2:  // gauss interpolation
         {
-            int vl, vr;
-            int gpos;
-            vl = (spos >> 6) & ~3;
-            gpos = sb[28].value;
-            vr = (Gauss::gauss[vl] * gval0) & ~2047;
-            vr += (Gauss::gauss[vl + 1] * gval(1)) & ~2047;
-            vr += (Gauss::gauss[vl + 2] * gval(2)) & ~2047;
-            vr += (Gauss::gauss[vl + 3] * gval(3)) & ~2047;
+            const int gpos = sb[28].value;
+            const int vl = (spos >> 6) & ~3;
+            int vr = (Gauss::gauss[vl] * gaussWindow(sb, gpos)) & ~2047;
+            vr += (Gauss::gauss[vl + 1] * gaussWindow(sb, gpos + 1)) & ~2047;
+            vr += (Gauss::gauss[vl + 2] * gaussWindow(sb, gpos + 2)) & ~2047;
+            vr += (Gauss::gauss[vl + 3] * gaussWindow(sb, gpos + 3)) & ~2047;
             fa = vr >> 11;
         } break;
         //--------------------------------------------------//
@@ -214,6 +215,3 @@ int PCSX::SPU::Interpolator::getVal(Protobuf::Int32 *sb, int32_t spos, int32_t s
 
     return fa;
 }
-
-#undef gval0
-#undef gval

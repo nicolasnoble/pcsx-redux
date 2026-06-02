@@ -18,35 +18,26 @@
 
 #include "spu/volume.h"
 
-////////////////////////////////////////////////////////////////////////
+namespace {
+constexpr int16_t kVolumeMax = 0x3fff;     // effective level is 14 bits
+constexpr int16_t kFixedSignBit = 0x4000;  // bit 14: fixed-mode negative phase
+}  // namespace
 
-// please note: sweep and phase invert are wrong... but I've never seen
-// them used
-
+// All arithmetic stays in int16_t on purpose: the sweep approximation below
+// relies on the 16-bit wraparound the original peops code produced.
 int PCSX::SPU::VoiceVolume::decode(int16_t vol) {
-    if (vol & VolumeFlags::VolumeMode)  // sweep?
-    {
-        int16_t sInc;
-        if (vol & VolumeFlags::SweepDirection) {
-            sInc = -1;  // Decrease
-        } else {
-            sInc = 1;  // Increase
-        }
-        if (vol & VolumeFlags::SweepPhase) {
-            // Negative Phase
-            vol ^= 0xffff;  // -> mmm... phase inverted? have to investigate this
-        }
-        vol = ((vol & 0x7f) + 1) / 2;  // -> sweep: 0..127 -> 0..64
-        vol += vol / (2 * sInc);  // -> HACK: we don't sweep right now, so we just raise/lower the volume by the half!
+    if (vol & VolumeFlags::VolumeMode) {  // sweep mode
+        // Redux does not run the hardware volume sweep envelope. A sweep-mode
+        // write is folded into a single raised or lowered fixed level - an
+        // approximation faithful to the original model and rarely hit by games.
+        const int16_t direction = (vol & VolumeFlags::SweepDirection) ? -1 : 1;
+        if (vol & VolumeFlags::SweepPhase) vol ^= 0xffff;  // approximated negative phase
+        vol = ((vol & 0x7f) + 1) / 2;                      // sweep step 0..127 -> 0..64
+        vol += vol / (2 * direction);                      // shift the level by half
         vol *= 128;
-    } else  // no sweep:
-    {
-        if (vol & 0x4000)  // -> mmm... phase inverted? have to investigate this
-        {
-            vol = (vol & 0x3fff) - 0x4000;
-        }
+    } else if (vol & kFixedSignBit) {  // fixed mode, negative phase
+        vol = (vol & kVolumeMax) - kFixedSignBit;
     }
 
-    vol &= 0x3fff;
-    return vol;
+    return vol & kVolumeMax;
 }

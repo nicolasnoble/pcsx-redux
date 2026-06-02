@@ -18,50 +18,40 @@
 
 #include "spu/noise.h"
 
-////////////////////////////////////////////////////////////////////////
-
-// noise handler... just produces some noise data
-// surely wrong... and no noise frequency (spuCtrl&0x3f00) will be used...
-// and sometimes the noise will be used as fmod modulation... pfff
+namespace {
+// The LFSR runs on a 16.16 fixed-point phase accumulator: one output sample
+// advances it by one whole unit, plus the fractional step selected by the
+// SPUCTRL step bits.
+constexpr uint32_t kSampleTick = 0x10000;
+constexpr uint32_t kFractionMask = 0xffff;
+}  // namespace
 
 int PCSX::SPU::NoiseGenerator::getVal(Protobuf::Int32 *sb, int interpolationType) const {
-    const int fa = (int16_t)m_val;
-
-    if (interpolationType < 2)  // no gauss/cubic interpolation?
-        sb[29].value = fa;      // -> store noise val in "current sample" slot
-    return fa;
+    const int level = static_cast<int16_t>(m_val);  // noise level = low 16 bits of the LFSR, signed
+    // The no/simple interpolation modes read their input from the voice's
+    // "current sample" slot, so park the noise level there too.
+    if (interpolationType < 2) sb[29].value = level;
+    return level;
 }
 
-////////////////////////////////////////////////////////////////////////
-
 void PCSX::SPU::NoiseGenerator::step() {
-    // Noise Waveform - Dr. Hell (Xebra)
-    static constexpr char NoiseWaveAdd[64] = {1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1,
+    // Dr. Hell's (Xebra) noise model. kWaveform is the precomputed Galois LFSR
+    // parity bit fed back in; kFreqStep paces the accumulator from the SPUCTRL
+    // step bits (entry 4 is the wrap threshold for the fractional part).
+    static constexpr uint8_t kWaveform[64] = {1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1,
                                               1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0,
                                               1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1};
+    static constexpr uint16_t kFreqStep[5] = {0, 84, 140, 180, 210};
 
-    static constexpr unsigned short NoiseFreqAdd[5] = {0, 84, 140, 180, 210};
+    const uint32_t shift = m_clock >> 2;       // SPUCTRL noise-shift bits select the LFSR rate
+    const uint32_t step = m_clock & 3;         // SPUCTRL noise-step bits select the fractional step
+    const uint32_t threshold = (0x8000u >> shift) << 16;
 
-    unsigned int level;
+    m_count += kSampleTick + kFreqStep[step];
+    if ((m_count & kFractionMask) >= kFreqStep[4]) m_count += kSampleTick - kFreqStep[step];
 
-    level = 0x8000 >> (m_clock >> 2);
-    level <<= 16;
-
-    m_count += 0x10000;
-
-    // Dr. Hell - fraction
-    m_count += NoiseFreqAdd[m_clock & 3];
-    if ((m_count & 0xffff) >= NoiseFreqAdd[4]) {
-        m_count += 0x10000;
-        m_count -= NoiseFreqAdd[m_clock & 3];
-    }
-
-    if (m_count >= level) {
-        while (m_count >= level) {
-            m_count -= level;
-        }
-
-        // Dr. Hell - form
-        m_val = (m_val << 1) | NoiseWaveAdd[(m_val >> 10) & 63];
+    if (m_count >= threshold) {
+        while (m_count >= threshold) m_count -= threshold;
+        m_val = (m_val << 1) | kWaveform[(m_val >> 10) & 63];  // clock the LFSR
     }
 }

@@ -42,40 +42,33 @@ void PCSX::SPU::AdpcmDecoder::loadFrom(const Protobuf::Int32 &history1, const Pr
 }
 
 PCSX::SPU::AdpcmDecoder::DecodeResult PCSX::SPU::AdpcmDecoder::decodeBlock(uint8_t *block, Protobuf::Int32 *sb) {
-    int s_1 = m_s1;
-    int s_2 = m_s2;
+    // Header byte 0: high nibble selects the IIR predictor, low nibble is the
+    // per-sample right shift. Byte 1 holds the loop/repeat/end flags.
+    const int predictor = *block >> 4;
+    const int shift = *block++ & 0xf;
+    const int flags = *block++;
 
-    int predict_nr = (int)*block;
-    block++;
-    int shift_factor = predict_nr & 0xf;
-    predict_nr >>= 4;
-    int flags = (int)*block;
-    block++;
+    // Two running IIR taps, kept in locals across the 28 samples then stored back.
+    int history1 = m_s1;
+    int history2 = m_s2;
 
-    // -------------------------------------- //
-    for (unsigned nSample = 0; nSample < 28; block++) {
-        int d = (int)*block;
-        int s = ((d & 0xf) << 12);
-        if (s & 0x8000) s |= 0xffff0000;
+    // Decode one 4-bit sample already positioned at bits 12..15 and sign-extended
+    // to 16 bits: shift it down, then add the predictor's feedback.
+    auto decodeSample = [&](int sample) {
+        const int out = (sample >> shift) + ((history1 * kFilterCoeff[predictor][0]) >> kCoeffShift) +
+                        ((history2 * kFilterCoeff[predictor][1]) >> kCoeffShift);
+        history2 = history1;
+        history1 = out;
+        return out;
+    };
 
-        int fa = (s >> shift_factor);
-        fa = fa + ((s_1 * f[predict_nr][0]) >> 6) + ((s_2 * f[predict_nr][1]) >> 6);
-        s_2 = s_1;
-        s_1 = fa;
-        s = ((d & 0xf0) << 8);
-
-        sb[nSample++].value = fa;
-
-        if (s & 0x8000) s |= 0xffff0000;
-        fa = (s >> shift_factor);
-        fa = fa + ((s_1 * f[predict_nr][0]) >> 6) + ((s_2 * f[predict_nr][1]) >> 6);
-        s_2 = s_1;
-        s_1 = fa;
-
-        sb[nSample++].value = fa;
+    for (unsigned n = 0; n < 28; block++) {
+        const int nibbles = *block;
+        sb[n++].value = decodeSample(static_cast<int16_t>((nibbles & 0x0f) << 12));
+        sb[n++].value = decodeSample(static_cast<int16_t>((nibbles & 0xf0) << 8));
     }
 
-    m_s1 = s_1;
-    m_s2 = s_2;
+    m_s1 = history1;
+    m_s2 = history2;
     return {block, flags};
 }

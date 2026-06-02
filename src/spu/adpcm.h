@@ -94,8 +94,10 @@ class AdpcmDecoder {
     DecodeResult decodeBlock(uint8_t *block, Protobuf::Int32 *sb);
 
   private:
-    // ADPCM IIR filter coefficient pairs, indexed by the block's predictor.
-    static constexpr int f[5][2] = {{0, 0}, {60, 0}, {115, -52}, {98, -55}, {122, -60}};
+    // ADPCM IIR filter coefficient pairs, indexed by the block's predictor. The
+    // coefficients are Q6 fixed point, so the feedback term is shifted right by 6.
+    static constexpr int kFilterCoeff[5][2] = {{0, 0}, {60, 0}, {115, -52}, {98, -55}, {122, -60}};
+    static constexpr int kCoeffShift = 6;
 
     uint8_t *m_start = nullptr;  // start ptr into sound mem
     uint8_t *m_curr = nullptr;   // current pos in sound mem
