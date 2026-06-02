@@ -93,7 +93,7 @@ void PCSX::SPU::impl::writeRegister(uint32_t reg, uint16_t val) {
             case 6:  // Sample start address
                 // Brain Dead 13 - align to 16 boundary
                 PCSX::PSXSPU_LOGGER::Log("SPU.write, Voice[%02i] ADPCM Start Address = %04x\n", ch, val);
-                s_chan[ch].adpcm.setStart(spuMemC + (uint32_t)((val << 3) & ~0xf));
+                s_chan[ch].adpcm.setStart(spuRamBase + (uint32_t)((val << 3) & ~0xf));
                 break;
             case 8: {  // Attack/Decay/Sustain/Release (ADSR)
                 //---------------------------------------------//
@@ -198,7 +198,7 @@ void PCSX::SPU::impl::writeRegister(uint32_t reg, uint16_t val) {
             case 14:  // loop?
                 // WaitForSingleObject(s_chan[ch].hMutex,2000);        // -> no multithread fuckups
                 // align to 16-byte boundary
-                s_chan[ch].adpcm.setLoop(spuMemC + ((uint32_t)((val << 3) & ~0xf)));
+                s_chan[ch].adpcm.setLoop(spuRamBase + ((uint32_t)((val << 3) & ~0xf)));
                 s_chan[ch].data.get<Chan::IgnoreLoop>().value = true;
                 //  ReleaseMutex(s_chan[ch].hMutex);                    // -> oki, on with the thread
                 PCSX::PSXSPU_LOGGER::Log("SPU.write, Voice[%02i] ADPCM Repeat Address = %04x\n", ch, val);
@@ -251,7 +251,7 @@ void PCSX::SPU::impl::writeRegister(uint32_t reg, uint16_t val) {
 
         case H_SPUirqAddr:
             spuIrq = val;
-            pSpuIrq = spuMemC + ((uint32_t)val << 3);
+            pSpuIrq = spuRamBase + ((uint32_t)val << 3);
             PCSX::PSXSPU_LOGGER::Log("SPU.write, IRQ Address = %04x\n", val);
             break;
 
@@ -530,8 +530,8 @@ uint16_t PCSX::SPU::impl::readRegister(uint32_t reg) {
                     return 0;
                 }
                 PCSX::PSXSPU_LOGGER::Log("SPU.read, Voice[%02i] ADPCM Repeat Address = %04x\n", ch,
-                                         (uint16_t)((s_chan[ch].adpcm.loop() - spuMemC) >> 3));
-                return (uint16_t)((s_chan[ch].adpcm.loop() - spuMemC) >> 3);
+                                         (uint16_t)((s_chan[ch].adpcm.loop() - spuRamBase) >> 3));
+                return (uint16_t)((s_chan[ch].adpcm.loop() - spuRamBase) >> 3);
             }
         }
     }

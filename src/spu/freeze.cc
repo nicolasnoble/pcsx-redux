@@ -65,7 +65,7 @@ void PCSX::SPU::impl::save(SaveStates::SPU &spu) {
         xa.get<SaveStates::XAPCM>().copyFrom(reinterpret_cast<uint8_t *>(xapGlobal->pcm));
     }
     spu.get<SaveStates::SPUIrq>().value = spuIrq;
-    if (pSpuIrq) spu.get<SaveStates::SPUIrqPtr>().value = uintptr_t(pSpuIrq - spuMemC);
+    if (pSpuIrq) spu.get<SaveStates::SPUIrqPtr>().value = uintptr_t(pSpuIrq - spuRamBase);
 
     for (unsigned i = 0; i < MAXCHAN; i++) {
         auto &channel = spu.get<SaveStates::Channels>().value[i];
@@ -77,7 +77,7 @@ void PCSX::SPU::impl::save(SaveStates::SPU &spu) {
         // them back into the channel-data fields that hold their savestate form.
         data.get<Chan::s_1>().value = s_chan[i].adpcm.history1();
         data.get<Chan::s_2>().value = s_chan[i].adpcm.history2();
-        auto storePtr = [this](uint8_t *ptr, Protobuf::Int32 &val) { val.value = ptr ? ptr - spuMemC : -1; };
+        auto storePtr = [this](uint8_t *ptr, Protobuf::Int32 &val) { val.value = ptr ? ptr - spuRamBase : -1; };
         storePtr(s_chan[i].adpcm.start(), data.get<Chan::StartPtr>());
         storePtr(s_chan[i].adpcm.curr(), data.get<Chan::CurrPtr>());
         storePtr(s_chan[i].adpcm.loop(), data.get<Chan::LoopPtr>());
@@ -123,7 +123,7 @@ void PCSX::SPU::impl::load(const SaveStates::SPU &spu) {
 
     spuIrq = spu.get<SaveStates::SPUIrq>().value;
     const auto &pSpuIrqIn = spu.get<SaveStates::SPUIrqPtr>().value;
-    pSpuIrq = pSpuIrqIn ? pSpuIrqIn + spuMemC : nullptr;
+    pSpuIrq = pSpuIrqIn ? pSpuIrqIn + spuRamBase : nullptr;
 
     for (unsigned i = 0; i < MAXCHAN; i++) {
         const auto &channel = spu.get<SaveStates::Channels>().value[i];
@@ -133,7 +133,7 @@ void PCSX::SPU::impl::load(const SaveStates::SPU &spu) {
         s_chan[i].adsr.ex() = channel.get<SaveStates::ADSRInfoEx>();
         s_chan[i].adpcm.setHistory(data.get<Chan::s_1>().value, data.get<Chan::s_2>().value);
         auto restorePtr = [this](const Protobuf::Int32 &val) -> uint8_t * {
-            return val.value == -1 ? nullptr : val.value + spuMemC;
+            return val.value == -1 ? nullptr : val.value + spuRamBase;
         };
         s_chan[i].adpcm.setStart(restorePtr(data.get<Chan::StartPtr>()));
         s_chan[i].adpcm.setCurr(restorePtr(data.get<Chan::CurrPtr>()));

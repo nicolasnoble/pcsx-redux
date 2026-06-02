@@ -502,7 +502,7 @@ void PCSX::SPU::impl::MainThread() {
         if (pMixIrq)  // pMixIRQ will only be set, if the config option is active
         {
             for (ns = 0; ns < NSSIZE; ns++) {
-                if ((spuCtrl & ControlFlags::IRQEnable) && pSpuIrq && pSpuIrq < spuMemC + 0x1000) {
+                if ((spuCtrl & ControlFlags::IRQEnable) && pSpuIrq && pSpuIrq < spuRamBase + 0x1000) {
                     for (ch = 0; ch < 4; ch++) {
                         if (pSpuIrq >= pMixIrq + (ch * 0x400) && pSpuIrq < pMixIrq + (ch * 0x400) + 2) {
                             scheduleInterrupt();
@@ -511,7 +511,7 @@ void PCSX::SPU::impl::MainThread() {
                     }
                 }
                 pMixIrq += 2;
-                if (pMixIrq > spuMemC + 0x3ff) pMixIrq = spuMemC;
+                if (pMixIrq > spuRamBase + 0x3ff) pMixIrq = spuRamBase;
             }
         }
 
@@ -606,7 +606,7 @@ void PCSX::SPU::impl::playADPCMchannel(xa_decode_t *xap) {
 ////////////////////////////////////////////////////////////////////////
 
 long PCSX::SPU::impl::init(void) {
-    spuMemC = (uint8_t *)spuMem;  // just small setup
+    spuRamBase = (uint8_t *)spuMem;  // just small setup
 
     wipeChannels();
     return 0;
@@ -687,9 +687,9 @@ void PCSX::SPU::impl::SetupStreams() {
         s_chan[i].data.get<PCSX::SPU::Chan::Mute>().value = false;
         s_chan[i].data.get<PCSX::SPU::Chan::Solo>().value = false;
         s_chan[i].data.get<PCSX::SPU::Chan::IrqDone>().value = 0;
-        s_chan[i].adpcm.setLoop(spuMemC);
-        s_chan[i].adpcm.setStart(spuMemC);
-        s_chan[i].adpcm.setCurr(spuMemC);
+        s_chan[i].adpcm.setLoop(spuRamBase);
+        s_chan[i].adpcm.setStart(spuRamBase);
+        s_chan[i].adpcm.setCurr(spuRamBase);
     }
 }
 
@@ -716,7 +716,7 @@ bool PCSX::SPU::impl::open() {
     spuAddr = 0xffffffff;
     bEndThread = 0;
     bThreadEnded = 0;
-    spuMemC = (uint8_t *)spuMem;
+    spuRamBase = (uint8_t *)spuMem;
     pMixIrq = 0;
     wipeChannels();
     pSpuIrq = 0;

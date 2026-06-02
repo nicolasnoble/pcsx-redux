@@ -47,7 +47,7 @@ void PCSX::SPU::impl::lockSPURAM() { cbMtx.lock(); }
 void PCSX::SPU::impl::unlockSPURAM() { cbMtx.unlock(); }
 
 void PCSX::SPU::impl::resetCaptureBuffer() {
-    if (settings.get<DBufIRQ>().value) pMixIrq = spuMemC;  // enable decoded buffer irqs by setting the address
+    if (settings.get<DBufIRQ>().value) pMixIrq = spuRamBase;  // enable decoded buffer irqs by setting the address
     memset(captureBuffer.CDCapLeft, 0, CaptureBuffer::CB_SIZE);
     memset(captureBuffer.CDCapRight, 0, CaptureBuffer::CB_SIZE);
     captureBuffer.currIndex = 0;

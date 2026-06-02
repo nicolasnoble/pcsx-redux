@@ -309,7 +309,7 @@ void DrawTableFrequency(SPU_CHANNELS_INFO channels, const float rowHeight) {
     }
 }
 
-void DrawTablePosition(SPU_CHANNELS_INFO channels, const float rowHeight, const uint8_t* spuMemC) {
+void DrawTablePosition(SPU_CHANNELS_INFO channels, const float rowHeight, const uint8_t* spuRamBase) {
     if (ImGui::BeginTable("TablePosition", 3, Grid::FlagsTableInner)) {
         ImGui::TableSetupColumn("Start", Grid::FlagsColumn, Grid::WidthPositionStart);
         ImGui::TableSetupColumn("Current", Grid::FlagsColumn, Grid::WidthPositionCurrent);
@@ -321,11 +321,11 @@ void DrawTablePosition(SPU_CHANNELS_INFO channels, const float rowHeight, const 
             ImGui::AlignTextToFramePadding();
             // @formatter:off
             ImGui::TableNextColumn();
-            ImGui::Text("%i", static_cast<int>(chan.adpcm.start() - spuMemC));
+            ImGui::Text("%i", static_cast<int>(chan.adpcm.start() - spuRamBase));
             ImGui::TableNextColumn();
-            ImGui::Text("%i", static_cast<int>(chan.adpcm.curr() - spuMemC));
+            ImGui::Text("%i", static_cast<int>(chan.adpcm.curr() - spuRamBase));
             ImGui::TableNextColumn();
-            ImGui::Text("%i", static_cast<int>(chan.adpcm.loop() - spuMemC));
+            ImGui::Text("%i", static_cast<int>(chan.adpcm.loop() - spuRamBase));
             // @formatter:on
         }
         ImGui::EndTable();
@@ -447,7 +447,7 @@ void DrawTableReverb(SPU_CHANNELS_INFO channels, const float rowHeight) {
 }
 
 void DrawSectionChannels(SPU_CHANNELS_INFO channels, SPU_CHANNELS_TAGS tags, SPU_CHANNELS_PLOT plot,
-                         const uint8_t* spuMemC) {
+                         const uint8_t* spuRamBase) {
     if (ImGui::CollapsingHeader("Channels", ImGuiTreeNodeFlags_DefaultOpen)) {
         const auto style = ImGui::GetStyle();
         const auto rowHeight = ImGui::GetFrameHeightWithSpacing();
@@ -472,7 +472,7 @@ void DrawSectionChannels(SPU_CHANNELS_INFO channels, SPU_CHANNELS_TAGS tags, SPU
             ImGui::TableNextColumn();
             DrawTableFrequency(channels, rowHeight);
             ImGui::TableNextColumn();
-            DrawTablePosition(channels, rowHeight, spuMemC);
+            DrawTablePosition(channels, rowHeight, spuRamBase);
             ImGui::TableNextColumn();
             DrawTableVolume(channels, rowHeight);
             ImGui::TableNextColumn();
@@ -489,7 +489,7 @@ void DrawSectionChannels(SPU_CHANNELS_INFO channels, SPU_CHANNELS_TAGS tags, SPU
     }
 }
 
-void DrawSectionSpu(const uint16_t spuCtrl, const uint16_t spuStat, const uint32_t spuAddr, const uint8_t* spuMemC,
+void DrawSectionSpu(const uint16_t spuCtrl, const uint16_t spuStat, const uint32_t spuAddr, const uint8_t* spuRamBase,
                     const uint8_t* pSpuIrq) {
     if (ImGui::CollapsingHeader("SPU", ImGuiTreeNodeFlags_DefaultOpen)) {
         if (ImGui::BeginTable("SpuBase", 4, BasicTableFlags)) {
@@ -500,7 +500,7 @@ void DrawSectionSpu(const uint16_t spuCtrl, const uint16_t spuStat, const uint32
             ImGui::TableHeadersRow();
             // @formatter:off
             ImGui::TableNextColumn();
-            ImGui::Text("%08X", static_cast<uint32_t>(pSpuIrq ? -1 : pSpuIrq - spuMemC));
+            ImGui::Text("%08X", static_cast<uint32_t>(pSpuIrq ? -1 : pSpuIrq - spuRamBase));
             ImGui::TableNextColumn();
             ImGui::Text("%04X", spuCtrl);
             ImGui::TableNextColumn();
@@ -584,9 +584,9 @@ void impl::debug() {
         return;
     }
 
-    DrawSectionSpu(spuCtrl, spuStat, spuAddr, spuMemC, pSpuIrq);
+    DrawSectionSpu(spuCtrl, spuStat, spuAddr, spuRamBase, pSpuIrq);
     DrawSectionXa(xapGlobal, iLeftXAVol, iRightXAVol);
-    DrawSectionChannels(s_chan, m_channelTag, m_channelDebugData, spuMemC);
+    DrawSectionChannels(s_chan, m_channelTag, m_channelDebugData, spuRamBase);
 
     ImGui::End();
 }

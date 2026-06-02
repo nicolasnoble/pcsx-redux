@@ -182,7 +182,9 @@ class impl final : public SPUInterface {
     uint16_t regArea[10000];
     // Note that SPU ram is a uint16_t, so total size is 512KB.
     uint16_t spuMem[256 * 1024];
-    uint8_t *spuMemC;
+    // Byte-addressable view of spuMem; the base for every sound-RAM pointer and
+    // for the offset math that stores/restores those pointers (e.g. savestates).
+    uint8_t *spuRamBase;
     uint8_t *pSpuIrq = 0;
     uint8_t *pSpuBuffer;
     uint8_t *pMixIrq = 0;
