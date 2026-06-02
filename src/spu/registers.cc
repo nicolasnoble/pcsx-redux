@@ -97,15 +97,15 @@ void PCSX::SPU::impl::writeRegister(uint32_t reg, uint16_t val) {
                 break;
             case 8: {  // Attack/Decay/Sustain/Release (ADSR)
                 //---------------------------------------------//
-                s_chan[ch].ADSRX.get<exAttackModeExp>().value = (val & ADSRFlags::AttackMode) ? 1 : 0;
-                s_chan[ch].ADSRX.get<exAttackRate>().value =
+                s_chan[ch].adsr.ex().get<exAttackModeExp>().value = (val & ADSRFlags::AttackMode) ? 1 : 0;
+                s_chan[ch].adsr.ex().get<exAttackRate>().value =
                     (val & (ADSRFlags::AttackShiftMask | ADSRFlags::AttackStepMask)) >> 8;
-                s_chan[ch].ADSRX.get<exDecayRate>().value = (val & ADSRFlags::DecayShiftMask) >> 4;
-                s_chan[ch].ADSRX.get<exSustainLevel>().value = val & ADSRFlags::SustainLevelMask;
+                s_chan[ch].adsr.ex().get<exDecayRate>().value = (val & ADSRFlags::DecayShiftMask) >> 4;
+                s_chan[ch].adsr.ex().get<exSustainLevel>().value = val & ADSRFlags::SustainLevelMask;
                 PCSX::PSXSPU_LOGGER::Log("SPU.write, Voice[%02i] ADSR(lo) = %04x\n", ch, val);
                 //---------------------------------------------// stuff below is only for debug mode
 
-                s_chan[ch].ADSR.get<AttackModeExp>().value = (val & ADSRFlags::AttackMode) ? 1 : 0;
+                s_chan[ch].adsr.legacy().get<AttackModeExp>().value = (val & ADSRFlags::AttackMode) ? 1 : 0;
 
                 uint32_t lx = (val & ADSRFlags::AttackShiftMask) >> 10;  // attack time to run from 0 to 100% volume
                 lx = std::min(31U, lx);                                  // no overflow on shift!
@@ -120,10 +120,10 @@ void PCSX::SPU::impl::writeRegister(uint32_t reg, uint16_t val) {
                         lx = 1;
                     }
                 }
-                s_chan[ch].ADSR.get<AttackTime>().value = lx;
+                s_chan[ch].adsr.legacy().get<AttackTime>().value = lx;
 
                 // our adsr vol runs from 0 to 1024, so scale the sustain level
-                s_chan[ch].ADSR.get<SustainLevel>().value = (1024 * (val & ADSRFlags::SustainLevelMask)) / 15;
+                s_chan[ch].adsr.legacy().get<SustainLevel>().value = (1024 * (val & ADSRFlags::SustainLevelMask)) / 15;
 
                 lx = (val & ADSRFlags::DecayShiftMask) >> 4;  // decay:
                 if (lx)  // our const decay value is time it takes from 100% to 0% of volume
@@ -133,24 +133,24 @@ void PCSX::SPU::impl::writeRegister(uint32_t reg, uint16_t val) {
                         lx = 1;
                     }
                 }
-                s_chan[ch].ADSR.get<DecayTime>().value =  // so calc how long does it take to run from 100% to the
+                s_chan[ch].adsr.legacy().get<DecayTime>().value =  // so calc how long does it take to run from 100% to the
                                                           // wanted sus level
-                    (lx * (1024 - s_chan[ch].ADSR.get<SustainLevel>().value)) / 1024;
+                    (lx * (1024 - s_chan[ch].adsr.legacy().get<SustainLevel>().value)) / 1024;
             } break;
             //------------------------------------------------// adsr times with pre-calcs
             case 10: {
                 //----------------------------------------------//
-                s_chan[ch].ADSRX.get<exSustainModeExp>().value = (val & ADSRFlags::SustainMode) ? 1 : 0;
-                s_chan[ch].ADSRX.get<exSustainIncrease>().value = (val & ADSRFlags::SustainDirection) ? 0 : 1;
-                s_chan[ch].ADSRX.get<exSustainRate>().value =
+                s_chan[ch].adsr.ex().get<exSustainModeExp>().value = (val & ADSRFlags::SustainMode) ? 1 : 0;
+                s_chan[ch].adsr.ex().get<exSustainIncrease>().value = (val & ADSRFlags::SustainDirection) ? 0 : 1;
+                s_chan[ch].adsr.ex().get<exSustainRate>().value =
                     (val & (ADSRFlags::SustainShiftMask | ADSRFlags::SustainStepMask)) >> 6;
-                s_chan[ch].ADSRX.get<exReleaseModeExp>().value = (val & ADSRFlags::ReleaseMode) ? 1 : 0;
-                s_chan[ch].ADSRX.get<exReleaseRate>().value = val & ADSRFlags::ReleaseShiftMask;
+                s_chan[ch].adsr.ex().get<exReleaseModeExp>().value = (val & ADSRFlags::ReleaseMode) ? 1 : 0;
+                s_chan[ch].adsr.ex().get<exReleaseRate>().value = val & ADSRFlags::ReleaseShiftMask;
                 PCSX::PSXSPU_LOGGER::Log("SPU.write, Voice[%02i] ADSR(hi) = %04x\n", ch, val);
                 //----------------------------------------------// stuff below is only for debug mode
 
-                s_chan[ch].ADSR.get<SustainModeExp>().value = (val & ADSRFlags::SustainMode) ? 1 : 0;
-                s_chan[ch].ADSR.get<ReleaseModeExp>().value = (val & ADSRFlags::ReleaseMode) ? 1 : 0;
+                s_chan[ch].adsr.legacy().get<SustainModeExp>().value = (val & ADSRFlags::SustainMode) ? 1 : 0;
+                s_chan[ch].adsr.legacy().get<ReleaseModeExp>().value = (val & ADSRFlags::ReleaseMode) ? 1 : 0;
 
                 uint32_t lx = (val & ADSRFlags::SustainShiftMask) >> 8;  // sustain time... often very high
                 lx = std::min(31U, lx);                                  // values are used to hold the volume
@@ -166,10 +166,10 @@ void PCSX::SPU::impl::writeRegister(uint32_t reg, uint16_t val) {
                         lx = 1;  // come in this time span, I don't care :)
                     }
                 }
-                s_chan[ch].ADSR.get<SustainTime>().value = lx;
+                s_chan[ch].adsr.legacy().get<SustainTime>().value = lx;
 
                 lx = (val & ADSRFlags::ReleaseShiftMask);
-                s_chan[ch].ADSR.get<ReleaseVal>().value = lx;
+                s_chan[ch].adsr.legacy().get<ReleaseVal>().value = lx;
                 if (lx)              // release time from 100% to 0%
                 {                    // note: the release time will be
                     lx = (1 << lx);  // adjusted when a stop is coming,
@@ -182,13 +182,13 @@ void PCSX::SPU::impl::writeRegister(uint32_t reg, uint16_t val) {
                         lx = 1;
                     }
                 }
-                s_chan[ch].ADSR.get<ReleaseTime>().value = lx;
+                s_chan[ch].adsr.legacy().get<ReleaseTime>().value = lx;
 
                 if (val & 0x4000)  // add/dec flag
                 {
-                    s_chan[ch].ADSR.get<SustainModeDec>().value = -1;
+                    s_chan[ch].adsr.legacy().get<SustainModeDec>().value = -1;
                 } else {
-                    s_chan[ch].ADSR.get<SustainModeDec>().value = 1;
+                    s_chan[ch].adsr.legacy().get<SustainModeDec>().value = 1;
                 }
             } break;
             case 12:  // TODO: Emulate ADSR Volume
@@ -510,16 +510,16 @@ uint16_t PCSX::SPU::impl::readRegister(uint32_t reg) {
                     PCSX::PSXSPU_LOGGER::Log("SPU.read, Voice[%02i] Current ADSR Volume = 00001\n", ch);
                     return 1;  // we are started, but not processed? return 1
                 }
-                if (s_chan[ch].ADSRX.get<exVolume>().value &&  // same here... we haven't decoded one sample yet, so no
+                if (s_chan[ch].adsr.ex().get<exVolume>().value &&  // same here... we haven't decoded one sample yet, so no
                                                                // envelope yet.
                                                                // return 1 as well
-                    !s_chan[ch].ADSRX.get<exEnvelopeVol>().value) {
+                    !s_chan[ch].adsr.ex().get<exEnvelopeVol>().value) {
                     PCSX::PSXSPU_LOGGER::Log("SPU.read, Voice[%02i] Current ADSR Volume = 00001\n", ch);
                     return 1;
                 }
                 PCSX::PSXSPU_LOGGER::Log("SPU.read, Voice[%02i] Current ADSR Volume = %04x\n", ch,
-                                         (uint16_t)s_chan[ch].ADSRX.get<exEnvelopeVol>().value);
-                return (uint16_t)s_chan[ch].ADSRX.get<exEnvelopeVol>().value;
+                                         (uint16_t)s_chan[ch].adsr.ex().get<exEnvelopeVol>().value);
+                return (uint16_t)s_chan[ch].adsr.ex().get<exEnvelopeVol>().value;
             }
 
             case 14:  // get loop address

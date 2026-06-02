@@ -221,7 +221,7 @@ static inline void InterpolateDown(PCSX::SPU::SPUCHAN *pChannel) {
 
 inline void PCSX::SPU::impl::StartSound(SPUCHAN *pChannel) {
     auto &SB = pChannel->data.get<PCSX::SPU::Chan::SB>().value;
-    m_adsr.start(pChannel);
+    pChannel->adsr.keyOn();
     StartREVERB(pChannel);
 
     pChannel->pCurr = pChannel->pStart;  // set sample start
@@ -541,8 +541,8 @@ void PCSX::SPU::impl::MainThread() {
                             if (start == (uint8_t *)-1)  // special "stop" sign
                             {
                                 pChannel->data.get<PCSX::SPU::Chan::On>().value = false;  // -> turn everything off
-                                pChannel->ADSRX.get<exVolume>().value = 0;
-                                pChannel->ADSRX.get<exEnvelopeVol>().value = 0;
+                                pChannel->adsr.ex().get<exVolume>().value = 0;
+                                pChannel->adsr.ex().get<exEnvelopeVol>().value = 0;
                                 // Although the voices may stop outputting audio, the capture buffer is still filling
                                 // up. At this point, ns samples are already filled, we need (NSSIZE-ns) more samples.
                                 if (pMixIrq && ch == 1) {
@@ -670,7 +670,10 @@ void PCSX::SPU::impl::MainThread() {
                     else
                         fa = iGetInterpolationVal(pChannel);  // get sample val
 
-                    int32_t mixedSample = (m_adsr.mix(pChannel) * fa) / 1023;  // mix adsr
+                    int32_t mixedSample = (pChannel->adsr.step(pChannel->data.get<PCSX::SPU::Chan::Stop>().value,
+                                                               pChannel->data.get<PCSX::SPU::Chan::On>().value) *
+                                           fa) /
+                                          1023;  // mix adsr
                     pChannel->data.get<PCSX::SPU::Chan::sval>().value = mixedSample;
 
                     // Capture buffer should contain voice1/3 sample after any adsr processing but before volume
@@ -897,8 +900,7 @@ long PCSX::SPU::impl::init(void) {
 
 void PCSX::SPU::impl::wipeChannels() {
     for (unsigned i = 0; i < MAXCHAN; i++) {
-        s_chan[i].ADSR.reset();
-        s_chan[i].ADSRX.reset();
+        s_chan[i].adsr.reset();
         s_chan[i].data.reset();
         s_chan[i].pCurr = nullptr;
         s_chan[i].pLoop = nullptr;
@@ -968,7 +970,7 @@ void PCSX::SPU::impl::SetupStreams() {
         // we don't use mutex sync... not needed, would only
         // slow us down:
         //   s_chan[i].hMutex=CreateMutex(NULL,FALSE,NULL);
-        s_chan[i].ADSRX.get<exSustainLevel>().value = 0xf << 27;  // -> init sustain
+        s_chan[i].adsr.ex().get<exSustainLevel>().value = 0xf << 27;  // -> init sustain
         s_chan[i].data.get<PCSX::SPU::Chan::Mute>().value = false;
         s_chan[i].data.get<PCSX::SPU::Chan::Solo>().value = false;
         s_chan[i].data.get<PCSX::SPU::Chan::IrqDone>().value = 0;

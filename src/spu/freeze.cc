@@ -71,8 +71,8 @@ void PCSX::SPU::impl::save(SaveStates::SPU &spu) {
         auto &channel = spu.get<SaveStates::Channels>().value[i];
         auto &data = channel.get<SaveStates::Data>();
         data = s_chan[i].data;
-        channel.get<SaveStates::ADSRInfo>() = s_chan[i].ADSR;
-        channel.get<SaveStates::ADSRInfoEx>() = s_chan[i].ADSRX;
+        channel.get<SaveStates::ADSRInfo>() = s_chan[i].adsr.legacy();
+        channel.get<SaveStates::ADSRInfoEx>() = s_chan[i].adsr.ex();
         auto storePtr = [this](uint8_t *ptr, Protobuf::Int32 &val) { val.value = ptr ? ptr - spuMemC : -1; };
         storePtr(s_chan[i].pStart, data.get<Chan::StartPtr>());
         storePtr(s_chan[i].pCurr, data.get<Chan::CurrPtr>());
@@ -119,8 +119,8 @@ void PCSX::SPU::impl::load(const SaveStates::SPU &spu) {
         const auto &channel = spu.get<SaveStates::Channels>().value[i];
         const auto &data = channel.get<SaveStates::Data>();
         s_chan[i].data = data;
-        s_chan[i].ADSR = channel.get<SaveStates::ADSRInfo>();
-        s_chan[i].ADSRX = channel.get<SaveStates::ADSRInfoEx>();
+        s_chan[i].adsr.legacy() = channel.get<SaveStates::ADSRInfo>();
+        s_chan[i].adsr.ex() = channel.get<SaveStates::ADSRInfoEx>();
         auto restorePtr = [this](uint8_t *&ptr, const Protobuf::Int32 &val) {
             ptr = val.value == -1 ? nullptr : val.value + spuMemC;
         };

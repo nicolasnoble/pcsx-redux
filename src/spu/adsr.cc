@@ -66,11 +66,11 @@ constexpr auto numerator_increase = PCSX::generateTable<128, NumeratorIncreaseGe
 constexpr auto numerator_decrease = PCSX::generateTable<128, NumeratorDecreaseGenerator>();
 }  // namespace EnvelopeTables
 
-inline int PCSX::SPU::ADSR::Attack(SPUCHAN *ch) {
-    int rate = ch->ADSRX.get<exAttackRate>().value;
-    int32_t EnvelopeVol = ch->ADSRX.get<exEnvelopeVol>().value;
-    int32_t EnvelopeVolF = ch->ADSRX.get<exEnvelopeVolF>().value;
-    const int32_t attack_mode_exp = ch->ADSRX.get<exAttackModeExp>().value;
+int PCSX::SPU::AdsrEnvelope::Attack() {
+    int rate = m_adsrx.get<exAttackRate>().value;
+    int32_t EnvelopeVol = m_adsrx.get<exEnvelopeVol>().value;
+    int32_t EnvelopeVolF = m_adsrx.get<exEnvelopeVolF>().value;
+    const int32_t attack_mode_exp = m_adsrx.get<exAttackModeExp>().value;
 
     // Exponential increase
     if (attack_mode_exp && EnvelopeVol >= 0x6000) {
@@ -85,21 +85,21 @@ inline int PCSX::SPU::ADSR::Attack(SPUCHAN *ch) {
 
     if (EnvelopeVol >= 32767L) {
         EnvelopeVol = 32767L;
-        ch->ADSRX.get<exState>().value = ADSRState::Decay;
+        m_adsrx.get<exState>().value = ADSRState::Decay;
     }
 
-    ch->ADSRX.get<exEnvelopeVol>().value = EnvelopeVol;
-    ch->ADSRX.get<exEnvelopeVolF>().value = EnvelopeVolF;
-    ch->ADSRX.get<exVolume>().value = (EnvelopeVol >>= 5);
+    m_adsrx.get<exEnvelopeVol>().value = EnvelopeVol;
+    m_adsrx.get<exEnvelopeVolF>().value = EnvelopeVolF;
+    m_adsrx.get<exVolume>().value = (EnvelopeVol >>= 5);
 
     return EnvelopeVol;
 }
 
-inline int PCSX::SPU::ADSR::Decay(SPUCHAN *ch) {
-    const int rate = ch->ADSRX.get<exDecayRate>().value * 4;
-    int32_t EnvelopeVol = ch->ADSRX.get<exEnvelopeVol>().value;
-    int32_t EnvelopeVolF = ch->ADSRX.get<exEnvelopeVolF>().value;
-    const int32_t release_mode_exp = ch->ADSRX.get<exReleaseModeExp>().value;
+int PCSX::SPU::AdsrEnvelope::Decay() {
+    const int rate = m_adsrx.get<exDecayRate>().value * 4;
+    int32_t EnvelopeVol = m_adsrx.get<exEnvelopeVol>().value;
+    int32_t EnvelopeVolF = m_adsrx.get<exEnvelopeVolF>().value;
+    const int32_t release_mode_exp = m_adsrx.get<exReleaseModeExp>().value;
 
     EnvelopeVolF++;
     if (EnvelopeVolF >= EnvelopeTables::denominator.data[rate]) {
@@ -117,23 +117,23 @@ inline int PCSX::SPU::ADSR::Decay(SPUCHAN *ch) {
         EnvelopeVol = 0;
     }
 
-    if (((EnvelopeVol >> 11) & 0xf) <= ch->ADSRX.get<exSustainLevel>().value) {
-        ch->ADSRX.get<exState>().value = ADSRState::Sustain;
+    if (((EnvelopeVol >> 11) & 0xf) <= m_adsrx.get<exSustainLevel>().value) {
+        m_adsrx.get<exState>().value = ADSRState::Sustain;
     }
 
-    ch->ADSRX.get<exEnvelopeVol>().value = EnvelopeVol;
-    ch->ADSRX.get<exEnvelopeVolF>().value = EnvelopeVolF;
-    ch->ADSRX.get<exVolume>().value = (EnvelopeVol >>= 5);
+    m_adsrx.get<exEnvelopeVol>().value = EnvelopeVol;
+    m_adsrx.get<exEnvelopeVolF>().value = EnvelopeVolF;
+    m_adsrx.get<exVolume>().value = (EnvelopeVol >>= 5);
 
     return EnvelopeVol;
 }
 
-inline int PCSX::SPU::ADSR::Sustain(SPUCHAN *ch) {
-    int rate = ch->ADSRX.get<exSustainRate>().value;
-    int32_t EnvelopeVol = ch->ADSRX.get<exEnvelopeVol>().value;
-    int32_t EnvelopeVolF = ch->ADSRX.get<exEnvelopeVolF>().value;
-    const int32_t sustain_mode_exp = ch->ADSRX.get<exSustainModeExp>().value;
-    const int32_t sustain_increase = ch->ADSRX.get<exSustainIncrease>().value;
+int PCSX::SPU::AdsrEnvelope::Sustain() {
+    int rate = m_adsrx.get<exSustainRate>().value;
+    int32_t EnvelopeVol = m_adsrx.get<exEnvelopeVol>().value;
+    int32_t EnvelopeVolF = m_adsrx.get<exEnvelopeVolF>().value;
+    const int32_t sustain_mode_exp = m_adsrx.get<exSustainModeExp>().value;
+    const int32_t sustain_increase = m_adsrx.get<exSustainIncrease>().value;
 
     if (sustain_increase) {
         // Exponential increase
@@ -169,18 +169,18 @@ inline int PCSX::SPU::ADSR::Sustain(SPUCHAN *ch) {
         }
     }
 
-    ch->ADSRX.get<exEnvelopeVol>().value = EnvelopeVol;
-    ch->ADSRX.get<exEnvelopeVolF>().value = EnvelopeVolF;
-    ch->ADSRX.get<exVolume>().value = (EnvelopeVol >>= 5);
+    m_adsrx.get<exEnvelopeVol>().value = EnvelopeVol;
+    m_adsrx.get<exEnvelopeVolF>().value = EnvelopeVolF;
+    m_adsrx.get<exVolume>().value = (EnvelopeVol >>= 5);
 
     return EnvelopeVol;
 }
 
-inline int PCSX::SPU::ADSR::Release(SPUCHAN *ch) {
-    int rate = ch->ADSRX.get<exReleaseRate>().value * 4;
-    int32_t EnvelopeVol = ch->ADSRX.get<exEnvelopeVol>().value;
-    int32_t EnvelopeVolF = ch->ADSRX.get<exEnvelopeVolF>().value;
-    const int32_t release_mode_exp = ch->ADSRX.get<exReleaseModeExp>().value;
+int PCSX::SPU::AdsrEnvelope::Release(bool &channelOn) {
+    int rate = m_adsrx.get<exReleaseRate>().value * 4;
+    int32_t EnvelopeVol = m_adsrx.get<exEnvelopeVol>().value;
+    int32_t EnvelopeVolF = m_adsrx.get<exEnvelopeVolF>().value;
+    const int32_t release_mode_exp = m_adsrx.get<exReleaseModeExp>().value;
 
     EnvelopeVolF++;
     if (EnvelopeVolF >= EnvelopeTables::denominator.data[rate]) {
@@ -195,40 +195,40 @@ inline int PCSX::SPU::ADSR::Release(SPUCHAN *ch) {
     }
 
     if (EnvelopeVol < 0L) {
-        ch->ADSRX.get<exState>().value = ADSRState::Stopped;
+        m_adsrx.get<exState>().value = ADSRState::Stopped;
         EnvelopeVol = 0;
-        ch->data.get<Chan::On>().value = false;
+        channelOn = false;
     }
 
-    ch->ADSRX.get<exEnvelopeVol>().value = EnvelopeVol;
-    ch->ADSRX.get<exEnvelopeVolF>().value = EnvelopeVolF;
-    ch->ADSRX.get<exVolume>().value = (EnvelopeVol >>= 5);
+    m_adsrx.get<exEnvelopeVol>().value = EnvelopeVol;
+    m_adsrx.get<exEnvelopeVolF>().value = EnvelopeVolF;
+    m_adsrx.get<exVolume>().value = (EnvelopeVol >>= 5);
 
     return EnvelopeVol;
 }
 
-void PCSX::SPU::ADSR::start(SPUCHAN *pChannel)  // MIX ADSR
+void PCSX::SPU::AdsrEnvelope::keyOn()  // start a new note
 {
-    pChannel->ADSRX.get<exVolume>().value = 1;  // and init some adsr vars
-    pChannel->ADSRX.get<exState>().value = ADSRState::Attack;
-    pChannel->ADSRX.get<exEnvelopeVol>().value = 0;
-    pChannel->ADSRX.get<exEnvelopeVolF>().value = 0;
+    m_adsrx.get<exVolume>().value = 1;  // and init some adsr vars
+    m_adsrx.get<exState>().value = ADSRState::Attack;
+    m_adsrx.get<exEnvelopeVol>().value = 0;
+    m_adsrx.get<exEnvelopeVolF>().value = 0;
 }
 
-int PCSX::SPU::ADSR::mix(SPUCHAN *ch) {
-    if (ch->data.get<Chan::Stop>().value) {
-        ch->ADSRX.get<exState>().value = ADSRState::Release;
+int PCSX::SPU::AdsrEnvelope::step(bool stopRequested, bool &channelOn) {
+    if (stopRequested) {
+        m_adsrx.get<exState>().value = ADSRState::Release;
     }
 
-    switch (ch->ADSRX.get<exState>().value) {
+    switch (m_adsrx.get<exState>().value) {
         case ADSRState::Attack:
-            return Attack(ch);
+            return Attack();
         case ADSRState::Decay:
-            return Decay(ch);
+            return Decay();
         case ADSRState::Sustain:
-            return Sustain(ch);
+            return Sustain();
         case ADSRState::Release:
-            return Release(ch);
+            return Release(channelOn);
     }
 
     return 0;

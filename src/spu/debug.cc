@@ -360,7 +360,7 @@ void DrawTableAdsr(SPU_CHANNELS_INFO channels, const float rowHeight) {
         ImGui::TableSetupColumn("R", Grid::FlagsColumn, Grid::WidthAdsrR);
         ImGui::TableHeadersRow();
         for (auto i = 0u; i < SPU_CHANNELS_SIZE; ++i) {
-            const auto& data = channels[i].ADSRX;
+            const auto& data = channels[i].adsr.ex();
             ImGui::TableNextRow(Grid::FlagsRow, rowHeight);
             ImGui::AlignTextToFramePadding();
             // @formatter:off
@@ -384,7 +384,7 @@ void DrawTableAdsrSustain(SPU_CHANNELS_INFO channels, const float rowHeight) {
         ImGui::TableSetupColumn("Increase", Grid::FlagsColumn, Grid::WidthAdsrSustainIncrease);
         ImGui::TableHeadersRow();
         for (auto i = 0u; i < SPU_CHANNELS_SIZE; ++i) {
-            const auto& data = channels[i].ADSRX;
+            const auto& data = channels[i].adsr.ex();
             ImGui::TableNextRow(Grid::FlagsRow, rowHeight);
             ImGui::AlignTextToFramePadding();
             // @formatter:off
@@ -404,7 +404,7 @@ void DrawTableAdsrVolume(SPU_CHANNELS_INFO channels, const float rowHeight) {
         ImGui::TableSetupColumn("Envelope", Grid::FlagsColumn, Grid::WidthAdsrVolumeEnvelope);
         ImGui::TableHeadersRow();
         for (auto i = 0u; i < SPU_CHANNELS_SIZE; ++i) {
-            const auto& data = channels[i].ADSRX;
+            const auto& data = channels[i].adsr.ex();
             ImGui::TableNextRow(Grid::FlagsRow, rowHeight);
             ImGui::AlignTextToFramePadding();
             // @formatter:off

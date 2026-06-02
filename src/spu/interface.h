@@ -284,7 +284,6 @@ class impl final : public SPUInterface {
     int &gvalr0() { return gauss_window[4 + gauss_ptr]; }
     int &gvalr(int pos) { return gauss_window[4 + ((gauss_ptr + pos) & 3)]; }
 
-    ADSR m_adsr;
     MiniAudio m_audioOut = {settings};
     xa_decode_t m_cdda;
 
