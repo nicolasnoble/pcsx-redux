@@ -46,6 +46,14 @@ ifeq ($(SPU_DUMP),true)
 CPPFLAGS += -DSPU_DUMP=1
 endif
 
+ifeq ($(SPU_ADPCM_EDGE_GOLDENS),true)
+CPPFLAGS += -DSPU_ADPCM_EDGE_GOLDENS_AVAILABLE=1
+endif
+
+ifeq ($(SPU_REVERB_GOLDENS),true)
+CPPFLAGS += -DSPU_REVERB_GOLDENS_AVAILABLE=1
+endif
+
 SRCS += \
 ../../common/syscalls/printf.s \
 ../../common/crt0/uC-sdk-crt0.s \

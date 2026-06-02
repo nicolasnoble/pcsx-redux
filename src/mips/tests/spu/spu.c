@@ -31,6 +31,15 @@ SOFTWARE.
 #include "common/syscalls/syscalls.h"
 #include <stdint.h>
 
+#ifndef SPU_TEST_STORAGE_DEFINED
+#define SPU_TEST_STORAGE_DEFINED
+// All buffers in main RAM - the DMAC cannot target the CPU scratchpad.
+static uint8_t  s_upload[64 + 64]       __attribute__((aligned(4)));
+static uint16_t s_capture[512]          __attribute__((aligned(4)));
+static uint8_t  s_readback[4096]        __attribute__((aligned(4)));
+static uint8_t  s_reverb_work[0x3000]   __attribute__((aligned(4)));
+#endif
+
 #undef unix
 #define CESTER_NO_SIGNAL
 #define CESTER_NO_TIME
@@ -303,11 +312,6 @@ static int spu_compare_golden(const char *name, const void *cap,
 // clang-format off
 
 CESTER_BODY(
-// All buffers in main RAM - the DMAC cannot target the CPU scratchpad.
-static uint8_t  s_upload[64 + 64] __attribute__((aligned(4)));
-static uint16_t s_capture[512]    __attribute__((aligned(4)));
-static uint8_t  s_readback[4096]  __attribute__((aligned(4)));
-
 // Deterministic voice1 capture being sampled at 44.1kHz in the SPU RAM.
 // Reading at an arbitrary moment gives a phase-rotated snapshot that differs
 // at every run. To get deterministic captures, this function will:
@@ -361,5 +365,9 @@ CESTER_AFTER_ALL(spu_tests,
 
 #include "spu-transfer.c"
 #include "spu-adpcm.c"
+#include "spu-adpcm-edge.c"
 #include "spu-capture.c"
 #include "spu-adsr.c"
+#include "spu-adsr-edge.c"
+#include "spu-irq.c"
+#include "spu-reverb.c"
