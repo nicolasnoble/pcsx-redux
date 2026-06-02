@@ -275,7 +275,7 @@ void PCSX::SPU::impl::MainThread() {
                         {
                             start = pChannel->adpcm.curr();  // set up the current pos
 
-                            if (start == (uint8_t *)-1)  // special "stop" sign
+                            if (start == AdpcmDecoder::kStopped)  // voice stopped on a previous pass?
                             {
                                 pChannel->data.get<PCSX::SPU::Chan::On>().value = false;  // -> turn everything off
                                 pChannel->adsr.ex().get<exVolume>().value = 0;
@@ -333,10 +333,10 @@ void PCSX::SPU::impl::MainThread() {
                                 // We play this block out first...
                                 // if(!(flags&2))                          // 1+2: do loop... otherwise: stop
                                 if (flags != 3 ||
-                                    pChannel->adpcm.loop() == NULL)  // PETE: if we don't check exactly for 3, loop hang
-                                                                     // ups will happen (DQ4, for example)
+                                    pChannel->adpcm.loop() == nullptr)  // PETE: if we don't check exactly for 3, loop
+                                                                        // hang ups will happen (DQ4, for example)
                                 {  // and checking if pLoop is set avoids crashes, yeah
-                                    start = (uint8_t *)-1;
+                                    start = AdpcmDecoder::kStopped;
                                 } else {
                                     start = pChannel->adpcm.loop();
                                 }

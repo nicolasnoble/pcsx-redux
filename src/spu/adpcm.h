@@ -52,6 +52,15 @@ class AdpcmDecoder {
         m_s2 = 0;
     }
 
+    // Cursor sentinel for a voice that decoded a stop/loop-end block with no loop
+    // target: the next synthesis pass sees it in the cursor and turns the voice
+    // off. It is a deliberately invalid, non-null pointer, distinct from the
+    // nullptr "wiped" state. Its exact all-ones bit pattern is what the savestate
+    // pointer-offset bridge stores and restores by plain arithmetic, so it must
+    // stay all-ones. (Was an inline (uint8_t *)-1 cast smuggled into the cursor.)
+    inline static uint8_t *const kStopped = reinterpret_cast<uint8_t *>(~uintptr_t(0));
+    bool stopped() const { return m_curr == kStopped; }
+
     // Decode cursor accessors (raw pointers into sound RAM).
     uint8_t *start() const { return m_start; }
     uint8_t *curr() const { return m_curr; }
