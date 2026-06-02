@@ -11,44 +11,57 @@
 #endif
 
 #ifndef SPU_ADPCM_EDGE_EXPECTED_REPEAT_LOOP_START
-#define SPU_ADPCM_EDGE_EXPECTED_REPEAT_LOOP_START 0xffffffffu
+#define SPU_ADPCM_EDGE_EXPECTED_REPEAT_LOOP_START 0x212u
 #endif
 #ifndef SPU_ADPCM_EDGE_EXPECTED_REPEAT_END_MUTE
-#define SPU_ADPCM_EDGE_EXPECTED_REPEAT_END_MUTE 0xffffffffu
+#define SPU_ADPCM_EDGE_EXPECTED_REPEAT_END_MUTE 0x210u
 #endif
 #ifndef SPU_ADPCM_EDGE_EXPECTED_ENDX_END_MUTE
-#define SPU_ADPCM_EDGE_EXPECTED_ENDX_END_MUTE 0xffffffffu
+#define SPU_ADPCM_EDGE_EXPECTED_ENDX_END_MUTE 0x1u
 #endif
 #ifndef SPU_ADPCM_EDGE_EXPECTED_ENVX_END_MUTE
-#define SPU_ADPCM_EDGE_EXPECTED_ENVX_END_MUTE 0xffffffffu
+#define SPU_ADPCM_EDGE_EXPECTED_ENVX_END_MUTE 0x0u
 #endif
 #ifndef SPU_ADPCM_EDGE_EXPECTED_ENDX_END_REPEAT
-#define SPU_ADPCM_EDGE_EXPECTED_ENDX_END_REPEAT 0xffffffffu
+#define SPU_ADPCM_EDGE_EXPECTED_ENDX_END_REPEAT 0x1u
 #endif
 #ifndef SPU_ADPCM_EDGE_EXPECTED_ENVX_END_REPEAT
-#define SPU_ADPCM_EDGE_EXPECTED_ENVX_END_REPEAT 0xffffffffu
+#define SPU_ADPCM_EDGE_EXPECTED_ENVX_END_REPEAT 0x3fffu
 #endif
 
 #define SPU_ENDX_LOW HW_U16(0x1f801d9c)
 
 #if SPU_ADPCM_EDGE_GOLDENS_AVAILABLE && !defined(SPU_DUMP)
-INCLUDE_PCM(adpcm_edge_predictor_0);
-INCLUDE_PCM(adpcm_edge_predictor_1);
-INCLUDE_PCM(adpcm_edge_predictor_2);
-INCLUDE_PCM(adpcm_edge_predictor_3);
-INCLUDE_PCM(adpcm_edge_predictor_4);
-INCLUDE_PCM(adpcm_edge_shift_00_03);
-INCLUDE_PCM(adpcm_edge_shift_04_07);
-INCLUDE_PCM(adpcm_edge_shift_08_11);
-INCLUDE_PCM(adpcm_edge_shift_12_15);
-INCLUDE_PCM(adpcm_edge_state_carry);
-INCLUDE_PCM(adpcm_edge_saturation_positive);
-INCLUDE_PCM(adpcm_edge_saturation_negative);
-INCLUDE_PCM(adpcm_edge_flag_code2_ignored);
-INCLUDE_PCM(adpcm_edge_flag_loop_start_latch);
-INCLUDE_PCM(adpcm_edge_flag_end_mute);
-INCLUDE_PCM(adpcm_edge_flag_end_repeat);
-INCLUDE_PCM(adpcm_edge_invalid_predictor_5_7);
+#define SPU_ADPCM_EDGE_INCBIN(NAME) \
+    asm( \
+        ".pushsection .rodata\n" \
+        ".global " #NAME "\n" \
+        ".align 2\n" \
+        #NAME ":\n" \
+        ".incbin \"" #NAME ".test.pcm\"\n" \
+        ".popsection")
+
+CESTER_BODY(
+SPU_ADPCM_EDGE_INCBIN(adpcm_edge_predictor_0);
+SPU_ADPCM_EDGE_INCBIN(adpcm_edge_predictor_1);
+SPU_ADPCM_EDGE_INCBIN(adpcm_edge_predictor_2);
+SPU_ADPCM_EDGE_INCBIN(adpcm_edge_predictor_3);
+SPU_ADPCM_EDGE_INCBIN(adpcm_edge_predictor_4);
+SPU_ADPCM_EDGE_INCBIN(adpcm_edge_shift_00_03);
+SPU_ADPCM_EDGE_INCBIN(adpcm_edge_shift_04_07);
+SPU_ADPCM_EDGE_INCBIN(adpcm_edge_shift_08_11);
+SPU_ADPCM_EDGE_INCBIN(adpcm_edge_shift_12_15);
+SPU_ADPCM_EDGE_INCBIN(adpcm_edge_state_carry);
+SPU_ADPCM_EDGE_INCBIN(adpcm_edge_saturation_positive);
+SPU_ADPCM_EDGE_INCBIN(adpcm_edge_saturation_negative);
+SPU_ADPCM_EDGE_INCBIN(adpcm_edge_flag_code2_ignored);
+SPU_ADPCM_EDGE_INCBIN(adpcm_edge_flag_loop_start_latch);
+SPU_ADPCM_EDGE_INCBIN(adpcm_edge_flag_end_mute);
+SPU_ADPCM_EDGE_INCBIN(adpcm_edge_flag_end_repeat);
+SPU_ADPCM_EDGE_INCBIN(adpcm_edge_invalid_predictor_5_7);
+)
+
+#undef SPU_ADPCM_EDGE_INCBIN
 #endif
 
 CESTER_BODY(
@@ -148,7 +161,10 @@ static void spu_adpcm_edge_stop(void) {
 #define SPU_ADPCM_EDGE_ASSERT_GOLDEN(name) spu_dump_pcm(#name ".test.pcm", s_capture, 1024)
 #elif SPU_ADPCM_EDGE_GOLDENS_AVAILABLE
 #define SPU_ADPCM_EDGE_ASSERT_GOLDEN(name) \
-    cester_assert_int_eq(0, spu_compare_golden(#name, s_capture, name))
+    do { \
+        extern const uint8_t name[]; \
+        cester_assert_int_eq(0, spu_compare_golden(#name, s_capture, name)); \
+    } while (0)
 #else
 #define SPU_ADPCM_EDGE_ASSERT_GOLDEN(name) spu_adpcm_edge_observe(#name)
 #endif
