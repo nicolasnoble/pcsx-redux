@@ -87,9 +87,9 @@ void PCSX::SPU::impl::save(SaveStates::SPU &spu) {
     spu.get<SaveStates::SPUCtrl>().value = spuCtrl;
     spu.get<SaveStates::SPUStat>().value = spuStat;
 
-    spu.get<SaveStates::SPUNoiseClock>().value = m_noiseClock;
-    spu.get<SaveStates::SPUNoiseCount>().value = m_noiseCount;
-    spu.get<SaveStates::SPUNoiseVal>().value = m_noiseVal;
+    spu.get<SaveStates::SPUNoiseClock>().value = m_noise.clock();
+    spu.get<SaveStates::SPUNoiseCount>().value = m_noise.count();
+    spu.get<SaveStates::SPUNoiseVal>().value = m_noise.value();
 
     SetupThread();
 }
@@ -141,9 +141,9 @@ void PCSX::SPU::impl::load(const SaveStates::SPU &spu) {
     spuCtrl = spu.get<SaveStates::SPUCtrl>().value;
     spuStat = spu.get<SaveStates::SPUStat>().value;
 
-    m_noiseClock = spu.get<SaveStates::SPUNoiseClock>().value;
-    m_noiseCount = spu.get<SaveStates::SPUNoiseCount>().value;
-    m_noiseVal = spu.get<SaveStates::SPUNoiseVal>().value;
+    m_noise.setClock(spu.get<SaveStates::SPUNoiseClock>().value);
+    m_noise.setCount(spu.get<SaveStates::SPUNoiseCount>().value);
+    m_noise.setValue(spu.get<SaveStates::SPUNoiseVal>().value);
 
     // repair some globals
     for (unsigned i = 0; i <= 62; i += 2) writeRegister(H_Reverb + i, regArea[(H_Reverb + i - 0xc00) >> 1]);

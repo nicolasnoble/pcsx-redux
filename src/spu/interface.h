@@ -29,6 +29,7 @@
 #include "json.hpp"
 #include "spu/adsr.h"
 #include "spu/miniaudio.h"
+#include "spu/noise.h"
 #include "spu/types.h"
 #include "support/settings.h"
 
@@ -165,8 +166,6 @@ class impl final : public SPUInterface {
     void StartSound(SPUCHAN *pChannel);
     void VoiceChangeFrequency(SPUCHAN *pChannel);
     void FModChangeFrequency(SPUCHAN *pChannel, int ns);
-    int iGetNoiseVal(SPUCHAN *pChannel);
-    void NoiseClock();
 
     // registers
     void SoundOn(int start, int end, uint16_t val);
@@ -228,9 +227,7 @@ class impl final : public SPUInterface {
     SPUCHAN s_chan[MAXCHAN + 1];  // channel + 1 infos (1 is security for fmod handling)
     REVERBInfo rvb;
 
-    uint32_t m_noiseClock = 0;  // global noise generator
-    uint32_t m_noiseCount = 0;  // global noise generator
-    uint32_t m_noiseVal = 1;    // global noise generator
+    NoiseGenerator m_noise;  // global noise generator: LFSR + shift/step clock
 
     uint16_t spuCtrl = 0;  // some vars to store psx reg infos
     uint16_t spuStat = 0;

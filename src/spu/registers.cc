@@ -227,7 +227,7 @@ void PCSX::SPU::impl::writeRegister(uint32_t reg, uint16_t val) {
 
         case H_SPUctrl:
             spuCtrl = val;
-            m_noiseClock = (spuCtrl & (ControlFlags::NoiseShiftMask | ControlFlags::NoiseStepMask)) >> 8;
+            m_noise.setClock((spuCtrl & (ControlFlags::NoiseShiftMask | ControlFlags::NoiseStepMask)) >> 8);
             PCSX::PSXSPU_LOGGER::Log("SPU.write, CTRL = %04x\n", val);
             break;
 
