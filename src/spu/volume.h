@@ -20,6 +20,8 @@
 
 #include <stdint.h>
 
+#include "support/protobuf.h"
+
 namespace PCSX {
 
 namespace SPU {
@@ -58,15 +60,24 @@ class VoiceVolume {
         m_leftRaw = m_rightRaw = 0;
     }
 
-    // Savestate bridge (freeze.cc only): the four values mirror into the
-    // per-channel savestate message as scalar fields, unchanged by this
-    // extraction.
-    int leftRaw() const { return m_leftRaw; }
-    int rightRaw() const { return m_rightRaw; }
-    void setLeftComputed(int vol) { m_left = vol; }
-    void setRightComputed(int vol) { m_right = vol; }
-    void setLeftRaw(int raw) { m_leftRaw = raw; }
-    void setRightRaw(int raw) { m_rightRaw = raw; }
+    // Savestate bridge (freeze.cc only): mirror the decoded levels and raw
+    // register values to/from the per-channel savestate fields. The fields are
+    // passed in rather than the whole channel message because volume.h cannot
+    // include types.h (it is included by it).
+    void saveTo(Protobuf::Int32 &left, Protobuf::Int32 &right, Protobuf::Int32 &leftRaw,
+                Protobuf::Int32 &rightRaw) const {
+        left.value = m_left;
+        right.value = m_right;
+        leftRaw.value = m_leftRaw;
+        rightRaw.value = m_rightRaw;
+    }
+    void loadFrom(const Protobuf::Int32 &left, const Protobuf::Int32 &right, const Protobuf::Int32 &leftRaw,
+                  const Protobuf::Int32 &rightRaw) {
+        m_left = left.value;
+        m_right = right.value;
+        m_leftRaw = leftRaw.value;
+        m_rightRaw = rightRaw.value;
+    }
 
   private:
     struct VolumeFlags {

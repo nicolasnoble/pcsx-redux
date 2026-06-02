@@ -69,21 +69,29 @@ class AdpcmDecoder {
     void setCurr(uint8_t *p) { m_curr = p; }
     void setLoop(uint8_t *p) { m_loop = p; }
 
-    // IIR decode-history accessors (used only by savestate serialization; the
-    // history is otherwise private to decodeBlock()).
-    int32_t history1() const { return m_s1; }
-    int32_t history2() const { return m_s2; }
-    void setHistory(int32_t s1, int32_t s2) {
-        m_s1 = s1;
-        m_s2 = s2;
-    }
+    // Savestate bridge (freeze.cc only). Encode/decode this decoder's runtime
+    // state - the two-sample IIR history and the three sound-RAM cursors - into
+    // the per-channel savestate fields. The fields are passed in rather than the
+    // whole channel message because adpcm.h cannot include types.h (it is
+    // included by it). `ramBase` is spuRamBase; each cursor is stored as a byte
+    // offset, with -1 standing in for a null pointer. The kStopped sentinel is
+    // an all-ones (non-null) pointer, so it round-trips as raw offset arithmetic.
+    void saveTo(Protobuf::Int32 &history1, Protobuf::Int32 &history2, Protobuf::Int32 &startOffset,
+                Protobuf::Int32 &currOffset, Protobuf::Int32 &loopOffset, uint8_t *ramBase) const;
+    void loadFrom(const Protobuf::Int32 &history1, const Protobuf::Int32 &history2,
+                  const Protobuf::Int32 &startOffset, const Protobuf::Int32 &currOffset,
+                  const Protobuf::Int32 &loopOffset, uint8_t *ramBase);
+
+    struct DecodeResult {
+        uint8_t *blockEnd;  // one past the 16-byte block just decoded
+        int flags;          // the block's flag byte (loop/repeat/end bits)
+    };
 
     // Decode one 16-byte ADPCM block beginning at `block` into the first 28
-    // entries of `sb` (the per-voice sample buffer). Advances the IIR history,
-    // sets `blockEnd` to one past the block (16 bytes on), and returns the
-    // block's flag byte (loop/repeat/end bits) for the caller's IRQ check and
-    // loop handling.
-    int decodeBlock(uint8_t *block, Protobuf::Int32 *sb, uint8_t *&blockEnd);
+    // entries of `sb` (the per-voice sample buffer), advancing the IIR history.
+    // Returns the address just past the block and the block's flag byte, which
+    // the caller needs for its IRQ check and loop handling.
+    DecodeResult decodeBlock(uint8_t *block, Protobuf::Int32 *sb);
 
   private:
     // ADPCM IIR filter coefficient pairs, indexed by the block's predictor.

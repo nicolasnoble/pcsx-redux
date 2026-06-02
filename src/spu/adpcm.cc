@@ -18,7 +18,30 @@
 
 #include "spu/adpcm.h"
 
-int PCSX::SPU::AdpcmDecoder::decodeBlock(uint8_t *block, Protobuf::Int32 *sb, uint8_t *&blockEnd) {
+void PCSX::SPU::AdpcmDecoder::saveTo(Protobuf::Int32 &history1, Protobuf::Int32 &history2, Protobuf::Int32 &startOffset,
+                                    Protobuf::Int32 &currOffset, Protobuf::Int32 &loopOffset, uint8_t *ramBase) const {
+    history1.value = m_s1;
+    history2.value = m_s2;
+    auto storeOffset = [ramBase](uint8_t *ptr, Protobuf::Int32 &offset) { offset.value = ptr ? ptr - ramBase : -1; };
+    storeOffset(m_start, startOffset);
+    storeOffset(m_curr, currOffset);
+    storeOffset(m_loop, loopOffset);
+}
+
+void PCSX::SPU::AdpcmDecoder::loadFrom(const Protobuf::Int32 &history1, const Protobuf::Int32 &history2,
+                                      const Protobuf::Int32 &startOffset, const Protobuf::Int32 &currOffset,
+                                      const Protobuf::Int32 &loopOffset, uint8_t *ramBase) {
+    m_s1 = history1.value;
+    m_s2 = history2.value;
+    auto restore = [ramBase](const Protobuf::Int32 &offset) -> uint8_t * {
+        return offset.value == -1 ? nullptr : offset.value + ramBase;
+    };
+    m_start = restore(startOffset);
+    m_curr = restore(currOffset);
+    m_loop = restore(loopOffset);
+}
+
+PCSX::SPU::AdpcmDecoder::DecodeResult PCSX::SPU::AdpcmDecoder::decodeBlock(uint8_t *block, Protobuf::Int32 *sb) {
     int s_1 = m_s1;
     int s_2 = m_s2;
 
@@ -54,6 +77,5 @@ int PCSX::SPU::AdpcmDecoder::decodeBlock(uint8_t *block, Protobuf::Int32 *sb, ui
 
     m_s1 = s_1;
     m_s2 = s_2;
-    blockEnd = block;
-    return flags;
+    return {block, flags};
 }

@@ -300,9 +300,14 @@ void PCSX::SPU::impl::MainThread() {
 
                             // Decode the 16-byte ADPCM block at the cursor into the 28-sample buffer.
                             // The decoder owns the predictor/shift parse and the s_1/s_2 IIR history;
-                            // it advances start to one past the block and hands back the flag byte.
-                            flags = pChannel->adpcm.decodeBlock(
-                                start, pChannel->data.get<PCSX::SPU::Chan::SB>().value.data(), start);
+                            // it hands back the address just past the block and the flag byte. (The
+                            // scope keeps `decoded` from straddling the goto into GOON below.)
+                            {
+                                auto decoded = pChannel->adpcm.decodeBlock(
+                                    start, pChannel->data.get<PCSX::SPU::Chan::SB>().value.data());
+                                start = decoded.blockEnd;
+                                flags = decoded.flags;
+                            }
 
                             //////////////////////////////////////////// irq check
 

@@ -73,29 +73,20 @@ void PCSX::SPU::impl::save(SaveStates::SPU &spu) {
         data = s_chan[i].data;
         channel.get<SaveStates::ADSRInfo>() = s_chan[i].adsr.legacy();
         channel.get<SaveStates::ADSRInfoEx>() = s_chan[i].adsr.ex();
-        // The ADPCM decode cursor and IIR history live in the decoder now; mirror
-        // them back into the channel-data fields that hold their savestate form.
-        data.get<Chan::s_1>().value = s_chan[i].adpcm.history1();
-        data.get<Chan::s_2>().value = s_chan[i].adpcm.history2();
-        auto storePtr = [this](uint8_t *ptr, Protobuf::Int32 &val) { val.value = ptr ? ptr - spuRamBase : -1; };
-        storePtr(s_chan[i].adpcm.start(), data.get<Chan::StartPtr>());
-        storePtr(s_chan[i].adpcm.curr(), data.get<Chan::CurrPtr>());
-        storePtr(s_chan[i].adpcm.loop(), data.get<Chan::LoopPtr>());
-        // The per-voice volume lives in the VoiceVolume now; mirror it back into
-        // the channel-data fields that hold its savestate form.
-        data.get<Chan::LeftVolume>().value = s_chan[i].volume.left();
-        data.get<Chan::RightVolume>().value = s_chan[i].volume.right();
-        data.get<Chan::LeftVolRaw>().value = s_chan[i].volume.leftRaw();
-        data.get<Chan::RightVolRaw>().value = s_chan[i].volume.rightRaw();
+        // Each per-voice helper owns the conversion between its runtime state and
+        // its savestate-mirror fields; we just hand it the fields.
+        s_chan[i].adpcm.saveTo(data.get<Chan::s_1>(), data.get<Chan::s_2>(), data.get<Chan::StartPtr>(),
+                               data.get<Chan::CurrPtr>(), data.get<Chan::LoopPtr>(), spuRamBase);
+        s_chan[i].volume.saveTo(data.get<Chan::LeftVolume>(), data.get<Chan::RightVolume>(),
+                                data.get<Chan::LeftVolRaw>(), data.get<Chan::RightVolRaw>());
     }
 
     spu.get<SaveStates::SPUAddr>().value = spuAddr;
     spu.get<SaveStates::SPUCtrl>().value = spuCtrl;
     spu.get<SaveStates::SPUStat>().value = spuStat;
 
-    spu.get<SaveStates::SPUNoiseClock>().value = m_noise.clock();
-    spu.get<SaveStates::SPUNoiseCount>().value = m_noise.count();
-    spu.get<SaveStates::SPUNoiseVal>().value = m_noise.value();
+    m_noise.saveTo(spu.get<SaveStates::SPUNoiseClock>(), spu.get<SaveStates::SPUNoiseCount>(),
+                   spu.get<SaveStates::SPUNoiseVal>());
 
     SetupThread();
 }
@@ -131,17 +122,10 @@ void PCSX::SPU::impl::load(const SaveStates::SPU &spu) {
         s_chan[i].data = data;
         s_chan[i].adsr.legacy() = channel.get<SaveStates::ADSRInfo>();
         s_chan[i].adsr.ex() = channel.get<SaveStates::ADSRInfoEx>();
-        s_chan[i].adpcm.setHistory(data.get<Chan::s_1>().value, data.get<Chan::s_2>().value);
-        auto restorePtr = [this](const Protobuf::Int32 &val) -> uint8_t * {
-            return val.value == -1 ? nullptr : val.value + spuRamBase;
-        };
-        s_chan[i].adpcm.setStart(restorePtr(data.get<Chan::StartPtr>()));
-        s_chan[i].adpcm.setCurr(restorePtr(data.get<Chan::CurrPtr>()));
-        s_chan[i].adpcm.setLoop(restorePtr(data.get<Chan::LoopPtr>()));
-        s_chan[i].volume.setLeftComputed(data.get<Chan::LeftVolume>().value);
-        s_chan[i].volume.setRightComputed(data.get<Chan::RightVolume>().value);
-        s_chan[i].volume.setLeftRaw(data.get<Chan::LeftVolRaw>().value);
-        s_chan[i].volume.setRightRaw(data.get<Chan::RightVolRaw>().value);
+        s_chan[i].adpcm.loadFrom(data.get<Chan::s_1>(), data.get<Chan::s_2>(), data.get<Chan::StartPtr>(),
+                                 data.get<Chan::CurrPtr>(), data.get<Chan::LoopPtr>(), spuRamBase);
+        s_chan[i].volume.loadFrom(data.get<Chan::LeftVolume>(), data.get<Chan::RightVolume>(),
+                                  data.get<Chan::LeftVolRaw>(), data.get<Chan::RightVolRaw>());
         s_chan[i].data.get<Chan::Mute>().value = false;
         s_chan[i].data.get<Chan::Solo>().value = false;
         s_chan[i].data.get<Chan::IrqDone>().value = 0;
@@ -151,9 +135,8 @@ void PCSX::SPU::impl::load(const SaveStates::SPU &spu) {
     spuCtrl = spu.get<SaveStates::SPUCtrl>().value;
     spuStat = spu.get<SaveStates::SPUStat>().value;
 
-    m_noise.setClock(spu.get<SaveStates::SPUNoiseClock>().value);
-    m_noise.setCount(spu.get<SaveStates::SPUNoiseCount>().value);
-    m_noise.setValue(spu.get<SaveStates::SPUNoiseVal>().value);
+    m_noise.loadFrom(spu.get<SaveStates::SPUNoiseClock>(), spu.get<SaveStates::SPUNoiseCount>(),
+                     spu.get<SaveStates::SPUNoiseVal>());
 
     // repair some globals
     for (unsigned i = 0; i <= 62; i += 2) writeRegister(H_Reverb + i, regArea[(H_Reverb + i - 0xc00) >> 1]);

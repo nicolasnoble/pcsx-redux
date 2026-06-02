@@ -54,13 +54,19 @@ class NoiseGenerator {
     // before, so the linear resampler sees it.
     int getVal(Protobuf::Int32 *sb, int interpolationType) const;
 
-    // Savestate bridge (freeze.cc only): the LFSR state mirrors into the SPU
-    // savestate message as three scalar fields, unchanged by this extraction.
-    uint32_t clock() const { return m_clock; }
-    uint32_t count() const { return m_count; }
-    uint32_t value() const { return m_val; }
-    void setCount(uint32_t count) { m_count = count; }
-    void setValue(uint32_t val) { m_val = val; }
+    // Savestate bridge (freeze.cc only): mirror the LFSR state to/from the three
+    // SPU-level savestate fields. The fields are passed in to keep the
+    // conversion next to the state it serializes.
+    void saveTo(Protobuf::UInt32 &clock, Protobuf::UInt32 &count, Protobuf::UInt32 &value) const {
+        clock.value = m_clock;
+        count.value = m_count;
+        value.value = m_val;
+    }
+    void loadFrom(const Protobuf::UInt32 &clock, const Protobuf::UInt32 &count, const Protobuf::UInt32 &value) {
+        m_clock = clock.value;
+        m_count = count.value;
+        m_val = value.value;
+    }
 
   private:
     uint32_t m_clock = 0;  // shift+step selector from SPUCTRL
