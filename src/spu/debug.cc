@@ -309,6 +309,17 @@ void DrawTableFrequency(SPU_CHANNELS_INFO channels, const float rowHeight) {
     }
 }
 
+// Show a sound-RAM pointer as a byte offset, or a dash when it points outside
+// the 512 KiB SPU RAM - i.e. it is null or the AdpcmDecoder stop sentinel.
+// Subtracting an out-of-range pointer would print a meaningless huge number.
+static void drawRamOffset(const uint8_t* ptr, const uint8_t* spuRamBase) {
+    if (ptr >= spuRamBase && ptr < spuRamBase + 512 * 1024) {
+        ImGui::Text("%i", static_cast<int>(ptr - spuRamBase));
+    } else {
+        ImGui::TextUnformatted("-");
+    }
+}
+
 void DrawTablePosition(SPU_CHANNELS_INFO channels, const float rowHeight, const uint8_t* spuRamBase) {
     if (ImGui::BeginTable("TablePosition", 3, Grid::FlagsTableInner)) {
         ImGui::TableSetupColumn("Start", Grid::FlagsColumn, Grid::WidthPositionStart);
@@ -321,11 +332,11 @@ void DrawTablePosition(SPU_CHANNELS_INFO channels, const float rowHeight, const 
             ImGui::AlignTextToFramePadding();
             // @formatter:off
             ImGui::TableNextColumn();
-            ImGui::Text("%i", static_cast<int>(chan.adpcm.start() - spuRamBase));
+            drawRamOffset(chan.adpcm.start(), spuRamBase);
             ImGui::TableNextColumn();
-            ImGui::Text("%i", static_cast<int>(chan.adpcm.curr() - spuRamBase));
+            drawRamOffset(chan.adpcm.curr(), spuRamBase);
             ImGui::TableNextColumn();
-            ImGui::Text("%i", static_cast<int>(chan.adpcm.loop() - spuRamBase));
+            drawRamOffset(chan.adpcm.loop(), spuRamBase);
             // @formatter:on
         }
         ImGui::EndTable();
@@ -500,7 +511,11 @@ void DrawSectionSpu(const uint16_t spuCtrl, const uint16_t spuStat, const uint32
             ImGui::TableHeadersRow();
             // @formatter:off
             ImGui::TableNextColumn();
-            ImGui::Text("%08X", static_cast<uint32_t>(pSpuIrq ? -1 : pSpuIrq - spuRamBase));
+            if (pSpuIrq) {
+                ImGui::Text("%08X", static_cast<uint32_t>(pSpuIrq - spuRamBase));
+            } else {
+                ImGui::TextUnformatted("-");
+            }
             ImGui::TableNextColumn();
             ImGui::Text("%04X", spuCtrl);
             ImGui::TableNextColumn();
