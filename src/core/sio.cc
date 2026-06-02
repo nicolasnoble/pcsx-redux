@@ -27,7 +27,50 @@
 
 #include "core/memorycard.h"
 #include "core/pad.h"
+#include "core/system.h"
+#include "pocketstation/pocketstation.h"
 #include "support/sjis_conv.h"
+
+PCSX::SIO::SIO() : m_listener(g_system->m_eventBus) {
+    reset();
+    // Advance any docked PocketStation once per emulated frame. VSync is signalled from the
+    // counter code while m_regs.cycle is current, so the cycle delta we read at fire time is
+    // accurate. Listener does nothing while no device is docked -> zero cost when off.
+    m_listener.listen<Events::GPU::VSync>([this](const auto &) { stepPocketstation(); });
+}
+
+// Event-driven ARM7 catch-up. Reads the R3000A cycle delta since the last frame, scales it by the
+// ARM/PSX clock ratio, and runs each docked PocketStation that far. See sio.h for why this is here
+// and not in the per-instruction loop.
+void PCSX::SIO::stepPocketstation() {
+    PocketStation::PocketStation *devs[c_cardCount];
+    bool any = false;
+    for (unsigned i = 0; i < c_cardCount; i++) {
+        devs[i] = m_memoryCard[i].getPocketstation();
+        if (devs[i]) any = true;
+    }
+    if (!any) {
+        m_psxCycleValid = false;  // nothing docked; re-anchor when a device appears.
+        return;
+    }
+
+    const uint64_t now = g_emulator->m_cpu->m_regs.cycle;
+    if (!m_psxCycleValid || now < m_lastPsxCycle) {
+        // First frame with a device docked, or the counter went backwards (reset/savestate load):
+        // re-anchor without running a bogus delta.
+        m_lastPsxCycle = now;
+        m_psxCycleValid = true;
+        return;
+    }
+    const uint64_t psxDelta = now - m_lastPsxCycle;
+    m_lastPsxCycle = now;
+    const uint64_t armCycles = psxDelta * kArmClockHz / kPsxClockHz;
+    if (armCycles == 0) return;
+
+    for (unsigned i = 0; i < c_cardCount; i++) {
+        if (devs[i]) devs[i]->runCycles(armCycles);
+    }
+}
 #include "support/strings-helpers.h"
 
 // clk cycle byte
@@ -102,6 +145,7 @@ void PCSX::SIO::reset() {
     m_memoryCard[0].deselect();
     m_memoryCard[1].deselect();
     m_currentDevice = DeviceType::None;
+    m_psxCycleValid = false;  // re-anchor the PocketStation catch-up on the next VSync.
 }
 
 void PCSX::SIO::writePad(uint8_t value) {

@@ -57,6 +57,7 @@
 #include "gui/widgets/patches.h"
 #include "gui/widgets/msan_viewer.h"
 #include "gui/widgets/pio-cart.h"
+#include "gui/widgets/pocketstation.h"
 #include "gui/widgets/registers.h"
 #include "gui/widgets/shader-editor.h"
 #include "gui/widgets/sio1.h"
@@ -119,6 +120,7 @@ class GUI final : public UI {
     typedef Setting<bool, TYPESTRING("ShowGPULogger")> ShowGPULogger;
     typedef Setting<bool, TYPESTRING("ShowRAMViewer")> ShowRAMViewer;
     typedef Setting<bool, TYPESTRING("ShowHeapViewer")> ShowHeapViewer;
+    typedef Setting<bool, TYPESTRING("ShowPocketStationLCD")> ShowPocketStationLCD;
     typedef Setting<bool, TYPESTRING("ShowHWRegs")> ShowHWRegs;
     typedef Setting<bool, TYPESTRING("ShowMsanViewer")> ShowMsanViewer;
     typedef Setting<int, TYPESTRING("WindowPosX"), 0> WindowPosX;
@@ -165,7 +167,8 @@ class GUI final : public UI {
              ShowCLUTVRAMViewer, ShowVRAMViewer1, ShowVRAMViewer2, ShowVRAMViewer3, ShowVRAMViewer4, ShowMemoryObserver,
              ShowTypedDebugger, ShowPatches, ShowMemcardManager, ShowRegisters, ShowAssembly, ShowDisassembly,
              ShowBreakpoints, ShowNamedSaveStates, ShowEvents, ShowHandlers, ShowKernelLog, ShowCallstacks, ShowSIO1,
-             ShowIsoBrowser, ShowGPULogger, ShowRAMViewer, ShowHeapViewer, ShowHWRegs, MainFontSize, MonoFontSize, GUITheme,
+             ShowIsoBrowser, ShowGPULogger, ShowRAMViewer, ShowHeapViewer, ShowPocketStationLCD, ShowHWRegs,
+             MainFontSize, MonoFontSize, GUITheme,
              AllowMouseCaptureToggle,
              EnableRawMouseMotion, WidescreenRatio, ShowPIOCartConfig, ShowMemoryEditor1, ShowMemoryEditor2,
              ShowMemoryEditor3, ShowMemoryEditor4, ShowMemoryEditor5, ShowMemoryEditor6, ShowMemoryEditor7,
@@ -434,6 +437,7 @@ class GUI final : public UI {
 
     Widgets::GPULogger m_gpuLogger{settings.get<ShowGPULogger>().value};
     Widgets::HeapViewer m_heapViewer{settings.get<ShowHeapViewer>().value};
+    Widgets::PocketStationLCD m_pocketStationLCD{settings.get<ShowPocketStationLCD>().value};
     Widgets::HWRegs m_hwRegs{settings.get<ShowHWRegs>().value};
     Widgets::MsanViewer m_msanViewer{settings.get<ShowMsanViewer>().value};
 

@@ -20,7 +20,56 @@
 #include "core/memorycard.h"
 
 #include "core/sio.h"
+#include "pocketstation/pocketstation.h"
 #include "support/sjis_conv.h"
+
+// Constructors + destructor are out-of-line so std::unique_ptr<PocketStation::PocketStation> sees
+// the complete type here (otherwise an inline ctor/dtor would need it at every include site).
+PCSX::MemoryCard::MemoryCard() : m_sio(nullptr) { memset(m_mcdData, 0, c_cardSize); }
+PCSX::MemoryCard::MemoryCard(SIO *parent) : m_sio(parent) { memset(m_mcdData, 0, c_cardSize); }
+PCSX::MemoryCard::~MemoryCard() = default;
+
+void PCSX::MemoryCard::enablePocketstation() {
+    m_pocketstationEnabled = true;
+    createPocketstation();
+}
+
+void PCSX::MemoryCard::disablePocketstation() {
+    m_pocketstationEnabled = false;
+    m_pocketstation.reset();
+}
+
+void PCSX::MemoryCard::createPocketstation() {
+    m_pocketstation.reset();
+
+    // The ARM7 needs a 16 KiB PocketStation BIOS dump, configured via SettingPocketstationBios.
+    // If it is unset or unreadable, leave the device absent rather than crashing.
+    const PCSX::u8string kernelPath = PCSX::g_emulator->settings.get<PCSX::Emulator::SettingPocketstationBios>().string();
+    if (kernelPath.empty()) return;
+    const char *fname = reinterpret_cast<const char *>(kernelPath.c_str());
+
+    FILE *f = fopen(fname, "rb");
+    if (f == nullptr) {
+        PCSX::g_system->printf(_("PocketStation: kernel image %s could not be opened; device not started.\n"), fname);
+        return;
+    }
+    uint8_t kernel[16 * 1024];
+    const size_t got = fread(kernel, 1, sizeof(kernel), f);
+    fclose(f);
+    if (got != sizeof(kernel)) {
+        PCSX::g_system->printf(
+            _("PocketStation: kernel image %s is %zu bytes, expected 16384; device not started.\n"), fname, got);
+        return;
+    }
+
+    auto dev = std::make_unique<PocketStation::PocketStation>();
+    dev->setKernel(kernel, sizeof(kernel));
+    // TODO(wiring-2): the card image is snapshotted into the device flash once, here. Writes on
+    // either side do not yet alias -- live two-way flash<->m_mcdData sync is a follow-up chunk.
+    dev->setFlash(reinterpret_cast<const uint8_t *>(m_mcdData), c_cardSize);
+    dev->reset();
+    m_pocketstation = std::move(dev);
+}
 
 void PCSX::MemoryCard::acknowledge() { m_sio->acknowledge(); }
 

@@ -27,6 +27,7 @@
 #include "core/psxmem.h"
 #include "core/r3000a.h"
 #include "core/sstate.h"
+#include "support/eventbus.h"
 
 namespace PCSX {
 
@@ -77,7 +78,8 @@ class SIO {
     static constexpr size_t c_cardSize = c_blockSize * 16;    // 16 blocks per frame(directory+15 saves)
     static constexpr size_t c_cardCount = 2;
 
-    SIO() { reset(); }
+    // Defined in sio.cc: wires the per-frame PocketStation catch-up to the VSync event.
+    SIO();
 
     void write8(uint8_t value);
     void writeStatus16(uint16_t value);
@@ -124,6 +126,11 @@ class SIO {
     }
 
     void togglePocketstationMode();
+    // Docked PocketStation device for a card slot (0-based), or nullptr if none. Used by the GUI
+    // LCD widget to read out the framebuffer.
+    PocketStation::PocketStation *getPocketstation(unsigned slot) {
+        return slot < c_cardCount ? m_memoryCard[slot].getPocketstation() : nullptr;
+    }
     static constexpr int otherMcd(const McdBlock &block) { return otherMcd(block.mcd); }
 
   private:
@@ -260,6 +267,21 @@ class SIO {
     MemoryCard m_memoryCard[c_cardCount] = {this, this};
 
     FIFO<uint8_t, 8> m_rxFIFO;
+
+    // ---- PocketStation event-driven catch-up ------------------------------------------------
+    // A docked PocketStation runs its ARM7 off the shared R3000A cycle counter. Once per emulated
+    // frame (VSync), we read the cycle delta, scale it by the ARM/PSX clock ratio, and advance
+    // each docked device by that many ARM cycles. This stays OUT of the R3000A per-instruction
+    // hot path; when no device is docked the listener does nothing, so cost is zero when off.
+    void stepPocketstation();
+    EventBus::Listener m_listener;
+    uint64_t m_lastPsxCycle = 0;   // R3000A cycle at the previous catch-up.
+    bool m_psxCycleValid = false;  // false until the first VSync after a reset re-syncs the anchor.
+    // ARM7 default clock and the R3000A clock; the PS clock is software-configurable via clkMode,
+    // TODO(de-fake): read the live divisor instead of assuming the default ratio.
+    static constexpr uint64_t kArmClockHz = 3997696;
+    static constexpr uint64_t kPsxClockHz = 33868800;
+    // -----------------------------------------------------------------------------------------
 };
 
 }  // namespace PCSX

@@ -21,15 +21,25 @@
 
 #include <stdint.h>
 
+#include <memory>
+
 #include "core/sstate.h"
 
 namespace PCSX {
 class SIO;
 
+namespace PocketStation {
+class PocketStation;
+}
+
 class MemoryCard {
   public:
-    MemoryCard() : m_sio(nullptr) { memset(m_mcdData, 0, c_cardSize); }
-    MemoryCard(SIO *parent) : m_sio(parent) { memset(m_mcdData, 0, c_cardSize); }
+    // Constructors and destructor are out-of-line (defined in memorycard.cc): the unique_ptr to
+    // the forward-declared PocketStation device needs the complete type to instantiate its
+    // destructor, which any inline ctor/dtor would otherwise force here.
+    MemoryCard();
+    MemoryCard(SIO *parent);
+    ~MemoryCard();
 
     // Hardware events
     void acknowledge();
@@ -50,8 +60,12 @@ class MemoryCard {
     }
     void createMcd(PCSX::u8string mcd);
     bool dataChanged() { return !m_savedToDisk; }
-    void disablePocketstation() { m_pocketstationEnabled = false; };
-    void enablePocketstation() { m_pocketstationEnabled = true; };
+    // Defined in memorycard.cc: enable creates+boots the device (kernel from the
+    // SettingPocketstationBios path, flash from this slot's m_mcdData); disable tears it down.
+    void disablePocketstation();
+    void enablePocketstation();
+    // Returns the docked PocketStation device, or nullptr if none (disabled, or no kernel image).
+    PocketStation::PocketStation *getPocketstation() { return m_pocketstation.get(); }
     char *getMcdData() { return m_mcdData; }
     void loadMcd(PCSX::u8string mcd);
     void saveMcd(PCSX::u8string mcd, const char *data, uint32_t adr, size_t size);
@@ -127,6 +141,12 @@ class MemoryCard {
     // PocketStation Specific
     bool m_pocketstationEnabled = false;
     uint16_t m_directoryIndex = 0;
+
+    // Owned ARM7 device, present only while pocketstation mode is enabled AND a valid kernel
+    // image is configured. Created/destroyed by enable/disablePocketstation().
+    std::unique_ptr<PocketStation::PocketStation> m_pocketstation;
+    // (Re)create + boot the device from the kernel-path setting and this slot's card image.
+    void createPocketstation();
 
     SIO *m_sio;
 };
