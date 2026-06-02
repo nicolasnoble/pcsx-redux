@@ -39,6 +39,7 @@ void PocketStation::reset() {
     m_lcd.reset();
     m_frameAccum = 0;
     m_poop = 1;
+    m_buttons = 0;  // bus.reset() clears irqFlags, so the reflected button levels start clear too.
 }
 
 void PocketStation::runCycles(uint64_t armCycles) {
@@ -60,20 +61,36 @@ void PocketStation::runCycles(uint64_t armCycles) {
 void PocketStation::frameScaffolding() {
     if (++m_poop & 1) m_bus.requestInterrupt(7);  // fake Timer0 ~30Hz.
     m_bus.requestInterrupt(13);                   // fake Timer2 FIQ ~60Hz.
-
-    // Reflect the latched button mask into INT bits 0..4 as live levels: held -> request,
-    // released -> clear. read32Slow(INT_INPUT) returns irqFlags, so this drives INT_INPUT.
-    for (int key = 0; key < 5; key++) {
-        if (m_buttons & (1u << key)) {
-            m_bus.requestInterrupt(key);
-        } else {
-            m_bus.irqFlags &= ~(1u << key);
-        }
-    }
+    // NOTE: button -> INT_INPUT reflection is NOT done here anymore. It lives in setButtons()
+    // (edge-driven) so it works while the core is halted (CLK_STOP sleep) -- frameScaffolding is
+    // skipped during sleep, so reflecting here could never wake a sleeping device on a Fire press.
 }
 // -----------------------------------------------------------------------------------------
 
-void PocketStation::setButtons(uint32_t mask) { m_buttons = mask; }
+void PocketStation::setButtons(uint32_t mask) {
+    // Reflect the 5 buttons (bits 0..4 = Fire/Right/Left/Down/Up) into INT_INPUT as raw signal
+    // LEVELS, edge-detected against the previously latched mask. A press (0->1) raises the level
+    // AND latches the IRQ via requestInterrupt() (the latch only takes if the kernel has that bit
+    // unmasked); a release (1->0) drops the level only. INT_ACK preserves these level bits (like
+    // the dock/RTC levels), so the kernel acking a Fire IRQ does not falsely "release" a held key.
+    //
+    // Doing this HERE -- not in frameScaffolding(), which is skipped while halted -- is what lets a
+    // Fire press wake a sleeping (CLK_STOP) device: the press latches IRQ-0, satisfying CPU::step()'s
+    // wake condition (irqLatch & irqMask). psx-spx: buttons are polled directly from INT_INPUT,
+    // except in Sleep mode where the Fire-button IRQ wakes the device. Edge-detecting against
+    // m_buttons keeps a per-frame setButtons(sameMask) a no-op, so a held key can't re-latch / storm.
+    const uint32_t changed = (mask ^ m_buttons) & 0x1F;
+    for (int key = 0; key < 5; key++) {
+        const uint32_t bit = 1u << key;
+        if (!(changed & bit)) continue;
+        if (mask & bit) {
+            m_bus.requestInterrupt(key);  // press edge: raise level + latch (if unmasked).
+        } else {
+            m_bus.irqFlags &= ~bit;       // release edge: drop the level only.
+        }
+    }
+    m_buttons = mask;
+}
 
 const uint8_t* PocketStation::vram() const { return m_lcd.vram.data(); }
 

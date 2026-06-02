@@ -243,14 +243,17 @@ void Bus::write32Slow(u32 addr, u32 val) {
 
             case IO::INT_ACK:  // Acknowledge interrupts (clear the latched REQUESTS only).
                 // INT_INPUT holds raw signal LEVELS; ack must not disturb the bits that are
-                // hardware-maintained oscillating/sticky levels, only their latches:
-                //   bit 11 = Docked level (set while docked), and
-                //   bit 9  = RTC square wave (driven by tickRtc off the cycle clock).
+                // hardware-maintained physical/oscillating levels, only their latches:
+                //   bits 0..4 = button levels (Fire/Right/Left/Down/Up -- pressed = high),
+                //   bit 9     = RTC square wave (driven by tickRtc off the cycle clock), and
+                //   bit 11    = Docked level (set while docked).
                 // Clearing the bit-9 level here desyncs the square wave: tickRtc would then see
                 // bit 9 == 0 at the next half-period and emit a fresh RISING edge (an extra IRQ +
-                // calendar tick), so the RTC effectively runs at 2x. Preserve both levels; only the
-                // latch (irqLatch) is acked, exactly matching the edge-triggered hardware.
-                irqFlags &= (~val) | (1 << 11) | (1 << 9);
+                // calendar tick), so the RTC effectively runs at 2x. Clearing a button level on ack
+                // would falsely "release" a still-held key (e.g. when the kernel acks the Fire IRQ
+                // that woke it from sleep). Preserve all these levels; only the latch (irqLatch) is
+                // acked, exactly matching the edge-triggered hardware.
+                irqFlags &= (~val) | 0x1F | (1 << 9) | (1 << 11);
                 irqLatch &= ~val;
                 if (comTrace && (val & 0x40)) printf("[PSK] PC=%08X WR INT_ACK = %08X (ack COM-6)\n", curPC, val);
                 break;
