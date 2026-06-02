@@ -16,20 +16,12 @@
  *                                                                         *
  ***************************************************************************/
 
-//*************************************************************************//
-// History of changes:
-//
-// 2002/05/15 - Pete
-// - generic cleanup for the Peops release
-//
-//*************************************************************************//
-
 #pragma once
 
 #include <stdint.h>
 
 #include "support/protobuf.h"
-#include "support/settings.h"
+#include "support/typestring-wrapper.h"  // for the TYPESTRING() macro used below
 
 namespace PCSX {
 
@@ -120,6 +112,9 @@ class AdsrEnvelope {
     int Decay();
     int Sustain();
     int Release(bool &channelOn);
+
+    // Store the freshly computed envelope state and return the 0..0x400 factor.
+    int commit(int32_t envelopeVol, int32_t envelopeVolFraction);
 
     ADSRInfo m_adsr;     // active ADSR settings (legacy/debug; still serialized)
     ADSRInfoEx m_adsrx;  // next/live ADSR envelope state
