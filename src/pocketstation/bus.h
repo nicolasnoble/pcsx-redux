@@ -1,4 +1,5 @@
 #pragma once
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <vector>
@@ -69,13 +70,29 @@ public:
     std::array<u8, 2 * KB> wram;
     std::vector<u8> bios;
 
+    // No I/O in the constructor: just allocate the kernel/flash backing buffers so the
+    // pointers the CPU page tables hold are stable. The actual contents are injected
+    // later via setKernel()/setFlash(), before reset(). This is what makes the module
+    // usable in-tree (the donor loaded kernel.bin/memcard2.mcd from cwd here).
     Bus(LCD& lcd) : lcd(lcd) {
-        bios = Helpers::loadROM("kernel.bin");
-        flash.data = Helpers::loadROM("memcard2.mcd");
+        bios.resize(16 * KB, 0);
+        flash.data.resize(128 * KB, 0);
+    }
 
-        if (bios.size() != 16 * KB || flash.data.size() != 128 * KB) {
-            Helpers::panic("BIOS or Memcard not gud");
+    // Inject the 16 KiB PocketStation kernel. Must be called before reset().
+    void setKernel(const u8* data, usize len) {
+        if (len != 16 * KB) {
+            Helpers::panic("setKernel: expected 16 KiB, got %zu bytes", len);
         }
+        std::copy(data, data + len, bios.begin());
+    }
+
+    // Inject the 128 KiB flash image (the memory-card image). Must be called before reset().
+    void setFlash(const u8* data, usize len) {
+        if (len != 128 * KB) {
+            Helpers::panic("setFlash: expected 128 KiB, got %zu bytes", len);
+        }
+        std::copy(data, data + len, flash.data.begin());
     }
 
     std::array<u8, 128>& getVRAM() {
