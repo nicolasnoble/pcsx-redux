@@ -338,14 +338,13 @@ void DrawTableVolume(SPU_CHANNELS_INFO channels, const float rowHeight) {
         ImGui::TableSetupColumn("R", Grid::FlagsColumn, Grid::WidthVolumeR);
         ImGui::TableHeadersRow();
         for (auto i = 0u; i < SPU_CHANNELS_SIZE; ++i) {
-            const auto& data = channels[i].data;
             ImGui::TableNextRow(Grid::FlagsRow, rowHeight);
             ImGui::AlignTextToFramePadding();
             // @formatter:off
             ImGui::TableNextColumn();
-            ImGui::Text("%i", data.get<Chan::LeftVolume>().value);
+            ImGui::Text("%i", channels[i].volume.left());
             ImGui::TableNextColumn();
-            ImGui::Text("%i", data.get<Chan::RightVolume>().value);
+            ImGui::Text("%i", channels[i].volume.right());
             // @formatter:on
         }
         ImGui::EndTable();

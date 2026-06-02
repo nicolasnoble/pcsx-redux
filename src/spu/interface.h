@@ -134,19 +134,6 @@ class impl final : public SPUInterface {
         };
     };
 
-    struct VolumeFlags {
-        enum : uint16_t {
-            VolumeMode = 1 << 15,      // 15 1=Sweep Mode
-            SweepMode = 1 << 14,       // 14 0=Linear, 1=Exponential
-            SweepDirection = 1 << 13,  // 13 0=Increase, 1=Decrease
-            SweepPhase = 1 << 12,      // 12 0=Positive, 1=Negative
-            Unknown = 0xf80,           // 7-11 Not used? (should be zero)
-            SweepShiftMask = 0x7c,     // 6-2 0..1Fh = Fast..Slow
-            SweepStepMask = 0x3        // 1-0 0..3 = "+7,+6,+5,+4" or "-8,-7,-6,-5") (inc/dec)
-
-        };
-    };
-
     // sound buffer sizes
     // 400 ms complete sound buffer
     static const size_t SOUNDSIZE = 70560;
@@ -172,8 +159,6 @@ class impl final : public SPUInterface {
     void SoundOff(int start, int end, uint16_t val);
     void FModOn(int start, int end, uint16_t val);
     void NoiseOn(int start, int end, uint16_t val);
-    void SetVolumeL(uint8_t ch, int16_t vol);
-    void SetVolumeR(uint8_t ch, int16_t vol);
     void SetPitch(int ch, uint16_t val);
     void ReverbOn(int start, int end, uint16_t val);
 

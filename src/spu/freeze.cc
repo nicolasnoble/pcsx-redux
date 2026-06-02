@@ -81,6 +81,12 @@ void PCSX::SPU::impl::save(SaveStates::SPU &spu) {
         storePtr(s_chan[i].adpcm.start(), data.get<Chan::StartPtr>());
         storePtr(s_chan[i].adpcm.curr(), data.get<Chan::CurrPtr>());
         storePtr(s_chan[i].adpcm.loop(), data.get<Chan::LoopPtr>());
+        // The per-voice volume lives in the VoiceVolume now; mirror it back into
+        // the channel-data fields that hold its savestate form.
+        data.get<Chan::LeftVolume>().value = s_chan[i].volume.left();
+        data.get<Chan::RightVolume>().value = s_chan[i].volume.right();
+        data.get<Chan::LeftVolRaw>().value = s_chan[i].volume.leftRaw();
+        data.get<Chan::RightVolRaw>().value = s_chan[i].volume.rightRaw();
     }
 
     spu.get<SaveStates::SPUAddr>().value = spuAddr;
@@ -132,6 +138,10 @@ void PCSX::SPU::impl::load(const SaveStates::SPU &spu) {
         s_chan[i].adpcm.setStart(restorePtr(data.get<Chan::StartPtr>()));
         s_chan[i].adpcm.setCurr(restorePtr(data.get<Chan::CurrPtr>()));
         s_chan[i].adpcm.setLoop(restorePtr(data.get<Chan::LoopPtr>()));
+        s_chan[i].volume.setLeftComputed(data.get<Chan::LeftVolume>().value);
+        s_chan[i].volume.setRightComputed(data.get<Chan::RightVolume>().value);
+        s_chan[i].volume.setLeftRaw(data.get<Chan::LeftVolRaw>().value);
+        s_chan[i].volume.setRightRaw(data.get<Chan::RightVolRaw>().value);
         s_chan[i].data.get<Chan::Mute>().value = false;
         s_chan[i].data.get<Chan::Solo>().value = false;
         s_chan[i].data.get<Chan::IrqDone>().value = 0;

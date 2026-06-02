@@ -134,10 +134,8 @@ void PCSX::SPU::impl::StoreREVERB(SPUCHAN *pChannel, int ns) {
         return;
     else if (settings.get<Reverb>() == 2)  // -------------------------------- // Neil's reverb
     {
-        const int iRxl =
-            (pChannel->data.get<Chan::sval>().value * pChannel->data.get<Chan::LeftVolume>().value) / 0x4000;
-        const int iRxr =
-            (pChannel->data.get<Chan::sval>().value * pChannel->data.get<Chan::RightVolume>().value) / 0x4000;
+        const int iRxl = (pChannel->data.get<Chan::sval>().value * pChannel->volume.left()) / 0x4000;
+        const int iRxr = (pChannel->data.get<Chan::sval>().value * pChannel->volume.right()) / 0x4000;
 
         ns <<= 1;
 
@@ -150,8 +148,8 @@ void PCSX::SPU::impl::StoreREVERB(SPUCHAN *pChannel, int ns) {
 
         // we use the half channel volume (/0x8000) for the first reverb effects, quarter for next and so on
 
-        int iRxl = (pChannel->data.get<Chan::sval>().value * pChannel->data.get<Chan::LeftVolume>().value) / 0x8000;
-        int iRxr = (pChannel->data.get<Chan::sval>().value * pChannel->data.get<Chan::RightVolume>().value) / 0x8000;
+        int iRxl = (pChannel->data.get<Chan::sval>().value * pChannel->volume.left()) / 0x8000;
+        int iRxr = (pChannel->data.get<Chan::sval>().value * pChannel->volume.right()) / 0x8000;
 
         for (iRn = 1; iRn <= pChannel->data.get<Chan::RVBNum>().value;
              iRn++, iRr += pChannel->data.get<Chan::RVBRepeat>().value, iRxl /= 2, iRxr /= 2) {

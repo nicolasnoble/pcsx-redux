@@ -417,12 +417,10 @@ void PCSX::SPU::impl::MainThread() {
                             !pChannel->data.get<PCSX::SPU::Chan::Solo>().value)
                             pChannel->data.get<PCSX::SPU::Chan::sval>().value = 0;  // debug mute
                         else {
-                            SSumL[ns] += (pChannel->data.get<PCSX::SPU::Chan::sval>().value *
-                                          pChannel->data.get<PCSX::SPU::Chan::LeftVolume>().value) /
-                                         0x4000L;
-                            SSumR[ns] += (pChannel->data.get<PCSX::SPU::Chan::sval>().value *
-                                          pChannel->data.get<PCSX::SPU::Chan::RightVolume>().value) /
-                                         0x4000L;
+                            SSumL[ns] +=
+                                (pChannel->data.get<PCSX::SPU::Chan::sval>().value * pChannel->volume.left()) / 0x4000L;
+                            SSumR[ns] +=
+                                (pChannel->data.get<PCSX::SPU::Chan::sval>().value * pChannel->volume.right()) / 0x4000L;
                         }
 
                         //////////////////////////////////////////////
@@ -618,6 +616,7 @@ void PCSX::SPU::impl::wipeChannels() {
     for (unsigned i = 0; i < MAXCHAN; i++) {
         s_chan[i].adsr.reset();
         s_chan[i].adpcm.reset();
+        s_chan[i].volume.reset();
         s_chan[i].data.reset();
     }
     memset((void *)&rvb, 0, sizeof(REVERBInfo));

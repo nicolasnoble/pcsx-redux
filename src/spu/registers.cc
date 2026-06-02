@@ -79,11 +79,11 @@ void PCSX::SPU::impl::writeRegister(uint32_t reg, uint16_t val) {
         int ch = (r >> 4) - 0xc0;  // Figure out which voice it is
         switch (r & 0x0f) {
             case 0:  // Left volume
-                SetVolumeL((uint8_t)ch, val);
+                s_chan[ch].volume.setLeft(val);
                 PCSX::PSXSPU_LOGGER::Log("SPU.write, Voice[%02i] Set Volume L = %04x\n", ch, val);
                 break;
             case 2:  // Right volume
-                SetVolumeR((uint8_t)ch, val);
+                s_chan[ch].volume.setRight(val);
                 PCSX::PSXSPU_LOGGER::Log("SPU.write, Voice[%02i] Set Volume R = %04x\n", ch, val);
                 break;
             case 4:  // Pitch
@@ -630,79 +630,6 @@ void PCSX::SPU::impl::NoiseOn(int start, int end, uint16_t val) {
             s_chan[ch].data.get<Chan::Noise>().value = false;
         }
     }
-}
-
-////////////////////////////////////////////////////////////////////////
-// LEFT VOLUME register write
-////////////////////////////////////////////////////////////////////////
-
-// please note: sweep and phase invert are wrong... but I've never seen
-// them used
-
-void PCSX::SPU::impl::SetVolumeL(uint8_t ch, int16_t vol)  // LEFT VOLUME
-{
-    s_chan[ch].data.get<Chan::LeftVolRaw>().value = vol;
-
-    if (vol & VolumeFlags::VolumeMode)  // sweep?
-    {
-        int16_t sInc;
-        if (vol & VolumeFlags::SweepDirection) {
-            sInc = -1;  // Decrease
-        } else {
-            sInc = 1;  // Increase
-        }
-        if (vol & VolumeFlags::SweepPhase) {
-            // Negative Phase
-            vol ^= 0xffff;  // -> mmm... phase inverted? have to investigate this
-        }
-        vol = ((vol & 0x7f) + 1) / 2;  // -> sweep: 0..127 -> 0..64
-        vol += vol / (2 * sInc);  // -> HACK: we don't sweep right now, so we just raise/lower the volume by the half!
-        vol *= 128;
-    } else  // no sweep:
-    {
-        if (vol & 0x4000)  // -> mmm... phase inverted? have to investigate this
-        {
-            vol = (vol & 0x3fff) - 0x4000;
-        }
-    }
-
-    vol &= 0x3fff;
-    s_chan[ch].data.get<Chan::LeftVolume>().value = vol;  // store volume
-}
-
-////////////////////////////////////////////////////////////////////////
-// RIGHT VOLUME register write
-////////////////////////////////////////////////////////////////////////
-
-void PCSX::SPU::impl::SetVolumeR(uint8_t ch, int16_t vol)  // RIGHT VOLUME
-{
-    s_chan[ch].data.get<Chan::RightVolRaw>().value = vol;
-
-    if (vol & VolumeFlags::VolumeMode)  // sweep? - Arc the Lad III
-    {
-        int16_t sInc;
-        if (vol & VolumeFlags::SweepDirection) {
-            sInc = -1;  // Decrease
-        } else {
-            sInc = 1;  // Increase
-        }
-        if (vol & VolumeFlags::SweepPhase) {  // Negative Phase
-            vol ^= 0xffff;                    // -> mmm... phase inverted? have to investigate this
-        }
-        vol = ((vol & 0x7f) + 1) / 2;  // -> sweep: 0..127 -> 0..64
-        vol += vol / (2 * sInc);  // -> HACK: we don't sweep right now, so we just raise/lower the volume by the half!
-        vol *= 128;
-    } else  // no sweep:
-    {
-        if (vol & 0x4000)  // -> mmm... phase inverted? have to investigate this
-        {
-            vol = (vol & 0x3fff) - 0x4000;
-        }
-    }
-
-    vol &= 0x3fff;
-
-    s_chan[ch].data.get<Chan::RightVolume>().value = vol;
 }
 
 ////////////////////////////////////////////////////////////////////////

@@ -22,6 +22,7 @@
 #include "spu/adpcm.h"
 #include "spu/adsr.h"
 #include "spu/interpolation.h"
+#include "spu/volume.h"
 #include "support/protobuf.h"
 #include "support/settings.h"
 
@@ -58,17 +59,17 @@ typedef Protobuf::Field<Protobuf::Bool, TYPESTRING("reverb"), 12> Reverb;
 typedef Protobuf::Field<Protobuf::Int32, TYPESTRING("act_freq"), 13> ActFreq;
 // current pc pitch
 typedef Protobuf::Field<Protobuf::Int32, TYPESTRING("used_freq"), 14> UsedFreq;
-// left volume
+// left volume (savestate mirror of VoiceVolume; runtime state lives in SPUCHAN::volume)
 typedef Protobuf::Field<Protobuf::Int32, TYPESTRING("left_volume"), 15> LeftVolume;
-// left psx volume value
+// left psx volume value (savestate mirror of VoiceVolume)
 typedef Protobuf::Field<Protobuf::Int32, TYPESTRING("left_vol_raw"), 16> LeftVolRaw;
 // ignore loop bit, if an external loop address is used
 typedef Protobuf::Field<Protobuf::Bool, TYPESTRING("ignore_loop"), 17> IgnoreLoop;
 // mute mode
 typedef Protobuf::Field<Protobuf::Bool, TYPESTRING("mute"), 18> Mute;
-// right volume
+// right volume (savestate mirror of VoiceVolume)
 typedef Protobuf::Field<Protobuf::Int32, TYPESTRING("right_volume"), 19> RightVolume;
-// right psx volume value
+// right psx volume value (savestate mirror of VoiceVolume)
 typedef Protobuf::Field<Protobuf::Int32, TYPESTRING("right_vol_raw"), 20> RightVolRaw;
 // raw pitch (0...3fff)
 typedef Protobuf::Field<Protobuf::Int32, TYPESTRING("raw_pitch"), 21> RawPitch;
@@ -104,6 +105,7 @@ struct SPUCHAN {
     AdpcmDecoder adpcm;   // per-voice ADPCM decoder: cursor + IIR history + block decode
     AdsrEnvelope adsr;    // per-voice ADSR envelope: state + four-phase machine
     Interpolator interp;  // per-voice resampler: none/simple/gauss/cubic interpolation
+    VoiceVolume volume;   // per-voice left/right output volume: raw register + decoded level
 };
 
 struct REVERBInfo {
