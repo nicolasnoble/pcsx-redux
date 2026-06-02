@@ -51,6 +51,20 @@ _start:
     mov     r1, #0xE0
     str     r0, [r1]               @ WRAM[0xE0] = &swi_table
 
+    /*
+     * Install the IRQ exception vector the same way (the ARM IRQ vector sits at 0x18).
+     *   0x18 = "ldr pc,[pc,#0x18]" -> loads the service-routine address from 0x38 (when it
+     *          executes PC = 0x18+8 = 0x20, so [PC,#0x18] = [0x38]).
+     *   0x38 = absolute address of irq_service.
+     * The RTC square-wave IRQ (INT_INPUT.9) wakes the device from CLK_STOP sleep; the handler
+     * acknowledges the request and returns so the main sleep loop resumes after each 1 Hz tick.
+     */
+    ldr     r0, =0xE59FF018        @ opcode: ldr pc,[pc,#0x18]
+    mov     r1, #0x18
+    str     r0, [r1]               @ WRAM[0x18] = IRQ vector trampoline
+    ldr     r0, =irq_service
+    str     r0, [r1, #0x20]        @ WRAM[0x38] = &irq_service
+
     /* Per-mode stacks in WRAM (mirror the retail boot). CPSR control byte: mode + I/F bits. */
     msr     cpsr_c, #0xD1          @ FIQ  mode, IRQ+FIQ disabled
     ldr     sp, =0x200

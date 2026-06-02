@@ -64,6 +64,13 @@ class PocketStation {
     // Dock state: drives INT_INPUT.11 and fires IRQ-11 on a transition (kernel enables COM).
     void setDocked(bool docked) { m_bus.setDocked(docked); }
 
+    // ---- sleep / idle instrumentation -------------------------------------------------------
+    // Instructions actually executed since reset (flat while halted). Sample across an interval to
+    // prove cheap idle: a sleeping device runs a handful of instructions per wake, not ~4M/second.
+    uint64_t instructionsExecuted() const { return m_cpu.instructionCount(); }
+    // Whether the core is currently parked in CLK_STOP sleep (battery/standby).
+    bool halted() const { return m_bus.halted; }
+
     void setComTrace(bool on) { m_bus.comTrace = on; }   // log every COM/INT reg access with PC.
     uint32_t comUnderruns() const { return m_bus.com.hostUnderruns; }  // MISO-empty-at-exchange count.
 

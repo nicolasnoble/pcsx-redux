@@ -45,9 +45,11 @@ void PocketStation::runCycles(uint64_t armCycles) {
     for (uint64_t i = 0; i < armCycles; i++) {
         m_cpu.step();
         // Scaffolding cadence: every ~66628 steps == one 60Hz frame, inject the fake IRQs.
+        // Skip it while the core is halted: CLK_STOP stops Timer0-2 (psx-spx), so the fake timer
+        // IRQs must NOT fire during sleep -- only the RTC (ticked in CPU::step) wakes the device.
         if (++m_frameAccum >= kCyclesPerFrame) {
             m_frameAccum = 0;
-            frameScaffolding();
+            if (!m_bus.halted) frameScaffolding();
         }
     }
 }

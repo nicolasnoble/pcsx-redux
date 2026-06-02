@@ -23,6 +23,7 @@ enum {
     T2_RELOAD = 0x0A800020,
     T2_MODE = 0x0A800028,
     CLK_MODE = 0x0B000000,
+    CLK_STOP = 0x0B000004,  // write bit0=1 -> stop the CPU clock (sleep) until a wake IRQ
     RTC_MODE = 0x0B800000,
     RTC_ADJUST = 0x0B800004,
     RTC_TIME = 0x0B800008,

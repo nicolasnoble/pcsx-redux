@@ -32,6 +32,18 @@
 #define RTC_FIELD_MONTH  5
 #define RTC_FIELD_YEAR   6
 
+/* Interrupt controller (psx-spx docs/pocketstation.md). INT_INPUT bits: 0=Fire, 9=RTC square
+ * wave (~1Hz), 11=Docked. INT_MASK_SET enables; INT_ACK clears latched requests. */
+#define INT_MASK_SET 0x0A000008 /* W: 1-bits enable the matching interrupt */
+#define INT_MASK_CLR 0x0A00000C /* W: 1-bits disable */
+#define INT_ACK      0x0A000010 /* W: 1-bits acknowledge (clear) latched requests */
+#define INT_RTC      (1u << 9)  /* RTC square-wave IRQ - the sleep wake source for this milestone */
+#define INT_FIRE     (1u << 0)  /* Fire button IRQ (also wakes from sleep) */
+#define INT_DOCKED   (1u << 11) /* Docking IRQ */
+
+/* Clock control. Writing bit0=1 to CLK_STOP halts the CPU until a wake IRQ occurs (sleep mode). */
+#define CLK_STOP 0x0B000004
+
 /* LCD_MODE value the retail kernel boots with: cpen=1, refreshRate=1, enabled=1. */
 #define LCD_MODE_ENABLED 0x58
 
@@ -42,3 +54,14 @@
 static inline volatile unsigned int *psk_vram_rows(void) { return (volatile unsigned int *)LCD_VRAM; }
 
 static inline void psk_lcd_enable(void) { PSK_MMIO(LCD_MODE) = LCD_MODE_ENABLED; }
+
+/* Enable the given INT_INPUT bits as wake/IRQ sources. */
+static inline void psk_int_unmask(unsigned bits) { PSK_MMIO(INT_MASK_SET) = bits; }
+
+/* Unmask IRQs at the CPU (System mode, I-bit clear, FIQ left disabled). Call once before sleeping
+ * so the wake IRQ is actually taken by the installed handler. */
+static inline void psk_enable_irq(void) { __asm__ volatile("msr cpsr_c, #0x5F" ::: "memory"); }
+
+/* Enter sleep mode: stop the CPU clock until a wake IRQ. Returns once the handler has run and the
+ * core resumed (i.e. after the next enabled interrupt - the RTC tick, a Fire press, or docking). */
+static inline void psk_sleep(void) { PSK_MMIO(CLK_STOP) = 1; }

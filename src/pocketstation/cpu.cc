@@ -128,12 +128,31 @@ void CPU::pollInterrupts() {
 
 void CPU::step() {
     bus.tickRtc();  // advance the RTC square wave (INT_INPUT.9) one cycle; may latch the RTC IRQ.
+                    // Done FIRST and UNCONDITIONALLY: the RTC oscillator keeps running while the
+                    // CPU clock is stopped (CLK_STOP sleep), so its square wave can wake the core.
+
+    if (bus.halted) {
+        // CLK_STOP sleep: the CPU core clock is stopped. We advanced the wake sources (tickRtc
+        // above) but execute NO instruction this cycle. Wake when an unmasked interrupt has
+        // latched (irqLatch & irqMask) -- the same condition pollInterrupts dispatches on. On
+        // wake, fall through so pollInterrupts services it and execution resumes at the
+        // instruction after the CLK_STOP store. (psx-spx: "Stops the CPU until an interrupt
+        // occurs"; wakeup via IRQ-0 Fire / IRQ-9 RTC / IRQ-11 Docking.)
+        if (bus.irqLatch & bus.irqMask) {
+            bus.halted = false;
+        } else {
+            return;  // still asleep: no instruction executed (cheap idle, ~no host CPU burned).
+        }
+    }
+
     pollInterrupts();
 
     if (!cpsr.thumb)
         executeARM();
     else
         executeThumb();
+
+    instructions++;
 }
 
 void CPU::executeARM() {

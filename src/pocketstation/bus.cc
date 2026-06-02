@@ -48,6 +48,7 @@ void Bus::reset() {
     }
 
     rtcCountdown = kRtcHalfPeriodPaused;  // restart the RTC square-wave phase brisk (bit 9 low).
+    halted = false;                       // power-on: CPU clock running.
 }
 
 // ---- RTC time-of-day -----------------------------------------------------------------------------
@@ -240,9 +241,16 @@ void Bus::write32Slow(u32 addr, u32 val) {
                 if (comTrace && (val & 0x40)) printf("[PSK] PC=%08X WR INT_MASK_CLR = %08X (COM-6 disabled)\n", curPC, val);
                 break;
 
-            case IO::INT_ACK:  // Acknowledge interrupts
-                               // INT_INPUT.11 constantly reflects the dock status and is unaffected by ack
-                irqFlags &= (~val) | (1 << 11);
+            case IO::INT_ACK:  // Acknowledge interrupts (clear the latched REQUESTS only).
+                // INT_INPUT holds raw signal LEVELS; ack must not disturb the bits that are
+                // hardware-maintained oscillating/sticky levels, only their latches:
+                //   bit 11 = Docked level (set while docked), and
+                //   bit 9  = RTC square wave (driven by tickRtc off the cycle clock).
+                // Clearing the bit-9 level here desyncs the square wave: tickRtc would then see
+                // bit 9 == 0 at the next half-period and emit a fresh RISING edge (an extra IRQ +
+                // calendar tick), so the RTC effectively runs at 2x. Preserve both levels; only the
+                // latch (irqLatch) is acked, exactly matching the edge-triggered hardware.
+                irqFlags &= (~val) | (1 << 11) | (1 << 9);
                 irqLatch &= ~val;
                 if (comTrace && (val & 0x40)) printf("[PSK] PC=%08X WR INT_ACK = %08X (ack COM-6)\n", curPC, val);
                 break;
@@ -344,6 +352,15 @@ void Bus::write32Slow(u32 addr, u32 val) {
             case IO::CLK_MODE:
                 printf("Wrote %08X to CLK_MODE\n", val);
                 clkMode = val & 0xF;
+                break;
+
+            case IO::CLK_STOP:
+                // Sleep mode: bit0=1 stops the CPU clock until a wake IRQ (see Bus::halted). The
+                // store completes normally; the very next CPU::step() observes halted and parks the
+                // core (advancing only the RTC) until irqLatch & irqMask. Writing 0 is a no-op here
+                // (the core never executes while halted, so software can't clear it from this side;
+                // the wake path clears it). Keeps the system idle-cheap when undocked on battery.
+                if (val & 1) halted = true;
                 break;
 
             case IO::F_BANK_FLG:

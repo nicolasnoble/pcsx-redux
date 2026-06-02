@@ -123,11 +123,18 @@ class CPU {
     void handleUndefined(u32 instruction);
     void pollInterrupts();
 
+    u64 instructions = 0;  // count of instructions actually executed (not advanced while halted)
+
 public:
+    // Instructions executed since reset. Stays flat while the core is halted (CLK_STOP sleep),
+    // so the gap between two samples proves cheap idle (a handful per wake, not ~4M/second).
+    u64 instructionCount() const { return instructions; }
+
     void log() {
         printf("PC: %08X\n", registers[15]);
     }
     void reset() {
+        instructions = 0;
         readTable = bus.readTable.data();
         writeTable = bus.writeTable.data();
 

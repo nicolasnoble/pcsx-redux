@@ -48,6 +48,21 @@ public:
     u32 irqMask;  // Enabled interrupts
     u32 irqFlags; // Requested interrupts (raw INT_INPUT signal levels)
     u32 irqLatch; // Latched edge-triggered requests (drives CPU dispatch; cleared by INT_ACK)
+
+    // ---- CLK_STOP sleep (battery/standby model) ----------------------------------------------
+    // The PocketStation has no power switch: the closest thing to "off" is sleep mode, entered by
+    // writing bit0=1 to CLK_STOP (0x0B000004). psx-spx: "Stops the CPU until an interrupt occurs."
+    // When set, the CPU core's clock is stopped -- it executes NO instructions and burns ~no host
+    // CPU (this is what lets an undocked device idle cheaply on battery). It also stops Timer0-2
+    // (they run off the same system clock), so our frame scaffolding is skipped while halted. The
+    // RTC, however, runs off a separate oscillator and keeps ticking: tickRtc() is advanced every
+    // cycle regardless of halt, so its 1 Hz square-wave IRQ (INT_INPUT.9) -- plus Fire (IRQ-0) and
+    // Docking (IRQ-11) -- can wake the device. Wake = an unmasked interrupt latches
+    // (irqLatch & irqMask != 0); the core then clears halt and resumes (pollInterrupts dispatches
+    // the pending IRQ, execution continues at the instruction after the CLK_STOP store). The flag
+    // lives here in the Bus because both CPU::step() (the halt/wake gate) and the scaffolding in
+    // PocketStation::runCycles() need to see it.
+    bool halted = false;
     std::atomic<u32> pressedButtons = 0; // The GUI thread writes here
 
     // The CPU core uses software fastmem
