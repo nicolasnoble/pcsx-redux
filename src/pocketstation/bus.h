@@ -150,6 +150,44 @@ public:
         }
     }
 
+    // ---- RTC square wave (INT_INPUT.9) -------------------------------------------------------
+    // INT_INPUT bit 9 is the RTC square-wave LEVEL. psx-spx: ~1 Hz normally, 4096 Hz when the RTC
+    // is paused via RTC_MODE.0 (0=Run/1Hz, 1=Pause/4096Hz); INT_INPUT reports the raw signal
+    // levels. The retail kernel's early boot busy loop at bios 0x650..0x65e phase-aligns to this
+    // edge: phase1 spins until bit 9 rises (bcc), phase2 (0x65e) spins until it falls (bcs). So the
+    // bit MUST oscillate 1->0->1 as a live level, not latch. We drive it off the ARM7 cycle clock
+    // (1 CPU step == 1 cycle in this fake-pipeline core) with a half-period countdown: each
+    // half-period we toggle the level, firing the RTC IRQ latch on the RISING edge (so the running
+    // kernel's RTC-IRQ path still works) and just dropping the level on the FALLING edge. The donor
+    // instead latched bit 9 sticky (requestInterrupt(9) every 200 INT_INPUT reads); it never fell,
+    // so phase2 hung forever, which is precisely why the donor NOP'd bios[0x65e]. This live square
+    // wave is the faithful fix and lets the patch be deleted entirely.
+    //
+    // The rate MUST track RTC_MODE.0: the kernel pauses the RTC (4096 Hz) for the boot phase-align,
+    // then runs it (1 Hz) for normal timekeeping. A fixed 4096 Hz floods the running kernel with an
+    // RTC IRQ every ~976 cycles, which starves the GUI / COM handler (regression: the 52h read
+    // underran). Half-periods at the 3.997696 MHz boot clock: 488 cycles == 4096 Hz (paused),
+    // 1998848 cycles == ~1 Hz (running). TODO: calibrate the exact rate against real silicon and
+    // rescale when CLK_MODE changes the system clock (cycle-accurate RTC freq waits for HW ground
+    // truth per the bootstrap order).
+    static constexpr u32 kRtcHalfPeriodPaused = 488;       // 4096 Hz @ 3.997696 MHz (RTC paused).
+    static constexpr u32 kRtcHalfPeriodRunning = 1998848;  // ~1 Hz (3997696 / 2).
+    u32 rtcCountdown = kRtcHalfPeriodPaused;
+
+    u32 rtcHalfPeriod() const { return (rtcMode & 1) ? kRtcHalfPeriodPaused : kRtcHalfPeriodRunning; }
+
+    // Advance the RTC square wave by one ARM7 cycle. Called once per CPU::step().
+    void tickRtc() {
+        if (--rtcCountdown == 0) {
+            rtcCountdown = rtcHalfPeriod();
+            if (irqFlags & (1u << 9)) {
+                irqFlags &= ~(1u << 9);  // falling edge: drop the level only (leave the latch).
+            } else {
+                requestInterrupt(9);     // rising edge: raise the level AND latch the RTC IRQ.
+            }
+        }
+    }
+
     // No I/O in the constructor: just allocate the kernel/flash backing buffers so the
     // pointers the CPU page tables hold are stable. The actual contents are injected
     // later via setKernel()/setFlash(), before reset(). This is what makes the module

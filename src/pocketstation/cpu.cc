@@ -127,6 +127,7 @@ void CPU::pollInterrupts() {
 }
 
 void CPU::step() {
+    bus.tickRtc();  // advance the RTC square wave (INT_INPUT.9) one cycle; may latch the RTC IRQ.
     pollInterrupts();
 
     if (!cpsr.thumb)

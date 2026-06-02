@@ -44,9 +44,7 @@ void Bus::reset() {
         e.reset();
     }
 
-    printf("Patching BIOS to make it bootable\n");
-    bios[0x65E] = 0x00; // Thumb-mode add sp, #0    
-    bios[0x65F] = 0xb0;
+    rtcCountdown = kRtcHalfPeriodPaused;  // restart the RTC square-wave phase brisk (bit 9 low).
 }
 
 void Bus::requestInterrupt(int bit) {
@@ -98,17 +96,14 @@ u32 Bus::read32Slow(u32 addr) {
         case IO::COM_MODE:
             return com.mode;
 
-        case IO::INT_INPUT: {
-            static int tries = 0;
-            tries++;
-
-            if (tries == 200) {
-                tries = 0;
-                requestInterrupt(9); // Stub RTC IRQ
-            }
+        case IO::INT_INPUT:
+            // Raw interrupt signal LEVELS. Bit 9 (the RTC square wave) is maintained as a live
+            // oscillating level by Bus::tickRtc() off the cycle clock; the other bits are the
+            // dock/button level reflectors and self-clearing IRQ sources. (The donor faked bit 9
+            // here with a sticky requestInterrupt every 200 reads, which never fell and hung the
+            // boot loop's falling-edge wait -- removed in favor of the real square wave.)
             if (comTrace && com.cmdActive) printf("[PSK] PC=%08X RD INT_INPUT -> %08X\n", curPC, irqFlags);
             return irqFlags;
-        }
         case IO::INT_LATCH: return irqLatch;
         case IO::INT_MASK_READ: return irqMask;
         case IO::RTC_TIME: return rtc.getTime();
