@@ -106,7 +106,7 @@ swi_table:
     .word   swi_handler_set_user_callback    @ 01h  1  Set user callback
     .word   swi_handler_invoke_callback      @ 02h  2  Invoke user callback
     .word   swi_handler_write_flash_relative @ 03h  3  Write flash (relative sectors)
-    .word   swi_handler_default              @ 04h  4  Set system clock frequency       (TODO)
+    .word   swi_handler_set_clock_freq       @ 04h  4  Set system clock frequency
     .word   swi_handler_default              @ 05h  5  Switch kernel mode               (TODO)
     .word   swi_handler_default              @ 06h  6  Get PDA status                   (TODO)
     .word   swi_handler_default              @ 07h  7  (not in spec table)

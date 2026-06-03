@@ -64,6 +64,22 @@
 /* Clock control. Writing bit0=1 to CLK_STOP halts the CPU until a wake IRQ occurs (sleep mode). */
 #define CLK_STOP 0x0B000004
 
+/* System clock frequency (PMFrequency, PDA HW Spec Table 2 / Appendix A; set via SWI 4). CLK_MODE
+ * bits 0..3 (FREQ) select the ARM7 system clock; bit 4 (LOCK) is a read-only PLL-locked status. The
+ * PDA boots at 4 MHz (FREQ 7) when used as a Memory Card; dropping to 2 MHz or lower while docked
+ * breaks card comms (kernel spec). FREQ 0 = 32 KHz is the reset default but is PROHIBITED as a SWI 4
+ * argument (kernel spec) - write CLK_MODE.FREQ directly if 32 KHz is really wanted. */
+#define CLK_MODE 0x0B000000
+#define CLK_FREQ_32KHZ 0
+#define CLK_FREQ_62KHZ 1
+#define CLK_FREQ_125KHZ 2
+#define CLK_FREQ_250KHZ 3
+#define CLK_FREQ_500KHZ 4
+#define CLK_FREQ_1MHZ 5
+#define CLK_FREQ_2MHZ 6
+#define CLK_FREQ_4MHZ 7
+#define CLK_FREQ_8MHZ 8
+
 /* ---- User callbacks (SetCallbacks, SWI 1) --------------------------------------------------------
  * The kernel handles interrupts by invoking callback functions a PDA application registers with
  * SWI 1 (PDA Kernel Spec, "Interrupt handling"). The four callback addresses live in the WRAM system

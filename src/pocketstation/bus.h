@@ -223,6 +223,35 @@ public:
         }
     }
 
+    // ---- System clock (CLK_MODE.FREQ / PMFrequency) ------------------------------------------
+    // The ARM7 system clock is software-selectable: CLK_MODE bits 0..3 (FREQ) pick one of nine
+    // speeds (PDA Hardware Spec Table 2 / Appendix A PMFrequency). Map the FREQ field to actual Hz.
+    // FREQ 7 (4 MHz) is the emulator's reset/boot clock and the calibration baseline -- every existing
+    // test keys off it -- so freqToHz(7) MUST be exactly 3997696. (The spec's RESET value is FREQ 0 =
+    // 32 KHz, but the emulator boots clkMode=7 to match the docked-as-MemoryCard state the kernel
+    // assumes; see Bus::reset.) TODO: calibrate exact Hz per FREQ against silicon in phase 3; the
+    // 8 MHz value is spec-ambiguous (Table 2: 7.9977 MHz, Appendix A: 7.9954 MHz) -- using 2x4MHz.
+    static constexpr u32 freqToHz(u32 freq) {
+        switch (freq & 0xF) {
+            case 0:  return 32768;     // 32.768 KHz (spec reset default)
+            case 1:  return 63488;     // 63.488 KHz
+            case 2:  return 126976;    // 126.976 KHz
+            case 3:  return 253952;    // 253.952 KHz
+            case 4:  return 507904;    // 507.904 KHz
+            case 5:  return 1015808;   // 1.015808 MHz
+            case 6:  return 1998848;   // 1.998848 MHz (2 MHz nominal)
+            case 7:  return 3997696;   // 3.997696 MHz (4 MHz nominal; boot clock / baseline)
+            default: return 7995392;   // 8 (and higher) = 8 MHz nominal (2x the 4 MHz value)
+        }
+    }
+    // Live ARM7 clock in Hz from the current CLK_MODE.FREQ. The RTC oscillator (rtcHalfPeriod) and
+    // the host-side cycle catch-up (SIO::stepPocketstation*) both scale off this, so a software clock
+    // change rescales them together and the RTC's real-time rate stays constant.
+    u32 armClockHz() const { return freqToHz(clkMode); }
+    // Test-only: force CLK_MODE.FREQ directly (white-box, parallels setButtons). Lets a headless
+    // harness drive the RTC-real-rate invariant at a chosen clock without going through the kernel.
+    void setClkModeForTest(u32 freq) { clkMode = freq & 0xF; }
+
     // ---- RTC square wave (INT_INPUT.9) -------------------------------------------------------
     // INT_INPUT bit 9 is the RTC square-wave LEVEL. psx-spx: ~1 Hz normally, 4096 Hz when the RTC
     // is paused via RTC_MODE.0 (0=Run/1Hz, 1=Pause/4096Hz); INT_INPUT reports the raw signal
@@ -239,15 +268,22 @@ public:
     // The rate MUST track RTC_MODE.0: the kernel pauses the RTC (4096 Hz) for the boot phase-align,
     // then runs it (1 Hz) for normal timekeeping. A fixed 4096 Hz floods the running kernel with an
     // RTC IRQ every ~976 cycles, which starves the GUI / COM handler (regression: the 52h read
-    // underran). Half-periods at the 3.997696 MHz boot clock: 488 cycles == 4096 Hz (paused),
-    // 1998848 cycles == ~1 Hz (running). TODO: calibrate the exact rate against real silicon and
-    // rescale when CLK_MODE changes the system clock (cycle-accurate RTC freq waits for HW ground
-    // truth per the bootstrap order).
-    static constexpr u32 kRtcHalfPeriodPaused = 488;       // 4096 Hz @ 3.997696 MHz (RTC paused).
-    static constexpr u32 kRtcHalfPeriodRunning = 1998848;  // ~1 Hz (3997696 / 2).
-    u32 rtcCountdown = kRtcHalfPeriodPaused;
+    // underran). The RTC is a REAL-TIME oscillator independent of the CPU clock (PDA HW spec: "the
+    // RTC cannot be stopped"): its rate is 1 Hz running / 4096 Hz paused REGARDLESS of the system
+    // clock. tickRtc runs once per ARM7 cycle, so the half-period in CYCLES = armClockHz / (2*realHz)
+    // -- only the step COUNT per RTC edge changes when CLK_MODE rescales the clock; the real-world
+    // rate stays fixed. At the 4 MHz boot clock (FREQ 7) this is 3997696/8192 = 488 (paused) and
+    // 3997696/2 = 1998848 (running) -- the old hardcoded constants -- and it now rescales live with
+    // the software clock. TODO: calibrate the exact per-FREQ Hz against real silicon (phase 3); the
+    // structural FREQ-tracking is here, exact cycle counts wait for the HW harness.
+    u32 rtcCountdown = 488;     // paused 4096 Hz half-period at the 4 MHz boot clock; reset() re-seeds.
+    u64 rtcEdgeCount = 0;       // RTC square-wave rising edges since reset (RUN-mode edge == 1 second).
+                                // Pure instrumentation for the RTC-real-rate invariant test.
 
-    u32 rtcHalfPeriod() const { return (rtcMode & 1) ? kRtcHalfPeriodPaused : kRtcHalfPeriodRunning; }
+    u32 rtcHalfPeriod() const {
+        const u32 realHz = (rtcMode & 1) ? 4096u : 1u;
+        return armClockHz() / (2u * realHz);
+    }
 
     // Advance the RTC square wave by one ARM7 cycle. Called once per CPU::step().
     void tickRtc() {
@@ -257,6 +293,7 @@ public:
                 irqFlags &= ~(1u << 9);  // falling edge: drop the level only (leave the latch).
             } else {
                 requestInterrupt(9);     // rising edge: raise the level AND latch the RTC IRQ.
+                ++rtcEdgeCount;          // count rising edges (RUN-mode edge == 1 second; test metric).
                 // In RUN mode (RTC_MODE.0=0) the square wave is 1 Hz, so this rising edge is the
                 // once-per-second calendar tick: advance the BCD clock. In PAUSE mode (4096 Hz) the
                 // edge is just the fast wave the boot loop phase-aligns to and must NOT advance time

@@ -290,19 +290,23 @@ class SIO {
     // call early-returns, so cost is ~zero when off. Sub-1-ARM-cycle deltas are accumulated (the
     // anchor only advances by the PSX cycles actually consumed) so frequent small calls don't
     // starve the device. (Declaration is in the public section above.)
-    uint64_t m_lastPsxCycle = 0;   // R3000A cycle at the previous catch-up (advances by consumed).
+    uint64_t m_lastPsxCycle = 0;   // R3000A cycle at the previous catch-up (now advanced fully to now).
     bool m_psxCycleValid = false;  // false until the first catch-up after a reset re-syncs the anchor.
+    // Per-device PSX-cycle catch-up remainder, accumulated in (PSX-cycle * armHz) units. Carrying the
+    // fraction per device (rather than a single shared anchor) is what lets each docked PocketStation
+    // convert at its OWN live CLK_MODE.FREQ clock while never discarding a sub-1-ARM-cycle delta.
+    uint64_t m_psxArmAccum[c_cardCount] = {0};
     // Wall-clock standalone driver state (stepPocketstationWallClock). m_lastWallClock anchors real
-    // elapsed time; the ns remainder carries the sub-1-ARM-cycle fraction so frequent small frame
-    // deltas don't starve the device (same accumulate-the-remainder discipline as the PSX path).
+    // elapsed time; the per-device ns remainder carries the sub-1-ARM-cycle fraction so frequent small
+    // frame deltas don't starve the device (same accumulate-the-remainder discipline as the PSX path).
     // The two anchors cross-invalidate when control passes between paths so each re-syncs cleanly on
     // the running<->paused transition (no bogus first delta).
     std::chrono::steady_clock::time_point m_lastWallClock{};
     bool m_wallClockValid = false;
-    uint64_t m_wallClockRemainderNs = 0;
-    // ARM7 default clock and the R3000A clock; the PS clock is software-configurable via clkMode,
-    // TODO(de-fake): read the live divisor instead of assuming the default ratio.
-    static constexpr uint64_t kArmClockHz = 3997696;
+    uint64_t m_wallClockRemainderNs[c_cardCount] = {0};
+    // The R3000A clock. The ARM7 clock is no longer a constant here: it is software-configurable via
+    // CLK_MODE.FREQ and read per-device (PocketStation::armClockHz) at each catch-up site, so the
+    // PSX->ARM cycle scale tracks an SWI-4 clock change. (Was a fixed kArmClockHz = 3997696.)
     static constexpr uint64_t kPsxClockHz = 33868800;
     // -----------------------------------------------------------------------------------------
 };

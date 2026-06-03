@@ -58,19 +58,28 @@ void PCSX::SIO::stepPocketstation() {
         return;
     }
     const uint64_t psxDelta = now - m_lastPsxCycle;
-    const uint64_t armCycles = psxDelta * kArmClockHz / kPsxClockHz;
-    if (armCycles == 0) return;  // keep the anchor; let the sub-1-ARM-cycle delta accumulate.
-    // Advance the anchor only by the PSX cycles actually consumed, so the fractional remainder
-    // carries to the next call (frequent small deltas at the inter-burst boundary must not starve
-    // the device by repeatedly discarding a <1 ARM-cycle remainder).
-    m_lastPsxCycle += armCycles * kPsxClockHz / kArmClockHz;
+    m_lastPsxCycle = now;  // consume the whole delta; each device's accumulator carries its fraction.
 
     // The PSX-cycle path is taking over: drop the wall-clock anchor so it re-syncs (rather than
     // running a stale multi-second delta) the next time the core pauses.
     m_wallClockValid = false;
 
     for (unsigned i = 0; i < c_cardCount; i++) {
-        if (devs[i]) devs[i]->runCycles(armCycles);
+        if (!devs[i]) {
+            m_psxArmAccum[i] = 0;
+            continue;
+        }
+        // Scale PSX cycles -> ARM7 cycles at THIS device's LIVE clock (CLK_MODE.FREQ); a software
+        // clock change (SWI 4) rescales the device's run rate without touching the RTC's real rate.
+        // The remainder is accumulated in (PSX-cycle * Hz) units, so a sub-1-ARM-cycle delta is
+        // never discarded -- truncating it would freeze the ARM7 at the high-frequency inter-burst
+        // boundary (tiny deltas -> 0 forever) -- and the carry survives a live clock change because
+        // each call divides by the current clock.
+        const uint64_t armHz = devs[i]->armClockHz();
+        m_psxArmAccum[i] += psxDelta * armHz;
+        const uint64_t armCycles = m_psxArmAccum[i] / kPsxClockHz;
+        m_psxArmAccum[i] -= armCycles * kPsxClockHz;
+        if (armCycles) devs[i]->runCycles(armCycles);
     }
 }
 
@@ -98,7 +107,7 @@ void PCSX::SIO::stepPocketstationWallClock() {
         // without running a bogus delta.
         m_lastWallClock = now;
         m_wallClockValid = true;
-        m_wallClockRemainderNs = 0;
+        for (unsigned i = 0; i < c_cardCount; i++) m_wallClockRemainderNs[i] = 0;
         return;
     }
 
@@ -111,16 +120,23 @@ void PCSX::SIO::stepPocketstationWallClock() {
     constexpr uint64_t kMaxCatchUpNs = 1'000'000'000ull;
     if (elapsedNs > kMaxCatchUpNs) elapsedNs = kMaxCatchUpNs;
 
-    m_wallClockRemainderNs += elapsedNs;
-    const uint64_t armCycles = m_wallClockRemainderNs * kArmClockHz / 1'000'000'000ull;
-    if (armCycles == 0) return;  // sub-1-ARM-cycle delta; keep the anchor and let the remainder grow.
-    m_wallClockRemainderNs -= armCycles * 1'000'000'000ull / kArmClockHz;
-
     // Symmetric to the PSX path: drop its anchor so it re-syncs when the core resumes.
     m_psxCycleValid = false;
 
     for (unsigned i = 0; i < c_cardCount; i++) {
-        if (devs[i]) devs[i]->runCycles(armCycles);
+        if (!devs[i]) {
+            m_wallClockRemainderNs[i] = 0;
+            continue;
+        }
+        // Scale real elapsed ns -> ARM7 cycles at THIS device's LIVE clock (CLK_MODE.FREQ). Per-device
+        // ns remainder carries the sub-1-ARM-cycle fraction (same discipline as the PSX path) and lets
+        // a software clock change rescale the standalone run rate cleanly.
+        const uint64_t armHz = devs[i]->armClockHz();
+        m_wallClockRemainderNs[i] += elapsedNs;
+        const uint64_t armCycles = m_wallClockRemainderNs[i] * armHz / 1'000'000'000ull;
+        if (armCycles == 0) continue;  // sub-1-ARM-cycle delta; keep the remainder and grow it.
+        m_wallClockRemainderNs[i] -= armCycles * 1'000'000'000ull / armHz;
+        devs[i]->runCycles(armCycles);
     }
 }
 #include "support/strings-helpers.h"
@@ -199,7 +215,10 @@ void PCSX::SIO::reset() {
     m_currentDevice = DeviceType::None;
     m_psxCycleValid = false;   // re-anchor the PocketStation catch-up on the next VSync.
     m_wallClockValid = false;  // re-anchor the wall-clock standalone driver too.
-    m_wallClockRemainderNs = 0;
+    for (unsigned i = 0; i < c_cardCount; i++) {
+        m_psxArmAccum[i] = 0;
+        m_wallClockRemainderNs[i] = 0;
+    }
 }
 
 void PCSX::SIO::writePad(uint8_t value) {

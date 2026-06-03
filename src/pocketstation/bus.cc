@@ -48,7 +48,11 @@ void Bus::reset() {
         e.reset();
     }
 
-    rtcCountdown = kRtcHalfPeriodPaused;  // restart the RTC square-wave phase brisk (bit 9 low).
+    // Restart the RTC square-wave phase brisk (bit 9 low) at the paused 4096 Hz half-period for the
+    // CURRENT clock (clkMode 7 here -> 488, the old constant). Computed from the live clock so a
+    // non-default reset clock would seed the matching phase.
+    rtcCountdown = armClockHz() / 8192;
+    rtcEdgeCount = 0;
     halted = false;                       // power-on: CPU clock running.
 }
 

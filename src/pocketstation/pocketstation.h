@@ -55,6 +55,17 @@ class PocketStation {
 
     void setButtons(uint32_t mask);  // bits 0..4 -> INT_INPUT.0..4 (live levels).
 
+    // ---- system clock (CLK_MODE.FREQ) -------------------------------------------------------
+    // Live ARM7 system clock in Hz, from the current CLK_MODE.FREQ. The SIO cycle catch-up reads
+    // this per device so the PSX-cycle / wall-clock -> ARM7-cycle scale tracks a software clock
+    // change (SWI 4 "Set system clock frequency").
+    uint32_t armClockHz() const { return m_bus.armClockHz(); }
+    // Test-only: force CLK_MODE.FREQ (white-box) to drive the RTC-real-rate invariant from a harness.
+    void setClockForTest(uint32_t freq) { m_bus.setClkModeForTest(freq); }
+    // Test-only: RTC square-wave rising edges since reset (RUN-mode edge == 1 second). Lets a harness
+    // measure ARM7 steps per RTC tick at different clocks to prove the real rate stays 1 Hz.
+    uint64_t rtcEdges() const { return m_bus.rtcEdgeCount; }
+
     // ---- COM link (PS1 card-slot bridge) ----------------------------------------------------
     // One bidirectional SPI byte exchange from the host (PS1/SIO) side. Returns the byte the
     // device had loaded before this exchange (one-transaction pipeline delay), queues the

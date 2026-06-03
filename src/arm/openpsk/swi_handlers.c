@@ -24,6 +24,17 @@ unsigned swi_handler_set_user_callback(unsigned type, unsigned addr) {
     return prev;
 }
 
+/* SWI 4 - Set system clock frequency (PDA Kernel Spec, Table 3 #4). r0 = new FREQ (1..8: 1=62kHz,
+ * ... 7=4MHz, 8=8MHz; argument 0 is prohibited - set CLK_MODE.FREQ directly for 32kHz). Returns the
+ * previous FREQ. Reads the current CLK_MODE.FREQ for the return value, then writes the new one.
+ * (8 MHz auto-enables wait-state insertion on hardware; the emulator has no wait states. Don't drop
+ * to <=2 MHz while docked or Memory Card comms break - that's the caller's responsibility per spec.) */
+unsigned swi_handler_set_clock_freq(unsigned freq) {
+    unsigned prev = PSK_MMIO(CLK_MODE) & 0xFu;
+    PSK_MMIO(CLK_MODE) = freq & 0xFu;
+    return prev;
+}
+
 /* The century is NOT in RTC_DATE (psx-spx: bits 24-31 are "Unknown? this is NOT used as century").
  * On real hardware it lives in battery-backed kernel RAM. OpenPSK doesn't model that store yet, so
  * GetBcdDate() synthesises a fixed 20th-of-2000s century. TODO: back this with kernel RAM. */

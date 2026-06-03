@@ -26,6 +26,15 @@ static inline unsigned psk_swi_invoke_user_callback(unsigned a0, unsigned a1) {
     return r0;
 }
 
+/* SWI 04h - Set system clock frequency. freq: 1=62kHz 2=125kHz 3=250kHz 4=500kHz 5=1MHz 6=2MHz
+ * 7=4MHz 8=8MHz (0 prohibited). Returns the previous FREQ. Don't go <=2MHz while docked (breaks
+ * card comms); 8MHz auto-enables wait states on hardware. */
+static inline unsigned psk_swi_set_clock_freq(unsigned freq) {
+    register unsigned r0 __asm__("r0") = freq;
+    __asm__ volatile("swi #0x04" : "+r"(r0) : : "r1", "r2", "r3", "memory");
+    return r0;
+}
+
 /* SWI 03h - Write to flash memory (relative sectors). dest = address relative to 0x02000000
  * (sector 0 there); src = source buffer (halfword-aligned, outside flash). Writes one 128-byte
  * sector. Returns 0 = success, 1 = failure. */
