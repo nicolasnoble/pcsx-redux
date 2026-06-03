@@ -145,6 +145,7 @@ class impl final : public SPUInterface {
 
     // spu
     void MainThread();
+    void synthesizeChannel(int ch, SPUCHAN *pChannel, int32_t &capVoice1Index, int32_t &capVoice3Index);
     void writeCaptureBufferCD(int numbSamples);
     void SetupStreams();
     void RemoveStreams();
