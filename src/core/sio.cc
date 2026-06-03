@@ -65,6 +65,60 @@ void PCSX::SIO::stepPocketstation() {
     // the device by repeatedly discarding a <1 ARM-cycle remainder).
     m_lastPsxCycle += armCycles * kPsxClockHz / kArmClockHz;
 
+    // The PSX-cycle path is taking over: drop the wall-clock anchor so it re-syncs (rather than
+    // running a stale multi-second delta) the next time the core pauses.
+    m_wallClockValid = false;
+
+    for (unsigned i = 0; i < c_cardCount; i++) {
+        if (devs[i]) devs[i]->runCycles(armCycles);
+    }
+}
+
+// Wall-clock standalone driver: advance an enabled PocketStation off REAL elapsed time when the
+// R3000A is not executing (paused/stopped, or no game), so the device runs fully standalone - keeps
+// time, runs its GUI/apps, and sleeps cheaply via CLK_STOP between RTC ticks (a sleeping device
+// steps only a handful of ARM7 instructions per real second, so it never burns a host core). Called
+// once per GUI frame from main.cc's not-running branch; that gating is what prevents double-driving
+// with stepPocketstation() (which only runs while the core executes). Inert when nothing is enabled.
+void PCSX::SIO::stepPocketstationWallClock() {
+    PocketStation::PocketStation *devs[c_cardCount];
+    bool any = false;
+    for (unsigned i = 0; i < c_cardCount; i++) {
+        devs[i] = m_memoryCard[i].getPocketstation();
+        if (devs[i]) any = true;
+    }
+    if (!any) {
+        m_wallClockValid = false;  // nothing enabled; re-anchor when a device appears.
+        return;
+    }
+
+    const auto now = std::chrono::steady_clock::now();
+    if (!m_wallClockValid) {
+        // First call with a device present, or just took over from the PSX-cycle path: anchor
+        // without running a bogus delta.
+        m_lastWallClock = now;
+        m_wallClockValid = true;
+        m_wallClockRemainderNs = 0;
+        return;
+    }
+
+    uint64_t elapsedNs = std::chrono::duration_cast<std::chrono::nanoseconds>(now - m_lastWallClock).count();
+    m_lastWallClock = now;
+    // Bound a single catch-up so a long host pause (process suspended, breakpoint held for minutes)
+    // can't stall the frame with one enormous burst. A standalone idle clock can't recover time the
+    // host was frozen for, so the excess is dropped, not banked. 1 s is generous: a sleeping device
+    // handles it in ~tens of instructions, a busy one in ~4M cycles (a few ms of host work).
+    constexpr uint64_t kMaxCatchUpNs = 1'000'000'000ull;
+    if (elapsedNs > kMaxCatchUpNs) elapsedNs = kMaxCatchUpNs;
+
+    m_wallClockRemainderNs += elapsedNs;
+    const uint64_t armCycles = m_wallClockRemainderNs * kArmClockHz / 1'000'000'000ull;
+    if (armCycles == 0) return;  // sub-1-ARM-cycle delta; keep the anchor and let the remainder grow.
+    m_wallClockRemainderNs -= armCycles * 1'000'000'000ull / kArmClockHz;
+
+    // Symmetric to the PSX path: drop its anchor so it re-syncs when the core resumes.
+    m_psxCycleValid = false;
+
     for (unsigned i = 0; i < c_cardCount; i++) {
         if (devs[i]) devs[i]->runCycles(armCycles);
     }
@@ -143,7 +197,9 @@ void PCSX::SIO::reset() {
     m_memoryCard[0].deselect();
     m_memoryCard[1].deselect();
     m_currentDevice = DeviceType::None;
-    m_psxCycleValid = false;  // re-anchor the PocketStation catch-up on the next VSync.
+    m_psxCycleValid = false;   // re-anchor the PocketStation catch-up on the next VSync.
+    m_wallClockValid = false;  // re-anchor the wall-clock standalone driver too.
+    m_wallClockRemainderNs = 0;
 }
 
 void PCSX::SIO::writePad(uint8_t value) {

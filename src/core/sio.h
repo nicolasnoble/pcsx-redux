@@ -20,6 +20,7 @@
 
 #pragma once
 
+#include <chrono>
 #include <string>
 
 #include "core/memorycard.h"
@@ -44,6 +45,13 @@ class SIO {
     // Advance any docked PocketStation by the elapsed R3000A cycles. Called from
     // R3000Acpu::branchTest() (the inter-burst boundary); public so the CPU can drive it.
     void stepPocketstation();
+
+    // Advance an enabled PocketStation off REAL wall-clock time, for the true-standalone case where
+    // the R3000A is not executing (emulation paused/stopped, or no game loaded) so branchTest never
+    // fires and stepPocketstation() never runs. Driven once per GUI frame from the main loop's
+    // not-running branch (see main.cc). MUST NOT be called while the core is running: that path is
+    // mutually exclusive with stepPocketstation() and calling both would double-clock the device.
+    void stepPocketstationWallClock();
 
     struct McdBlock {
         McdBlock() { reset(); }
@@ -284,6 +292,14 @@ class SIO {
     // starve the device. (Declaration is in the public section above.)
     uint64_t m_lastPsxCycle = 0;   // R3000A cycle at the previous catch-up (advances by consumed).
     bool m_psxCycleValid = false;  // false until the first catch-up after a reset re-syncs the anchor.
+    // Wall-clock standalone driver state (stepPocketstationWallClock). m_lastWallClock anchors real
+    // elapsed time; the ns remainder carries the sub-1-ARM-cycle fraction so frequent small frame
+    // deltas don't starve the device (same accumulate-the-remainder discipline as the PSX path).
+    // The two anchors cross-invalidate when control passes between paths so each re-syncs cleanly on
+    // the running<->paused transition (no bogus first delta).
+    std::chrono::steady_clock::time_point m_lastWallClock{};
+    bool m_wallClockValid = false;
+    uint64_t m_wallClockRemainderNs = 0;
     // ARM7 default clock and the R3000A clock; the PS clock is software-configurable via clkMode,
     // TODO(de-fake): read the live divisor instead of assuming the default ratio.
     static constexpr uint64_t kArmClockHz = 3997696;
