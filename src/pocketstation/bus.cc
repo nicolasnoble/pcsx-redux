@@ -40,7 +40,8 @@ void Bus::reset() {
     flash.enabledBanks = 0; // Disable all FLASH banks
     flash.bankMappings.fill(0);
     flash.f_wait1 = 0;
-    flash.f_wait2 = 0;
+    flash.dataCtrl = kFlashWAIT;  // reset value 0x14 = WAIT(bit4) | BUSY(bit2, synthesised on read).
+    flash.progState = 0;
     remapFLASH();
 
     for (auto& e : timers) {
@@ -135,6 +136,16 @@ u16 Bus::read16Slow(u32 addr) {
     }
 }
 
+void Bus::write16Slow(u32 addr, u16 val) {
+    // Flash is omitted from the writeTable, so halfword writes to it land here: feed the documented
+    // program sequence (JEDEC unlock + data phase). This is the path OpenPSK's flash-write SWIs use.
+    if (addr >= kFlashBase && addr < kFlashBase + kFlashSize) {
+        flashProgramWrite(addr, val);
+        return;
+    }
+    Helpers::panic("16-bit write to unimplemented slow address: %08X (val %04X)\n", addr, val);
+}
+
 u32 Bus::read32Slow(u32 addr) {
     switch (addr) {
         // ---- COM link reads ------------------------------------------------------------------
@@ -199,8 +210,10 @@ u32 Bus::read32Slow(u32 addr) {
         case IO::F_CTRL: return 1; // No idea what this is meant to read. But bit 0 must be 1.
         case IO::F_STAT: return 0; // Undocumented
         case IO::F_WAIT1: return flash.f_wait1;
-        case IO::F_WAIT2:
-            return flash.f_wait2 | 0x4;  // Set ready bit
+        case IO::FLASH_CTRL:
+            // FLASHDataController. BUSY (bit2) reads 1 = "no write sequence active": our flash
+            // writes complete instantly, so the device is always ready.
+            return flash.dataCtrl | kFlashBUSY;
 
         default: {
             // FLASH bank mappings
@@ -220,6 +233,14 @@ u32 Bus::read32Slow(u32 addr) {
 }
 
 void Bus::write32Slow(u32 addr, u32 val) {
+    if (addr >= kFlashBase && addr < kFlashBase + kFlashSize) {
+        // A 32-bit store into flash space = two halfword program writes (low then high). Flash is a
+        // 16-bit device and the documented sequence is halfword-based; OpenPSK uses strh, but handle
+        // word stores defensively so the program path is width-agnostic.
+        flashProgramWrite(addr, u16(val & 0xFFFF));
+        flashProgramWrite(addr + 2, u16(val >> 16));
+        return;
+    }
     if (addr >= 0x0D000100 && addr < 0x0D000180) {  // VRAM
         *(u32*)&lcd.vram[addr & 0x7f] = val;
     } else if (addr >= 0x06000100 && addr < 0x06000140) {
@@ -377,9 +398,15 @@ void Bus::write32Slow(u32 addr, u32 val) {
                 printf("Wrote %08X to F_WAIT1\n", val);
                 break;
 
-            case IO::F_WAIT2:
-                flash.f_wait2 = val;
-                printf("Wrote %08X to F_WAIT2\n", val);
+            case IO::FLASH_CTRL:
+                // FLASHDataController write: latch the writable control bits. Disarming programming
+                // (clearing ENPRG or LOADPAGE, e.g. step 6 of the write sequence) resets the JEDEC
+                // unlock state machine so the next write must re-unlock.
+                flash.dataCtrl = val & kFlashCtrlWritable;
+                if (!((flash.dataCtrl & kFlashENPRG) && (flash.dataCtrl & kFlashLOADPAGE))) {
+                    flash.progState = 0;
+                }
+                if (comTrace) printf("[PSK] PC=%08X WR FLASH_CTRL = %08X\n", curPC, val);
                 break;
 
             case IO::F_CTRL:

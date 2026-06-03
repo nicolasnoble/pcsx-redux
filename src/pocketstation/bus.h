@@ -77,10 +77,68 @@ public:
         std::array<u32, 16> bankMappings;
         std::vector<u8> data;
 
-        // Undocumented FLASH control registers
-        u32 f_wait1;
-        u32 f_wait2;
+        u32 f_wait1;   // Undocumented (0x0600000C).
+
+        // FLASHDataController (0x06000010). Holds the writable control bits (ENPRG/LOCK/STDBY/WAIT/
+        // LOADPAGE/LOADSGN); BUSY is synthesised on read (our writes complete instantly so the
+        // device is always "ready"). dataCtrl plus progState below model the flash write sequence.
+        u32 dataCtrl;
+
+        // JEDEC-style flash-program unlock state machine (PDA HW spec, flash data write sequence).
+        // 0 = idle (need 0xAA -> 0x55AA), 1 = need 0x55 -> 0x2A54, 2 = need 0xA0 -> 0x55AA,
+        // 3 = armed (subsequent data halfwords land in flash). Reset to 0 whenever programming is
+        // disarmed (ENPRG/LOADPAGE cleared). Real NOR flash is read-only unless this sequence runs,
+        // which is why flash is NOT in the CPU writeTable: a stray store can't modify it.
+        int progState;
     } flash;
+
+    // ---- Flash programming model (PDA HW spec "Write accesses", Appendix A FLASHDataController) ---
+    static constexpr u32 kFlashBase = 0x08000000;   // physical flash; absolute sector 0.
+    static constexpr u32 kFlashSize = 128 * KB;
+    static constexpr u32 kFlashUnlockA = 0x080055AA;  // JEDEC command address 1.
+    static constexpr u32 kFlashUnlockB = 0x08002A54;  // JEDEC command address 2.
+    // FLASHDataController bits.
+    static constexpr u32 kFlashENPRG = 1u << 0;
+    static constexpr u32 kFlashLOCK = 1u << 1;
+    static constexpr u32 kFlashBUSY = 1u << 2;
+    static constexpr u32 kFlashSTDBY = 1u << 3;
+    static constexpr u32 kFlashWAIT = 1u << 4;
+    static constexpr u32 kFlashLOADPAGE = 1u << 5;
+    static constexpr u32 kFlashLOADSGN = 1u << 6;
+    // Writable mask (everything the kernel can set; BUSY is read-only/synthesised).
+    static constexpr u32 kFlashCtrlWritable =
+        kFlashENPRG | kFlashLOCK | kFlashSTDBY | kFlashWAIT | kFlashLOADPAGE | kFlashLOADSGN;
+
+    // One halfword write into the flash address space, routed here because flash is not directly
+    // writable (it is omitted from the CPU writeTable). Faithfully models the documented program
+    // sequence: programming must be armed (ENPRG && LOADPAGE && !LOCK), then the JEDEC unlock
+    // (0xAA/0x55/0xA0 to the two command addresses) opens the data phase, after which up to 64
+    // halfwords land in the target sector. Stores that are not part of an armed, unlocked sequence
+    // are ignored (flash behaves as ROM), which is exactly the wart this fixes: a plain `str` used
+    // to modify flash.data directly. The command/data interface is PHYSICAL (0x08000000-based) for
+    // both absolute (SWI 16) and relative (SWI 3) writes; the kernel translates relative addresses
+    // to physical before driving this.
+    void flashProgramWrite(u32 addr, u16 val) {
+        const bool armed = (flash.dataCtrl & kFlashENPRG) && (flash.dataCtrl & kFlashLOADPAGE) &&
+                           !(flash.dataCtrl & kFlashLOCK);
+        if (!armed) return;  // ROM unless programming is armed.
+        switch (flash.progState) {
+            case 0:
+                if (addr == kFlashUnlockA && (val & 0xFF) == 0xAA) flash.progState = 1;
+                return;
+            case 1:
+                flash.progState = (addr == kFlashUnlockB && (val & 0xFF) == 0x55) ? 2 : 0;
+                return;
+            case 2:
+                flash.progState = (addr == kFlashUnlockA && (val & 0xFF) == 0xA0) ? 3 : 0;
+                return;
+            default: {  // 3: armed, the data phase. A halfword lands in the target sector.
+                const u32 off = addr - kFlashBase;
+                if (off + 1 < kFlashSize) *reinterpret_cast<u16*>(&flash.data[off]) = val;
+                return;
+            }
+        }
+    }
 
     std::array<u8, 2 * KB> wram;
     std::vector<u8> bios;

@@ -24,10 +24,10 @@ void CPU::write16 (u32 addr, u16 val) {
     const auto pointer = writeTable[page];
 
     if (pointer == 0) { // if the address is a slow path
-        Helpers::panic ("ARM7 slowmem write. Wrote %04X to %08X\nPage: %06X", val, addr, page);
+        bus.write16Slow(addr, val);
     }
 
-    else 
+    else
         *(u16*) (pointer + (addr & 0x7ff)) = val;
 }
 

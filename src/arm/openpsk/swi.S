@@ -67,36 +67,43 @@ swi_handler_default:               @ unused slots: a visibly-wrong sentinel so a
     .section .rodata
     .align  2
     .global swi_table
-swi_table:                                @ indexed by SWI number (low 8 bits of the comment field)
-    .word   swi_handler_default           @ 00h
-    .word   swi_handler_default           @ 01h SetCallbacks            (TODO)
-    .word   swi_handler_default           @ 02h
-    .word   swi_handler_default           @ 03h
-    .word   swi_handler_default           @ 04h
-    .word   swi_handler_default           @ 05h SenseAutoCom            (TODO)
-    .word   swi_handler_default           @ 06h GetPtrToComFlags        (TODO)
-    .word   swi_handler_default           @ 07h ChangeAutoDocking       (TODO)
-    .word   swi_handler_default           @ 08h PrepareExecute          (TODO)
-    .word   swi_handler_default           @ 09h DoExecute               (TODO)
-    .word   swi_handler_default           @ 0Ah                         (TODO)
-    .word   swi_handler_default           @ 0Bh ClearComFlagsBit10      (TODO)
-    .word   swi_handler_set_bcd_date_time @ 0Ch SetBcdDateTime(date,time)
-    .word   swi_handler_get_bcd_date      @ 0Dh GetBcdDate()
-    .word   swi_handler_get_bcd_time      @ 0Eh GetBcdTime()
-    .word   swi_handler_default           @ 0Fh
-    .word   swi_handler_default           @ 10h
-    .word   swi_handler_default           @ 11h SetComOnOff             (TODO)
-    .word   swi_handler_default           @ 12h
-    .word   swi_handler_default           @ 13h GetPtrToAlarmSetting    (TODO)
-    .word   swi_handler_default           @ 14h
-    .word   swi_handler_default           @ 15h
-    .word   swi_handler_default           @ 16h
-    .word   swi_handler_default           @ 17h GetPtrToFunc3addr       (TODO)
-    .word   swi_handler_default           @ 18h
-    .word   swi_handler_default           @ 19h
-    .word   swi_handler_magic             @ 1Ah custom: dispatch-proof magic constant
-    .word   swi_handler_xform             @ 1Bh custom: dispatch-proof arg transform
-    .word   swi_handler_default           @ 1Ch
-    .word   swi_handler_default           @ 1Dh
-    .word   swi_handler_default           @ 1Eh
-    .word   swi_handler_default           @ 1Fh
+    @ Indexed by SWI number (low 8 bits of the comment field). Names are the AUTHORITATIVE kernel
+    @ spec (PDA Kernel Specification, Dev Ref 1.5, Table 3) - NOT the older reverse-engineered
+    @ nocash/psx-spx names, which were wrong beyond date/time (the comms model SenseAutoCom/
+    @ SetComOnOff/ComFlags is real kernel-internal behavior but NOT the public SWI numbering; the
+    @ single public comms SWI is 17 "Control PlayStation communication"). Numbers are decimal in the
+    @ spec; the hex label here is the same value the `swi #n` comment carries. Gaps (7, 21, 23) are
+    @ not in the spec table.
+swi_table:
+    .word   swi_handler_default              @ 00h  0  Software reset                   (TODO)
+    .word   swi_handler_default              @ 01h  1  Set user callback                (TODO)
+    .word   swi_handler_default              @ 02h  2  Invoke user callback             (TODO)
+    .word   swi_handler_write_flash_relative @ 03h  3  Write flash (relative sectors)
+    .word   swi_handler_default              @ 04h  4  Set system clock frequency       (TODO)
+    .word   swi_handler_default              @ 05h  5  Switch kernel mode               (TODO)
+    .word   swi_handler_default              @ 06h  6  Get PDA status                   (TODO)
+    .word   swi_handler_default              @ 07h  7  (not in spec table)
+    .word   swi_handler_default              @ 08h  8  Application block number control (TODO)
+    .word   swi_handler_default              @ 09h  9  Terminate/suspend application    (TODO)
+    .word   swi_handler_default              @ 0Ah 10  Read serial number               (TODO)
+    .word   swi_handler_default              @ 0Bh 11  Terminate file transfer w/ PS    (TODO)
+    .word   swi_handler_set_bcd_date_time    @ 0Ch 12  Write real-time clock
+    .word   swi_handler_get_bcd_date         @ 0Dh 13  Read calendar
+    .word   swi_handler_get_bcd_time         @ 0Eh 14  Read clock
+    .word   swi_handler_default              @ 0Fh 15  Write serial number              (TODO)
+    .word   swi_handler_write_flash_absolute @ 10h 16  Write flash (absolute number)
+    .word   swi_handler_default              @ 11h 17  Control PlayStation communication(TODO)
+    .word   swi_handler_default              @ 12h 18  Get application status           (TODO)
+    .word   swi_handler_default              @ 13h 19  Get user interface status        (TODO)
+    .word   swi_handler_default              @ 14h 20  Get system call table            (TODO)
+    .word   swi_handler_default              @ 15h 21  (not in spec table)
+    .word   swi_handler_default              @ 16h 22  Get application block number     (TODO)
+    .word   swi_handler_default              @ 17h 23  (not in spec table)
+    .word   swi_handler_default              @ 18h 24  Get application flag             (TODO)
+    .word   swi_handler_default              @ 19h 25  (unused)
+    .word   swi_handler_magic                @ 1Ah custom: dispatch-proof magic constant
+    .word   swi_handler_xform                @ 1Bh custom: dispatch-proof arg transform
+    .word   swi_handler_default              @ 1Ch
+    .word   swi_handler_default              @ 1Dh
+    .word   swi_handler_default              @ 1Eh
+    .word   swi_handler_default              @ 1Fh

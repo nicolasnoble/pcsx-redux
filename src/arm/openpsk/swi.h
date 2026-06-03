@@ -5,6 +5,25 @@
  */
 #pragma once
 
+/* SWI 03h - Write to flash memory (relative sectors). dest = address relative to 0x02000000
+ * (sector 0 there); src = source buffer (halfword-aligned, outside flash). Writes one 128-byte
+ * sector. Returns 0 = success, 1 = failure. */
+static inline unsigned psk_swi_write_flash_relative(unsigned dest, unsigned src) {
+    register unsigned r0 __asm__("r0") = dest;
+    register unsigned r1 __asm__("r1") = src;
+    __asm__ volatile("swi #0x03" : "+r"(r0) : "r"(r1) : "r2", "r3", "memory");
+    return r0;
+}
+
+/* SWI 10h (16) - Write flash memory (absolute number). dest = address relative to 0x08000000
+ * (sector 0 there); src = source buffer. Writes one 128-byte sector. Returns 0 = success, 1 = fail. */
+static inline unsigned psk_swi_write_flash_absolute(unsigned dest, unsigned src) {
+    register unsigned r0 __asm__("r0") = dest;
+    register unsigned r1 __asm__("r1") = src;
+    __asm__ volatile("swi #0x10" : "+r"(r0) : "r"(r1) : "r2", "r3", "memory");
+    return r0;
+}
+
 /* SWI 0Ch - SetBcdDateTime(date, time): date is the SWI 0Dh format (day/month/year),
  * time is the SWI 0Eh format (sec/min/hour/day-of-week). Both in BCD. */
 static inline void psk_swi_set_bcd_date_time(unsigned date, unsigned time) {

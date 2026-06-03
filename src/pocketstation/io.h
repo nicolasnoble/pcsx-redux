@@ -2,11 +2,15 @@
 
 namespace IO {
 enum {
-    F_CTRL = 0x06000000,
-    F_STAT = 0x06000004,
-    F_BANK_FLG = 0x06000008,
-    F_WAIT1 = 0x0600000C,
-    F_WAIT2 = 0x06000010,
+    F_CTRL = 0x06000000,       // REGRemap (PDA HW spec): WRAM remap (write 3) + FLASHVIR/GENREM.
+    F_STAT = 0x06000004,       // FLASHREMAPStatus.
+    F_BANK_FLG = 0x06000008,   // FLASHACTIVEBlocks.
+    F_WAIT1 = 0x0600000C,      // Undocumented (donor name kept).
+    // FLASHDataController (PDA HW spec Appendix A, reset 0x14). Controls flash programming:
+    //   bit0 ENPRG, bit1 LOCK, bit2 BUSY (read: 1=idle/done), bit3 STDBY, bit4 WAIT,
+    //   bit5 LOADPAGE, bit6 LOADSGN. The flash data-write sequence arms it (ENPRG|LOADPAGE)
+    //   then runs the JEDEC unlock; see Bus::flashProgramWrite. (Donor mislabelled this F_WAIT2.)
+    FLASH_CTRL = 0x06000010,
     F_SN_LO = 0x06000300,
     F_SN_HI = 0x06000302,
     F_CAL = 0x06000308,

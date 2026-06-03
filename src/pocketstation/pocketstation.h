@@ -42,6 +42,8 @@ class PocketStation {
 
     void setKernel(const uint8_t* data, size_t len);  // 16 KiB; call before reset().
     void setFlash(const uint8_t* data, size_t len);   // 128 KiB card image; call before reset().
+    const uint8_t* flashData() const { return m_bus.flash.data.data(); }  // read flash back (verify writes).
+    size_t flashSize() const { return m_bus.flash.data.size(); }
 
     void reset();  // power-on; donor reset order (cpu, bus, lcd).
 

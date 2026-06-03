@@ -153,11 +153,12 @@ public:
         }
 
         page = 0x8000000 / pageSize;
-        // Map the 128 KiB (64 pages) of FLASH memory as readable
+        // Map the 128 KiB (64 pages) of FLASH as readable/executable only. Flash is NOT directly
+        // writable: real NOR flash needs the FLASHDataController program sequence (JEDEC unlock +
+        // data phase), so writes are routed to the slow path (Bus::flashProgramWrite) instead of
+        // landing via fastmem. A plain `str` to flash therefore does nothing, as on hardware.
         for (u32 i = 0; i < 64; i++) {
-            const auto pointer = (uintptr_t)&bus.flash.data[i * pageSize];
-            writeTable[page] = pointer;
-            readTable[page++] = pointer;
+            readTable[page++] = (uintptr_t)&bus.flash.data[i * pageSize];
         }
 
         setCPSR(0x5F); // initialize CPSR/SPSR

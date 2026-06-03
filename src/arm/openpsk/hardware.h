@@ -8,9 +8,29 @@
 #pragma once
 
 #define PSK_MMIO(addr) (*(volatile unsigned int *)(addr))
+#define PSK_MMIO16(addr) (*(volatile unsigned short *)(addr))
 
 /* Memory / FLASH control. Writing 3 (byte) to F_CTRL maps the 2 KiB WRAM over the boot shadow. */
 #define F_CTRL 0x06000000
+
+/* ---- Flash memory programming (PDA Hardware Spec, "Write accesses" + Appendix A) -----------------
+ * Flash is read-only memory that is programmed through a controller. A plain store does NOT modify
+ * it; the documented write sequence is: arm FLASH_CTRL (ENPRG|LOADPAGE), run the JEDEC unlock
+ * (0xFFAA->0x080055AA, 0xFF55->0x08002A54, 0xFFA0->0x080055AA), write up to 64 halfwords to the
+ * target sector, poll BUSY, then disarm. The command/data interface is at the PHYSICAL base
+ * (0x08000000); SWI 3 (relative) translates app-relative addresses to physical before driving it. */
+#define FLASH_CTRL 0x06000010    /* FLASHDataController */
+#define FLASH_ENPRG    (1u << 0) /* enable programming */
+#define FLASH_LOCK     (1u << 1) /* 1 = disable data writes */
+#define FLASH_BUSY     (1u << 2) /* read: 1 = idle/done, 0 = write in progress */
+#define FLASH_LOADPAGE (1u << 5) /* enable page (sector) writes */
+#define FLASH_LOADSGN  (1u << 6) /* enable system-signature writes */
+
+#define FLASH_BASE_ABS   0x08000000u /* physical flash; SWI 16 absolute sector 0. */
+#define FLASH_BASE_REL   0x02000000u /* virtual app flash; SWI 3 relative sector 0. */
+#define FLASH_UNLOCK_A   0x080055AAu /* JEDEC command address 1. */
+#define FLASH_UNLOCK_B   0x08002A54u /* JEDEC command address 2. */
+#define FLASH_SECTOR_BYTES 128       /* one sector = 128 bytes = 64 halfwords. */
 
 /* LCD controller. VRAM is 128 bytes = 32x32 @ 1bpp, row-major, 4 bytes/row, LSB = column 0. */
 #define LCD_MODE 0x0D000000 /* drawMode:3 cpen:1 refreshRate:2 enabled:bit6 rotate:bit7 */
