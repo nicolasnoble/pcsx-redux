@@ -20,6 +20,7 @@
  */
 
     .equ SWI_TABLE_PTR, 0xE0       @ WRAM word holding the dispatch table base (retail-faithful)
+    .equ CALLBACK_SLOTS, 0xF8      @ WRAM base of the 4 user-callback addresses (SetCallbacks, SWI 1)
 
     .text
     .arm
@@ -40,6 +41,32 @@ swi_service:
     bx      r12                    @ call the handler (ARM); r0-r3 = args, r0 = result
 swi_return:
     ldmfd   sp!, {r12, pc}^        @ restore r12, pop return addr into PC, CPSR <- SPSR (exception return)
+
+    /*
+     * SWI 2 - Invoke user callback (PDA Kernel Spec, Table 3 #2). Invokes the registered
+     * software-interrupt callback (type 0, slot at CALLBACK_SLOTS), returning its result in r0.
+     *
+     * This handler is in assembly, not C, because the spec requires r0-r10 to reach the callback
+     * "holding the value when the system call was invoked". swi_service preserves r0-r10 (it only
+     * touches r12/lr), so those values are still live here; a C handler would marshal them away.
+     * Per the software-interrupt convention (Table 4: R1-R12, LR saved; r0 = return value) the
+     * kernel preserves r1-r12,lr across the callback - r12 is already saved by swi_service, so we
+     * save r1-r11 plus our return address and leave r0 alone to carry the result. The callback may
+     * be ARM or Thumb: `bx` honors the registered address's LSB, and it returns with `bx lr`.
+     */
+    .global swi_handler_invoke_callback
+swi_handler_invoke_callback:
+    stmfd   sp!, {r1-r11, lr}      @ preserve caller r1-r11 + return addr (lr = swi_return)
+    mov     r11, #CALLBACK_SLOTS   @ slot 0 = software-interrupt callback
+    ldr     r11, [r11]
+    cmp     r11, #0
+    bne     1f
+    mov     r0, #0                 @ no callback registered -> result 0
+    b       2f
+1:  adr     lr, 2f                 @ callback returns here via `bx lr`
+    bx      r11                    @ invoke (r0-r10 = params, r0 = result); LSB selects ARM/Thumb
+2:  ldmfd   sp!, {r1-r11, lr}      @ restore caller r1-r11; lr = swi_return
+    bx      lr                     @ -> swi_return (r0 carries the callback's result)
 
     /*
      * Custom milestone SWI handlers. These prove the dispatch round-trips but are NOT part of the
@@ -76,8 +103,8 @@ swi_handler_default:               @ unused slots: a visibly-wrong sentinel so a
     @ not in the spec table.
 swi_table:
     .word   swi_handler_default              @ 00h  0  Software reset                   (TODO)
-    .word   swi_handler_default              @ 01h  1  Set user callback                (TODO)
-    .word   swi_handler_default              @ 02h  2  Invoke user callback             (TODO)
+    .word   swi_handler_set_user_callback    @ 01h  1  Set user callback
+    .word   swi_handler_invoke_callback      @ 02h  2  Invoke user callback
     .word   swi_handler_write_flash_relative @ 03h  3  Write flash (relative sectors)
     .word   swi_handler_default              @ 04h  4  Set system clock frequency       (TODO)
     .word   swi_handler_default              @ 05h  5  Switch kernel mode               (TODO)

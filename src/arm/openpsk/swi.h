@@ -5,6 +5,27 @@
  */
 #pragma once
 
+/* SWI 01h - Set user callback. type: 0=software, 1=IRQ, 2=FIQ, 3=PS file-transfer-display. addr is
+ * the callback address (set its LSB to 1 for a Thumb callback - the kernel honors that via `bx`).
+ * Returns the previously-registered callback for that type (0 if none). */
+static inline unsigned psk_swi_set_user_callback(unsigned type, unsigned addr) {
+    register unsigned r0 __asm__("r0") = type;
+    register unsigned r1 __asm__("r1") = addr;
+    __asm__ volatile("swi #0x01" : "+r"(r0) : "r"(r1) : "r2", "r3", "memory");
+    return r0;
+}
+
+/* SWI 02h - Invoke user callback. Synchronously invokes the registered software-interrupt callback
+ * (type 0). The spec passes r0-r10 to the callback holding their syscall-time values; this wrapper
+ * exposes r0 and r1 as parameters (the kernel preserves r1-r12 across the call) and returns the
+ * callback's r0 result. With no callback registered the kernel returns 0. */
+static inline unsigned psk_swi_invoke_user_callback(unsigned a0, unsigned a1) {
+    register unsigned r0 __asm__("r0") = a0;
+    register unsigned r1 __asm__("r1") = a1;
+    __asm__ volatile("swi #0x02" : "+r"(r0) : "r"(r1) : "r2", "r3", "memory");
+    return r0;
+}
+
 /* SWI 03h - Write to flash memory (relative sectors). dest = address relative to 0x02000000
  * (sector 0 there); src = source buffer (halfword-aligned, outside flash). Writes one 128-byte
  * sector. Returns 0 = success, 1 = failure. */

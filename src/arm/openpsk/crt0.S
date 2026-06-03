@@ -65,6 +65,19 @@ _start:
     ldr     r0, =irq_service
     str     r0, [r1, #0x20]        @ WRAM[0x38] = &irq_service
 
+    /*
+     * Clear the 4 user-callback slots (SetCallbacks, SWI 1) at WRAM 0xF8..0x108. A reset starts the
+     * device with no callbacks registered (PDA Kernel Spec: "registered callback functions will be
+     * cleared"), so the first Set-user-callback returns 0 and the SWI 2 / IRQ paths see "none" until
+     * an application installs one.
+     */
+    mov     r0, #0
+    mov     r1, #0xF8
+    str     r0, [r1], #4           @ 0xF8  software-interrupt callback
+    str     r0, [r1], #4           @ 0xFC  IRQ callback
+    str     r0, [r1], #4           @ 0x100 FIQ callback
+    str     r0, [r1], #4           @ 0x104 PS file-transfer-display callback
+
     /* Per-mode stacks in WRAM (mirror the retail boot). CPSR control byte: mode + I/F bits. */
     msr     cpsr_c, #0xD1          @ FIQ  mode, IRQ+FIQ disabled
     ldr     sp, =0x200

@@ -11,6 +11,19 @@
  */
 #include "hardware.h"
 
+/* SWI 1 - Set user callback (PDA Kernel Spec, Table 3 #1). r0 = interrupt type (0 software,
+ * 1 IRQ, 2 FIQ, 3 PS file-transfer-display), r1 = callback address (LSB = 1 if the callback is
+ * Thumb code). Stores the address in the per-type slot at PSK_CALLBACK_BASE and returns the
+ * previous value (0 if none). The SWI 2 dispatcher reads slot 0; irq.S reads slot 1. An out-of-range
+ * type is a no-op returning 0. */
+unsigned swi_handler_set_user_callback(unsigned type, unsigned addr) {
+    if (type > PSK_CB_PSXFER) return 0;
+    volatile unsigned *slot = (volatile unsigned *)(PSK_CALLBACK_BASE + type * 4u);
+    unsigned prev = *slot;
+    *slot = addr;
+    return prev;
+}
+
 /* The century is NOT in RTC_DATE (psx-spx: bits 24-31 are "Unknown? this is NOT used as century").
  * On real hardware it lives in battery-backed kernel RAM. OpenPSK doesn't model that store yet, so
  * GetBcdDate() synthesises a fixed 20th-of-2000s century. TODO: back this with kernel RAM. */

@@ -64,6 +64,19 @@
 /* Clock control. Writing bit0=1 to CLK_STOP halts the CPU until a wake IRQ occurs (sleep mode). */
 #define CLK_STOP 0x0B000004
 
+/* ---- User callbacks (SetCallbacks, SWI 1) --------------------------------------------------------
+ * The kernel handles interrupts by invoking callback functions a PDA application registers with
+ * SWI 1 (PDA Kernel Spec, "Interrupt handling"). The four callback addresses live in the WRAM system
+ * area at PSK_CALLBACK_BASE, one word per interrupt type (the retail kernel uses the same layout: RAM
+ * map "0xF8 = 4 callback addresses"). A Thumb callback is registered with its address LSB set to 1;
+ * the callback returns to the caller's mode with `bx lr`. crt0 zeroes these slots at reset (per the
+ * spec, a reset clears all registered callbacks). */
+#define PSK_CALLBACK_BASE 0xF8u
+#define PSK_CB_SOFTWARE 0u /* software-interrupt callback (invoked synchronously by SWI 2) */
+#define PSK_CB_IRQ      1u /* IRQ-interrupt callback (invoked by irq.S on any unmasked IRQ) */
+#define PSK_CB_FIQ      2u /* FIQ-interrupt callback (slot stored; no OpenPSK FIQ source yet) */
+#define PSK_CB_PSXFER   3u /* start/stop display of PS file-transfer-in-progress */
+
 /* LCD_MODE value the retail kernel boots with: cpen=1, refreshRate=1, enabled=1. */
 #define LCD_MODE_ENABLED 0x58
 
