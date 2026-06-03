@@ -35,7 +35,14 @@ typedef Setting<int, TYPESTRING("Interp"), 2> Interpolation;
 typedef Setting<bool, TYPESTRING("Mono")> Mono;
 typedef Setting<bool, TYPESTRING("DBufIRQ"), true> DBufIRQ;
 typedef Setting<bool, TYPESTRING("Mute")> Mute;
-typedef Settings<Backend, Device, NullSync, Streaming, Volume, SPUIRQWait, Reverb, Interpolation, Mono, DBufIRQ, Mute>
+// Emulation speed multiplier, applied at the audio sink (the emulator's master clock). 1 = realtime
+// (1:1 emulated:hardware), N = N times faster, <= 0 = unbounded (drain as fast as the producer fills).
+// The sink decimates whole frame-runs (skip, not resample) so pitch is preserved at any multiplier.
+// This replaces the old cycle-derived Emulator::SettingScaler: because both audio sources (SPU voices
+// and CD-ROM XA) converge at the sink, speeding up here also speeds up XA, which the cycle scaler missed.
+typedef Setting<int, TYPESTRING("Speed"), 1> Speed;
+typedef Settings<Backend, Device, NullSync, Streaming, Volume, SPUIRQWait, Reverb, Interpolation, Mono, DBufIRQ, Mute,
+                 Speed>
     SettingsType;
 
 }  // namespace SPU

@@ -88,6 +88,10 @@ with some games, but slows SPU processing.)"));
     changed |= ImGui::Checkbox(_("Capture/decode buffer IRQ"), &settings.get<DBufIRQ>().value);
     ImGuiHelpers::ShowHelpMarker(
         _("Activates SPU IRQs based on writes to the decode/capture buffer. This option is necessary for some games."));
+    changed |= ImGui::InputInt(_("Speed multiplier"), &settings.get<Speed>().value);
+    ImGuiHelpers::ShowHelpMarker(_(R"(Emulation speed, applied at the audio sink (the master clock).
+1 = realtime, N = N times faster. Frames are skipped, not resampled, so pitch is preserved.
+0 or less = unbounded: run as fast as the host allows.)"));
 
     ImGui::End();
     return changed;

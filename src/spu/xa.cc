@@ -51,8 +51,10 @@ void PCSX::SPU::impl::FeedXA(xa_decode_t *xap) {
     xapGlobal = xap;  // store info for save states
 
     iSize = ((44100 * xap->nsamples) / xap->freq);  // get size
-    iSize *= 100;
-    iSize /= std::min(100, g_emulator->settings.get<Emulator::SettingScaler>().value);
+    // Emulation speed no longer scales the XA feed size here. The old Emulator::SettingScaler only ever
+    // adjusted this for sub-realtime (its min(100, scaler) meant fast-forward never touched XA at all),
+    // and it defaulted to 100 (== no change). XA speed-up now happens at the sink, which drains the XA
+    // stream (stream 1) at the same multiplier as the voices stream. Dropping it is a no-op at default.
     if (!iSize) return;  // none? bye
 
     assert(iSize <= 32 * 1024);
