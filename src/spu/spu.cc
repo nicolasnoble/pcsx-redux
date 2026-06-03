@@ -107,6 +107,39 @@ inline void PCSX::SPU::impl::FModChangeFrequency(SPUCHAN *pChannel, int ns) {
 }
 
 ////////////////////////////////////////////////////////////////////////
+// Voice 1 and voice 3 mirror their post-ADSR / pre-volume output into the
+// capture area (voice 1 at +0x400, voice 3 at +0x600, half-word sample indices
+// into spuMem). These helpers fold the per-voice dispatch and the shared write
+// cursor bookkeeping; ch selects the voice (1 or 3), other channels and the
+// capture-disabled case are no-ops. The cursors are per-batch state shared
+// across channels, so they are passed by reference.
+////////////////////////////////////////////////////////////////////////
+
+void PCSX::SPU::impl::captureVoiceSilence(int ch, int32_t &capVoice1Index, int32_t &capVoice3Index, int fromSample) {
+    if (pMixIrq && ch == 1) {
+        std::unique_lock<std::mutex> lock(cbMtx);
+        for (int c = fromSample; c < NSSIZE; c++) spuMem[capVoice1Index + c + kCaptureVoice1Offset] = 0;
+        capVoice1Index = (capVoice1Index + (NSSIZE - fromSample)) % kCaptureRegionSamples;
+    } else if (pMixIrq && ch == 3) {
+        std::unique_lock<std::mutex> lock(cbMtx);
+        for (int c = fromSample; c < NSSIZE; c++) spuMem[capVoice3Index + c + kCaptureVoice3Offset] = 0;
+        capVoice3Index = (capVoice3Index + (NSSIZE - fromSample)) % kCaptureRegionSamples;
+    }
+}
+
+void PCSX::SPU::impl::captureVoiceSample(int ch, int32_t &capVoice1Index, int32_t &capVoice3Index, int sample) {
+    if (pMixIrq && ch == 1) {
+        std::unique_lock<std::mutex> lock(cbMtx);
+        spuMem[capVoice1Index + kCaptureVoice1Offset] = sample;
+        capVoice1Index = (capVoice1Index + 1) % kCaptureRegionSamples;
+    } else if (pMixIrq && ch == 3) {
+        std::unique_lock<std::mutex> lock(cbMtx);
+        spuMem[capVoice3Index + kCaptureVoice3Offset] = sample;
+        capVoice3Index = (capVoice3Index + 1) % kCaptureRegionSamples;
+    }
+}
+
+////////////////////////////////////////////////////////////////////////
 // Synthesize one channel's contribution to this NSSIZE-sample batch: start a
 // pending voice, advance and decode its ADPCM stream, interpolate, apply the
 // ADSR envelope, mirror voices 1 and 3 into the capture buffer, and either
@@ -123,15 +156,7 @@ void PCSX::SPU::impl::synthesizeChannel(int ch, SPUCHAN *pChannel, int32_t &capV
 
     if (!pChannel->data.get<PCSX::SPU::Chan::On>().value) {
         // Although the voice is silent, its capture mirror keeps filling.
-        if (pMixIrq && ch == 1) {
-            std::unique_lock<std::mutex> lock(cbMtx);
-            for (int c = 0; c < NSSIZE; c++) spuMem[capVoice1Index + c + kCaptureVoice1Offset] = 0;
-            capVoice1Index = (capVoice1Index + NSSIZE) % kCaptureRegionSamples;
-        } else if (pMixIrq && ch == 3) {
-            std::unique_lock<std::mutex> lock(cbMtx);
-            for (int c = 0; c < NSSIZE; c++) spuMem[capVoice3Index + c + kCaptureVoice3Offset] = 0;
-            capVoice3Index = (capVoice3Index + NSSIZE) % kCaptureRegionSamples;
-        }
+        captureVoiceSilence(ch, capVoice1Index, capVoice3Index, 0);
         return;  // channel not playing
     }
 
@@ -159,15 +184,7 @@ void PCSX::SPU::impl::synthesizeChannel(int ch, SPUCHAN *pChannel, int32_t &capV
                     pChannel->adsr.ex().get<exEnvelopeVol>().value = 0;
                     // The voice is silent now, but its capture mirror still fills: ns samples are
                     // already done this batch, so write silence for the remaining NSSIZE-ns.
-                    if (pMixIrq && ch == 1) {
-                        std::unique_lock<std::mutex> lock(cbMtx);
-                        for (int c = ns; c < NSSIZE; c++) spuMem[capVoice1Index + c + kCaptureVoice1Offset] = 0;
-                        capVoice1Index = (capVoice1Index + (NSSIZE - ns)) % kCaptureRegionSamples;
-                    } else if (pMixIrq && ch == 3) {
-                        std::unique_lock<std::mutex> lock(cbMtx);
-                        for (int c = ns; c < NSSIZE; c++) spuMem[capVoice3Index + c + kCaptureVoice3Offset] = 0;
-                        capVoice3Index = (capVoice3Index + (NSSIZE - ns)) % kCaptureRegionSamples;
-                    }
+                    captureVoiceSilence(ch, capVoice1Index, capVoice3Index, ns);
                     return;  // done with this channel
                 }
 
@@ -264,15 +281,7 @@ void PCSX::SPU::impl::synthesizeChannel(int ch, SPUCHAN *pChannel, int32_t &capV
 
         // The capture mirror holds the voice 1/3 sample after ADSR but before volume.
         mixedSample = std::clamp(mixedSample, -kCaptureSampleClamp, kCaptureSampleClamp);
-        if (pMixIrq && ch == 1) {
-            std::unique_lock<std::mutex> lock(cbMtx);
-            spuMem[capVoice1Index + kCaptureVoice1Offset] = mixedSample;
-            capVoice1Index = (capVoice1Index + 1) % kCaptureRegionSamples;
-        } else if (pMixIrq && ch == 3) {
-            std::unique_lock<std::mutex> lock(cbMtx);
-            spuMem[capVoice3Index + kCaptureVoice3Offset] = mixedSample;
-            capVoice3Index = (capVoice3Index + 1) % kCaptureRegionSamples;
-        }
+        captureVoiceSample(ch, capVoice1Index, capVoice3Index, mixedSample);
 
         if (pChannel->data.get<PCSX::SPU::Chan::FMod>().value == 2)  // fmod freq channel
             iFMod[ns] = pChannel->data.get<PCSX::SPU::Chan::sval>().value;  // store sample for the next channel's fmod
