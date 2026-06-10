@@ -62,9 +62,20 @@
 #define INT_MASK_SET 0x0A000008 /* W: 1-bits enable the matching interrupt */
 #define INT_MASK_CLR 0x0A00000C /* W: 1-bits disable */
 #define INT_ACK      0x0A000010 /* W: 1-bits acknowledge (clear) latched requests */
+#define INT_INPUT    0x0A000004 /* R: raw live interrupt input levels (dock line, RTC square wave) */
 #define INT_RTC      (1u << 9)  /* RTC square-wave IRQ - the sleep wake source for this milestone */
 #define INT_FIRE     (1u << 0)  /* Fire button IRQ (also wakes from sleep) */
+#define INT_COM      (1u << 6)  /* COM/SPI FIQ - the card-link byte-ready interrupt */
 #define INT_DOCKED   (1u << 11) /* Docking IRQ */
+
+/* Serial card-link (COM) controller. The docked PlayStation clocks SPI bytes here; COM_STAT2.bit0
+ * (ready) signals a completed exchange, COM_STAT1.bit1 an error. See com.c for the command engine. */
+#define COM_MODE  0x0C000000
+#define COM_STAT1 0x0C000004    /* bit1 = error */
+#define COM_DATA  0x0C000008    /* RX/TX shift register (single byte each direction) */
+#define COM_CTRL1 0x0C000010
+#define COM_STAT2 0x0C000014    /* bit0 = ready (8 bits transferred) */
+#define COM_CTRL2 0x0C000018
 
 /* Clock control. Writing bit0=1 to CLK_STOP halts the CPU until a wake IRQ occurs (sleep mode). */
 #define CLK_STOP 0x0B000004
@@ -115,6 +126,10 @@ static inline void psk_int_unmask(unsigned bits) { PSK_MMIO(INT_MASK_SET) = bits
 /* Unmask IRQs at the CPU (System mode, I-bit clear, FIQ left disabled). Call once before sleeping
  * so the wake IRQ is actually taken by the installed handler. */
 static inline void psk_enable_irq(void) { __asm__ volatile("msr cpsr_c, #0x5F" ::: "memory"); }
+
+/* Unmask FIQs (and IRQs) at the CPU: System mode, I+F bits clear. Call after openpsk_comm_enable so
+ * the card-link COM FIQ is actually taken. */
+static inline void psk_enable_fiq(void) { __asm__ volatile("msr cpsr_c, #0x1F" ::: "memory"); }
 
 /* Enter sleep mode: stop the CPU clock until a wake IRQ. Returns once the handler has run and the
  * core resumed (i.e. after the next enabled interrupt - the RTC tick, a Fire press, or docking). */

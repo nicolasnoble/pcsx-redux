@@ -66,6 +66,18 @@ _start:
     str     r0, [r1, #0x20]        @ WRAM[0x38] = &irq_service
 
     /*
+     * Install the FIQ exception vector the same way (the ARM FIQ vector sits at 0x1C). The only FIQ
+     * source is the card-link COM controller (INT bit 6); fiq_service runs the command engine.
+     *   0x1C = "ldr pc,[pc,#0x18]" -> loads the service-routine address from 0x3C (PC = 0x1C+8 = 0x24).
+     *   0x3C = absolute address of fiq_service.
+     */
+    ldr     r0, =0xE59FF018        @ opcode: ldr pc,[pc,#0x18]
+    mov     r1, #0x1C
+    str     r0, [r1]               @ WRAM[0x1C] = FIQ vector trampoline
+    ldr     r0, =fiq_service
+    str     r0, [r1, #0x20]        @ WRAM[0x3C] = &fiq_service
+
+    /*
      * Clear the 4 user-callback slots (SetCallbacks, SWI 1) at WRAM 0xF8..0x108. A reset starts the
      * device with no callbacks registered (PDA Kernel Spec: "registered callback functions will be
      * cleared"), so the first Set-user-callback returns 0 and the SWI 2 / IRQ paths see "none" until
