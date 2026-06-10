@@ -158,6 +158,7 @@ static void func_exec_to_ps(void) {
     unsigned len1;
     func_handler h = func_lookup(func, &len1);
     if (!h) return;
+    if (com_exchange(len1)) return;                     /* send LEN1 (param count) - retail two-length framing */
     volatile unsigned char *buf = psk_ram8_p(PSK_SECTOR_BUF);
     for (unsigned i = 0; i < len1; i++) {               /* read the LEN1 parameter bytes */
         if (com_exchange(0)) return;
@@ -183,6 +184,7 @@ static void func_exec_from_ps(void) {
     unsigned len1;
     func_handler h = func_lookup(func, &len1);
     if (!h) return;
+    if (com_exchange(len1)) return;                     /* send LEN1 (param count) - retail two-length framing */
     volatile unsigned char *buf = psk_ram8_p(PSK_SECTOR_BUF);
     for (unsigned i = 0; i < len1; i++) {
         if (com_exchange(0)) return;
@@ -219,7 +221,7 @@ void openpsk_com_service(void) {
     PSK_MMIO(COM_CTRL2) = 1;
 
     if (com_rx() != 0x81) return;                   /* device-select: must address the card */
-    if (com_exchange(0xFF)) return;                 /* idle reply; RX = the command byte */
+    if (com_exchange(0x08)) return;                 /* FLAG status byte (card-status); RX = the command byte */
     unsigned cmd = com_rx();
 
     if (cmd == 0x52 || cmd == 0x57 || cmd == 0x53) {
