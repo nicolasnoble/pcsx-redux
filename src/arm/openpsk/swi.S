@@ -123,7 +123,7 @@ swi_table:
     .word   swi_handler_get_bcd_time         @ 0Eh 14  Read clock
     .word   swi_handler_write_serial         @ 0Fh 15  Write serial number (locked out)
     .word   swi_handler_write_flash_absolute @ 10h 16  Write flash (absolute number)
-    .word   swi_handler_default              @ 11h 17  Control PlayStation communication(COM chunk)
+    .word   swi_handler_control_ps_comm      @ 11h 17  Control PlayStation communication
     .word   swi_handler_default              @ 12h 18  Get application status           (COM chunk)
     .word   swi_handler_get_ui_status        @ 13h 19  Get user interface status
     .word   swi_handler_get_syscall_table    @ 14h 20  Get system call table

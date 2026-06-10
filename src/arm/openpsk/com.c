@@ -254,3 +254,25 @@ void openpsk_comm_enable(void) {
     PSK_MMIO(INT_MASK_SET) = INT_COM;               /* enable the COM FIQ (bit 6) */
     psk_comflags_or(PSK_CF_COMM_POSSIBLE);
 }
+
+/* Leave card-link communication mode (SetComOnOff(0), retail comm_disable@0x11F8): disable the COM
+ * FIQ, reset the COM hardware to idle, and clear ComFlags.9 so the command engine stops answering. */
+void openpsk_comm_disable(void) {
+    PSK_MMIO(INT_MASK_CLR) = INT_COM;               /* disable the COM FIQ */
+    PSK_MMIO(INT_ACK) = INT_COM;                    /* clear any latched COM request */
+    PSK_MMIO(COM_MODE) = 2;
+    PSK_MMIO(COM_CTRL1) = 0;
+    PSK_MMIO(COM_CTRL2) = 3;
+    PSK_MMIO(COM_DATA) = 0xFF;
+    psk_comflags_clr(PSK_CF_COMM_POSSIBLE);         /* communication no longer possible */
+}
+
+/* SWI 17 - Control PlayStation communication (PDA Kernel Spec, Table 3 #17). r0 != 0 enables the
+ * card link (SetComOnOff(1)), r0 == 0 disables it. The retail kernel only completes the enable when
+ * docked (it is driven from the docking sense); OpenPSK exposes the enable directly until the
+ * docking state machine / shell lands. */
+unsigned swi_handler_control_ps_comm(unsigned on) {
+    if (on) openpsk_comm_enable();
+    else    openpsk_comm_disable();
+    return 0;
+}

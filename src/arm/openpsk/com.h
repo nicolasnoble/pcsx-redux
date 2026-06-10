@@ -9,3 +9,6 @@ void openpsk_com_service(void);
 /* Enter card-link communication mode (init COM hardware, unmask COM FIQ, set ComFlags.9). The caller
  * must also enable FIQs at the CPU (psk_enable_fiq) for the engine to be reached. */
 void openpsk_comm_enable(void);
+
+/* Leave card-link communication mode (disable COM FIQ, reset COM hardware, clear ComFlags.9). */
+void openpsk_comm_disable(void);
