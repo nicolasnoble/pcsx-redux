@@ -111,6 +111,94 @@ static void card_getid(void) {
     }
 }
 
+/* ---- FUNC execute handshake (card commands 0x5B / 0x5C) - the PS<->PDA application sync ----------
+ * The PlayStation invokes a numbered function on the PDA and exchanges a data block with it. Command
+ * 0x5B transfers PS<-PDA (the PDA produces data), 0x5C transfers PS->PDA (the PDA consumes data).
+ * Each calls the function's handler TWICE: pre-data (set up the buffer/length) then post-data (commit),
+ * distinguished by mode bit 4 (0=pre, 1=post); mode bit 2 flags a bad transfer. This is the mechanism
+ * FF8 Chocobo World uses to sync.
+ *
+ * Functions 0x00-0x7F are kernel built-ins (descriptor table in ROM); 0x80-0xFF are an application's
+ * own handlers from its file header. OpenPSK has no application loaded yet, so only the kernel
+ * built-ins resolve - currently FUNC 0x00 (read date/time), which is what the PS reads to sync the
+ * clock. The application-FUNC routing (0x80-0xFF) lands with the app-launch layer; the full FF8
+ * sync is then validated against a real capture from the hardware in the rig. */
+typedef struct { unsigned ptr; unsigned len; } func_result;
+
+extern unsigned swi_handler_get_bcd_date(void);
+extern unsigned swi_handler_get_bcd_time(void);
+
+/* FUNC 0x00 - read date/time. Pre-data fills the sector buffer with {date:u32, time:u32} (8 bytes,
+ * the same {0x368 date, 0x390 time} the retail kernel returns); post-data is a no-op. */
+static func_result func00_datetime(unsigned mode) {
+    func_result r = { PSK_SECTOR_BUF, 8 };
+    if (mode & 4u) { r.len = 0; return r; }             /* bad transfer */
+    if (!(mode & 0x10u)) {                              /* pre-data (bit4 clear): produce the data */
+        PSK_RAM32(PSK_SECTOR_BUF + 0) = swi_handler_get_bcd_date();
+        PSK_RAM32(PSK_SECTOR_BUF + 4) = swi_handler_get_bcd_time();
+    }
+    return r;
+}
+
+/* Resolve a function number to {param-byte count (LEN1), handler}. Kernel built-ins only for now. */
+typedef func_result (*func_handler)(unsigned mode);
+static func_handler func_lookup(unsigned func, unsigned *len1) {
+    switch (func) {
+        case 0x00: *len1 = 0; return func00_datetime;
+        default:   *len1 = 0; return 0;                 /* 0x01-0x7F builtin / 0x80+ app: not yet */
+    }
+}
+
+/* Command 0x5B - execute function, transfer data PDA->PS. Read the function number + its LEN1 param
+ * bytes, run the pre-data call to get {ptr,len}, send the length byte then the data, then post-data. */
+static void func_exec_to_ps(void) {
+    if (com_exchange(0xFF)) return;
+    unsigned func = com_rx();
+    if (func >= 0x100u) return;
+    unsigned len1;
+    func_handler h = func_lookup(func, &len1);
+    if (!h) return;
+    volatile unsigned char *buf = psk_ram8_p(PSK_SECTOR_BUF);
+    for (unsigned i = 0; i < len1; i++) {               /* read the LEN1 parameter bytes */
+        if (com_exchange(0)) return;
+        buf[i] = (unsigned char)com_rx();
+    }
+    func_result res = h(9u);                            /* pre-data (mode 0x09) */
+    if (res.len == 0) return;
+    unsigned len = res.len > 0x80u ? 0x80u : res.len;
+    volatile unsigned char *d = psk_ram8_p(res.ptr);
+    if (com_exchange(len)) return;                      /* length byte */
+    for (unsigned i = 0; i < len; i++) {
+        if (com_exchange(d[i])) return;                 /* the data */
+    }
+    h(0x11u);                                           /* post-data (mode 0x11) */
+}
+
+/* Command 0x5C - execute function, transfer data PS->PDA. Symmetric: pre-data gives the input buffer,
+ * receive the data into it, post-data commits. (No consuming built-in yet; shell in place.) */
+static void func_exec_from_ps(void) {
+    if (com_exchange(0xFF)) return;
+    unsigned func = com_rx();
+    if (func >= 0x100u) return;
+    unsigned len1;
+    func_handler h = func_lookup(func, &len1);
+    if (!h) return;
+    volatile unsigned char *buf = psk_ram8_p(PSK_SECTOR_BUF);
+    for (unsigned i = 0; i < len1; i++) {
+        if (com_exchange(0)) return;
+        buf[i] = (unsigned char)com_rx();
+    }
+    func_result res = h(0x0Au);                         /* pre-data (mode 0x0A) */
+    if (res.len == 0) return;
+    unsigned len = res.len > 0x80u ? 0x80u : res.len;
+    volatile unsigned char *d = psk_ram8_p(res.ptr);
+    for (unsigned i = 0; i < len; i++) {
+        if (com_exchange(0)) return;
+        d[i] = (unsigned char)com_rx();
+    }
+    h(0x12u);                                           /* post-data (mode 0x12) */
+}
+
 /* COM FIQ service body (called from fiq.S on INT bit 6). Runs one whole card command. Gated on
  * ComFlags.9 (communication possible) just like the retail engine - if the link is not enabled and
  * docked, do nothing. */
@@ -142,8 +230,13 @@ void openpsk_com_service(void) {
         else if (cmd == 0x57) card_write();
         else                  card_getid();
         psk_comflags_clr(PSK_CF_CMD_IN_PROGRESS);
+    } else if (cmd == 0x5B || cmd == 0x5C) {        /* FUNC execute (no 5A/5D ack, handler runs directly) */
+        psk_comflags_or(PSK_CF_CMD_IN_PROGRESS);
+        if (cmd == 0x5B) func_exec_to_ps();
+        else             func_exec_from_ps();
+        psk_comflags_clr(PSK_CF_CMD_IN_PROGRESS);
     }
-    /* else: PDA / FUNC commands (0x50, 0x58-0x5F) - next chunk. */
+    /* else: other PDA commands (0x50, 0x58-0x5A, 0x5D-0x5F) - next chunk. */
 }
 
 /* Enter card-link communication mode: initialize the COM hardware, unmask the COM FIQ, and set
