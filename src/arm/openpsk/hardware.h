@@ -32,6 +32,11 @@
 #define FLASH_UNLOCK_B   0x08002A54u /* JEDEC command address 2. */
 #define FLASH_SECTOR_BYTES 128       /* one sector = 128 bytes = 64 halfwords. */
 
+/* Factory serial number (FLASHSerial, PDA HW Spec). Two 16-bit halfwords; the full 32-bit serial is
+ * (F_SN_HI << 16) | F_SN_LO. SWI 10 reads it; SWI 15 (write) is locked out in the retail kernel. */
+#define F_SN_LO 0x06000300
+#define F_SN_HI 0x06000302
+
 /* LCD controller. VRAM is 128 bytes = 32x32 @ 1bpp, row-major, 4 bytes/row, LSB = column 0. */
 #define LCD_MODE 0x0D000000 /* drawMode:3 cpen:1 refreshRate:2 enabled:bit6 rotate:bit7 */
 #define LCD_VRAM 0x0D000100

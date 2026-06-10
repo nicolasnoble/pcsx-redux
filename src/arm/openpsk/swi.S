@@ -85,6 +85,10 @@ swi_handler_xform:                 @ SWI 1Bh: return arg + 0x100 (proves arg-in/
     add     r0, r0, #0x100         @          AND that the comment indexed a *different* table slot)
     bx      lr
 
+    .global swi_handler_reset
+swi_handler_reset:                 @ SWI 0: software reset - re-run boot from the reset entry (crt0)
+    ldr     pc, =_reset            @ _reset remaps WRAM, re-sets stacks, re-inits, re-enters main
+
     .global swi_handler_default
 swi_handler_default:               @ unused slots: a visibly-wrong sentinel so a stray SWI is obvious
     ldr     r0, =0xDEADBEEF
@@ -102,31 +106,31 @@ swi_handler_default:               @ unused slots: a visibly-wrong sentinel so a
     @ spec; the hex label here is the same value the `swi #n` comment carries. Gaps (7, 21, 23) are
     @ not in the spec table.
 swi_table:
-    .word   swi_handler_default              @ 00h  0  Software reset                   (TODO)
+    .word   swi_handler_reset                @ 00h  0  Software reset
     .word   swi_handler_set_user_callback    @ 01h  1  Set user callback
     .word   swi_handler_invoke_callback      @ 02h  2  Invoke user callback
     .word   swi_handler_write_flash_relative @ 03h  3  Write flash (relative sectors)
     .word   swi_handler_set_clock_freq       @ 04h  4  Set system clock frequency
-    .word   swi_handler_default              @ 05h  5  Switch kernel mode               (TODO)
-    .word   swi_handler_default              @ 06h  6  Get PDA status                   (TODO)
-    .word   swi_handler_default              @ 07h  7  (not in spec table)
-    .word   swi_handler_default              @ 08h  8  Application block number control (TODO)
-    .word   swi_handler_default              @ 09h  9  Terminate/suspend application    (TODO)
-    .word   swi_handler_default              @ 0Ah 10  Read serial number               (TODO)
-    .word   swi_handler_default              @ 0Bh 11  Terminate file transfer w/ PS    (TODO)
+    .word   swi_handler_default              @ 05h  5  Switch kernel mode               (COM chunk)
+    .word   swi_handler_get_pda_status       @ 06h  6  Get PDA status
+    .word   swi_handler_set_comflags_internal@ 07h  7  (undocumented) ComFlags bits 16-18 RMW
+    .word   swi_handler_app_block_control    @ 08h  8  Application block number control
+    .word   swi_handler_default              @ 09h  9  Terminate/suspend application    (COM chunk)
+    .word   swi_handler_read_serial          @ 0Ah 10  Read serial number
+    .word   swi_handler_terminate_file_transfer @ 0Bh 11  Terminate file transfer w/ PS
     .word   swi_handler_set_bcd_date_time    @ 0Ch 12  Write real-time clock
     .word   swi_handler_get_bcd_date         @ 0Dh 13  Read calendar
     .word   swi_handler_get_bcd_time         @ 0Eh 14  Read clock
-    .word   swi_handler_default              @ 0Fh 15  Write serial number              (TODO)
+    .word   swi_handler_write_serial         @ 0Fh 15  Write serial number (locked out)
     .word   swi_handler_write_flash_absolute @ 10h 16  Write flash (absolute number)
-    .word   swi_handler_default              @ 11h 17  Control PlayStation communication(TODO)
-    .word   swi_handler_default              @ 12h 18  Get application status           (TODO)
-    .word   swi_handler_default              @ 13h 19  Get user interface status        (TODO)
-    .word   swi_handler_default              @ 14h 20  Get system call table            (TODO)
-    .word   swi_handler_default              @ 15h 21  (not in spec table)
-    .word   swi_handler_default              @ 16h 22  Get application block number     (TODO)
-    .word   swi_handler_default              @ 17h 23  (not in spec table)
-    .word   swi_handler_default              @ 18h 24  Get application flag             (TODO)
+    .word   swi_handler_default              @ 11h 17  Control PlayStation communication(COM chunk)
+    .word   swi_handler_default              @ 12h 18  Get application status           (COM chunk)
+    .word   swi_handler_get_ui_status        @ 13h 19  Get user interface status
+    .word   swi_handler_get_syscall_table    @ 14h 20  Get system call table
+    .word   swi_handler_gated_select_byte    @ 15h 21  (undocumented) gated select byte @0xCE
+    .word   swi_handler_get_app_block        @ 16h 22  Get application block number
+    .word   swi_handler_get_status_ptr       @ 17h 23  (undocumented) ptr to 0xC8 status struct
+    .word   swi_handler_get_app_flag         @ 18h 24  Get application flag
     .word   swi_handler_default              @ 19h 25  (unused)
     .word   swi_handler_magic                @ 1Ah custom: dispatch-proof magic constant
     .word   swi_handler_xform                @ 1Bh custom: dispatch-proof arg transform
