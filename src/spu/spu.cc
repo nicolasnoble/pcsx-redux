@@ -653,7 +653,7 @@ void PCSX::SPU::impl::SetupStreams() {
         // No per-channel mutex synchronization is used here: it is not needed, and would only slow
         // things down.
         // Initialize the sustain level.
-        s_chan[i].adsr.ex().get<exSustainLevel>().value = 0xf << 27;
+        s_chan[i].adsr.ex().get<exSustainLevel>().value = ADSRFlags::SustainLevelMask;
         s_chan[i].data.get<PCSX::SPU::Chan::Mute>().value = false;
         s_chan[i].data.get<PCSX::SPU::Chan::Solo>().value = false;
         s_chan[i].data.get<PCSX::SPU::Chan::IrqDone>().value = 0;
