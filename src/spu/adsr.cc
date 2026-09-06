@@ -67,6 +67,10 @@ constexpr int kExponentialDecreaseShift = 15;  // Q15 scale for an exponential d
 constexpr int kCoarseRateScale = 4;            // decay/release rate -> fine rate-table index
 constexpr int kSustainLevelShift = 11;         // top four bits of the level...
 constexpr int32_t kSustainLevelMask = 0xf;     // ...compared against the 0..15 sustain level
+// The attack and sustain rates arrive from the register decode as a full 0..127 (attack is
+// (val & 0x7f00) >> 8, sustain is (val & 0x1fc0) >> 6), so the knee's rate-step lands past the
+// end of the 128-entry tables on the slowest rates. Saturate instead of reading off the end.
+constexpr int kMaxRateIndex = 127;
 }  // namespace
 
 // Write the freshly computed envelope state back and return the full 15-bit
@@ -90,7 +94,9 @@ int PCSX::SPU::AdsrEnvelope::Attack() {
     const bool exponential = m_adsrx.get<exAttackModeExp>().value != 0;
 
     // Past the knee the exponential attack curve flattens to a slower rate.
-    if (exponential && envelopeVol >= kExponentialKnee) rateIndex += kExponentialKneeRateStep;
+    if (exponential && envelopeVol >= kExponentialKnee) {
+        rateIndex = std::min(rateIndex + kExponentialKneeRateStep, kMaxRateIndex);
+    }
 
     if (++envelopeVolFraction >= EnvelopeTables::denominator.data[rateIndex]) {
         envelopeVolFraction = 0;
@@ -136,7 +142,9 @@ int PCSX::SPU::AdsrEnvelope::Sustain() {
 
     if (increase) {
         // Past the knee the exponential rise flattens to a slower rate.
-        if (exponential && envelopeVol >= kExponentialKnee) rateIndex += kExponentialKneeRateStep;
+        if (exponential && envelopeVol >= kExponentialKnee) {
+            rateIndex = std::min(rateIndex + kExponentialKneeRateStep, kMaxRateIndex);
+        }
 
         if (++envelopeVolFraction >= EnvelopeTables::denominator.data[rateIndex]) {
             envelopeVolFraction = 0;
