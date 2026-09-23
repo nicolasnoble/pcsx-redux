@@ -37,6 +37,7 @@ d 'vfs.lua'
 d 'glyphs.lua'
 d 'images.lua'
 d 'sounds.lua'
+d 'loadlog.lua'
 
 generateFileMap()
 decodeFonts()
@@ -177,4 +178,6 @@ function DrawImguiFrame()
             if browser.selected then drawViewer(browser.selected) end
         end)
     end)
+    imgui.SetNextWindowSize(700, 400, imgui.constant.Cond.FirstUseEver)
+    imgui.safe.Begin('Valkyrie Profile load log', function() VP.loadlog.draw() end)
 end
