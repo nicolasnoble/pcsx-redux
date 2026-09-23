@@ -31,6 +31,7 @@ d 'arcgfx.lua'
 d 'carc.lua'
 d 'cscript.lua'
 d 'slz.lua'
+d 'sounds.lua'
 d 'utils.lua'
 
 generateFileMap()

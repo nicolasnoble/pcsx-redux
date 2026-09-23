@@ -47,14 +47,23 @@ local mapspans = {
     { idx_s = 2175, idx_e = 2186, data = { dir = 'MISC/MENUS', ext = 'sarc', ftype = 'arcroom', }, },
 
     { idx_s = 2187, idx_e = 2211, data = { dir = 'GFX/STATUSPIC' }, },
+    { idx_s = 2212, idx_e = 2291, data = { dir = 'SOUNDS/MUSIC', ext = 'bgm', ftype = 'bgm' }, },
     { idx_s = 2296, idx_e = 2319, data = { dir = 'GFX/UNKNOWN06' }, },
+    { idx_s = 2320, idx_e = 3298, data = { dir = 'SOUNDS/SFX', ext = 'snd' }, },
     { idx_s = 3299, idx_e = 3505, data = { dir = 'GFX/FACE' }, },
 
+    -- The level videos in this range are in the hand map, which wins.
+    { idx_s = 3506, idx_e = 3580, data = { dir = 'SOUNDS/SFX', ext = 'snd' }, },
+    { idx_s = 3581, idx_e = 3603, data = { dir = 'GAME/ROOMS-EXTRA', ext = 'arm', ftype = 'arcroom', }, },
+
     { idx_s = 3604, idx_e = 4732, data = { dir = 'GAME/ROOMS', ext = 'arm', ftype = 'arcroom', }, },
+    { idx_s = 4735, idx_e = 4765, data = { dir = 'GAME/ROOMS-EXTRA', ext = 'arm', ftype = 'arcroom', }, },
 
     { idx_s = 4766, idx_e = 4793, data = { dir = 'GFX/CDCHANGE', ext = 'tim' }, },
     { idx_s = 4808, idx_e = 4846, data = { dir = 'GFX/PORTRAITS', ext = 'tim' }, },
     { idx_s = 4847, idx_e = 4859, data = { dir = 'GFX/BGX', ext = 'tim' }, },
+    { idx_s = 4860, idx_e = 4863, data = { dir = 'SOUNDS/SFX', ext = 'snd' }, },
+    { idx_s = 4800, idx_e = 4805, data = { dir = 'GFX/MISC', ext = 'tim' }, },
 }
 
 local handmap = {
@@ -87,6 +96,19 @@ local handmap = {
 
     [2173] = { dir = 'MISC/GFX', ext = 'agx', ftype = 'arcgfx', },
 
+    [   7] = { dir = 'GFX/MISC', ext = 'tim' },
+    [4795] = { dir = 'GAME/ROOMS-EXTRA', ext = 'arm', ftype = 'arcroom', },
+
+    -- MIPS code
+    [1638] = { dir = 'MAIN/CODE', ext = 'agx', ftype = 'arcgfx', },
+    [2174] = { dir = 'MAIN/CODE', ext = 'bin' },
+    [2292] = { dir = 'MAIN/CODE', ext = 'bin' },
+    [2293] = { dir = 'MAIN/CODE', ext = 'bin' },
+    [4733] = { dir = 'MAIN/CODE', ext = 'bin' },
+    [4794] = { dir = 'MAIN/CODE', ext = 'bin' },
+    [4796] = { dir = 'MAIN/CODE', ext = 'bin' },
+    [4806] = { dir = 'MAIN/CODE', ext = 'bin' },
+
     [2294] = { dir = 'MISC/SCRIPT', ext = 'script', ftype = 'cscript', },
 
     [4734] = { dir = 'MISC/SCRIPT', ext = 'sarc', ftype = 'arcroom', },
@@ -110,6 +132,7 @@ local handmap = {
     [1882] = { dir = 'VIDEOS/MAGIC', ext = 'str', mode = 'M2_RAW', sectorSize = 2336 },
     [1896] = { dir = 'VIDEOS/MAGIC', ext = 'str', mode = 'M2_RAW', sectorSize = 2336 },
     [1910] = { dir = 'VIDEOS/MAGIC', ext = 'str', mode = 'M2_RAW', sectorSize = 2336 },
+    [1925] = { dir = 'VIDEOS/MAGIC', ext = 'str', mode = 'M2_RAW', sectorSize = 2336 },
     [1940] = { dir = 'VIDEOS/MAGIC', ext = 'str', mode = 'M2_RAW', sectorSize = 2336 },
     [1955] = { dir = 'VIDEOS/MAGIC', ext = 'str', mode = 'M2_RAW', sectorSize = 2336 },
     [1969] = { dir = 'VIDEOS/MAGIC', ext = 'str', mode = 'M2_RAW', sectorSize = 2336 },
