@@ -101,13 +101,15 @@ local function drawPreview(v)
         return
     end
     local font = browser.disc and browser.disc.region or 'US'
-    for i = v.first, #ptrs do
-        local window, pages = VP.glyphs.parse(ptrs[i])
-        for p, lines in ipairs(pages) do
-            imgui.TextUnformatted(string.format('<ptr %d>%s', i, #pages > 1 and string.format('  page %d/%d', p, #pages) or ''))
-            local missing = VP.glyphs.drawPage(window, lines, font, 2)
-            if missing > 0 then imgui.TextUnformatted(missing .. ' characters without a glyph') end
-        end
+    v.previewPtr = v.previewPtr or v.first
+    local changed, n = imgui.SliderInt('pointer', v.previewPtr, v.first, #ptrs)
+    if changed then v.previewPtr = n end
+    local i = v.previewPtr
+    local window, pages = VP.glyphs.parse(ptrs[i])
+    for p, lines in ipairs(pages) do
+        if #pages > 1 then imgui.TextUnformatted(string.format('page %d/%d', p, #pages)) end
+        local missing = VP.glyphs.drawPage(window, lines, font, 2)
+        if missing > 0 then imgui.TextUnformatted(missing .. ' characters without a glyph') end
     end
 end
 
