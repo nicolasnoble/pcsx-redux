@@ -105,9 +105,17 @@ function VP.images.parseTim(file)
     if off + 12 > size then return nil end
     local len = file:readU32At(off)
     local w, h = file:readU16At(off + 8), file:readU16At(off + 10)
-    if w == 0 or h == 0 or len ~= 12 + w * h * 2 then return nil end
+    if w == 0 or h == 0 then return nil end
+    local expected = 12 + w * h * 2
+    if len ~= expected then
+        -- The room backgrounds carry a pixel block length larger than their
+        -- data, while w * h ends exactly at the end of the file. Accept that
+        -- case and nothing looser.
+        if off + expected ~= size then return nil end
+        tim.badLength = len
+    end
     tim.pix = { x = file:readU16At(off + 4), y = file:readU16At(off + 6), w = w, h = h, offset = off + 12 }
-    tim.truncated = off + len > size
+    tim.truncated = off + expected > size
     tim.width = math.floor(w * 16 / tim.bpp)
     tim.height = h
     if tim.clut and tim.bpp <= 8 then
@@ -124,8 +132,12 @@ local function timInfo(tim)
     if tim.clut then
         lines[#lines + 1] = string.format('CLUT block %dx%d at VRAM %d,%d', tim.clut.w, tim.clut.h, tim.clut.x, tim.clut.y)
     end
+    if tim.badLength then
+        lines[#lines + 1] = string.format('Pixel block length field says %d, the pixels take %d.',
+            tim.badLength, tim.pix.w * tim.pix.h * 2 + 12)
+    end
     if tim.truncated then
-        lines[#lines + 1] = string.format('Pixel block claims %d bytes, the file has %d: not drawable as a plain TIM.',
+        lines[#lines + 1] = string.format('Pixel block needs %d bytes, the file has %d.',
             tim.pix.w * tim.pix.h * 2 + 12, tim.size - tim.pix.offset + 12)
     end
     return table.concat(lines, '\n')
