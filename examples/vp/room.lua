@@ -299,6 +299,8 @@ function extract_room_script(fname, script, font, fileInfo)
             VP.globals.lookupRooms:write('},\n')
         end
     end
+
+    return ptrsContents
 end
 
 -- Walker for arcroom/sarc archives. .arm carries paired (script, font) at
