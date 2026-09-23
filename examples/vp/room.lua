@@ -46,7 +46,7 @@ local function checkRoomLogic(logic)
 end
 
 -- Walk the room logic bytecode, identify textbox setup blocks (six PSH
--- precedents to a TBOX* opcode, or a CALL into one of the textbox dispatcher
+-- precedents to an OPEN_TEXTBOX_* opcode, or a CALL into one of the textbox dispatcher
 -- subroutines), and associate each textbox with the text-pointer it references.
 -- Returns a table mapping pointer_index -> { x, y, width, height } or
 -- { typ = 'fixed' } / { typ = 'auto' } / nil.

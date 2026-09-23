@@ -1,9 +1,12 @@
 -- Disassembler for Valkyrie Profile's room-script bytecode VM.
 --
 -- Instructions are 32-bit words: high 8 bits = opcode, low 24 bits = immediate +
--- flags. Flag bits 0x800000 = is_local, 0x100000 = from_stack. Each opcode has a
--- declared self-encoded-value type, a declared per-instruction immediate count,
--- a parameter count, and a known/unknown flag.
+-- flags. Flag bits 0x800000 = local frame (else globals), 0x100000 = operands
+-- come from the data stack, 0x30000 = variable width (0 = 32 bits, 0x20000 = 8
+-- bits, 0x30000 = single bit). Global word 0 is the accumulator that arithmetic
+-- and compare ops write, and doubles as the index for indirect variables. Each
+-- opcode has a declared self-encoded-value type, a declared per-instruction
+-- immediate count, a parameter count, and a known/unknown flag.
 --
 -- The dispatcher walks the bytecode and emits a textual disassembly, calling
 -- registered hooks at specific opcode values for callers that need to inspect
@@ -11,22 +14,73 @@
 
 VP.disasm = {}
 
+-- Names read off the handlers in 2292's scriptOpTable (0x800831d0). A trailing
+-- '?' marks a handler whose effect depends on code not yet read. 0xc4-0xc8 and
+-- 0xca point into the room tag 22 code block loaded at 0x800bea00.
 VP.disasm.opcodeNames = {
-    [0x01] = 'SETV',  [0x02] = 'SETV',
-    [0x08] = 'MULG0', [0x09] = 'ADDG0', [0x0a] = 'PSH',   [0x0d] = 'PSH1?',
-    [0x12] = 'PSH2?', [0x13] = 'PSHI',  [0x14] = 'CALL',  [0x15] = 'JMP',
-    [0x16] = 'JMPZ',  [0x17] = 'RET',   [0x18] = 'SETD',  [0x19] = 'PSH3?',
-    [0x80] = 'STTRG', [0x8c] = 'SSTOP',
-    [0x92] = 'TBOX',  [0x93] = 'TBOX2', [0x98] = 'TBOX3',
-    [0x9e] = 'SETRM', [0x9f] = 'CHGRM',
+    [0x01] = 'SETV32', [0x02] = 'SETV32', [0x03] = 'SETV16', [0x04] = 'SETV16', [0x05] = 'SETV8',
+    [0x06] = 'SETV8', [0x07] = 'SETBIT', [0x08] = 'SETV32', [0x09] = 'ACC_SETMUL', [0x0a] = 'ACC_ADD',
+    [0x0b] = 'PSH32', [0x0c] = 'PSH16', [0x0d] = 'PSH8', [0x0e] = 'PSHBIT', [0x0f] = 'PSH32',
+    [0x10] = 'ACC_SETADD', [0x11] = 'MULG', [0x12] = 'PSHI23', [0x13] = 'PSHI', [0x14] = 'CALL',
+    [0x15] = 'JMP', [0x16] = 'JMPZ', [0x17] = 'RET', [0x18] = 'SETD', [0x19] = 'PSHEQ_DYN',
+    [0x1a] = 'SET_DYN', [0x1b] = 'NOP', [0x1c] = 'PSHEQ8_DYN', [0x1d] = 'NOP', [0x1e] = 'NOP',
+    [0x1f] = 'NOP', [0x21] = 'STORE_DYN', [0x22] = 'STORE_DYN_S', [0x23] = 'ADD', [0x24] = 'ADD_S',
+    [0x25] = 'SUB', [0x26] = 'SUB_S', [0x27] = 'MUL', [0x28] = 'MUL_S', [0x29] = 'DIV',
+    [0x2a] = 'DIV_S', [0x2b] = 'BAND', [0x2c] = 'BAND_S', [0x2d] = 'BOR', [0x2e] = 'BOR_S',
+    [0x2f] = 'BXOR', [0x30] = 'BXOR_S', [0x33] = 'SHL', [0x34] = 'SHL_S', [0x35] = 'SHR',
+    [0x36] = 'SHR_S', [0x37] = 'LAND', [0x38] = 'LAND_S', [0x39] = 'LOR', [0x3a] = 'LOR_S',
+    [0x3b] = 'BNOT', [0x3c] = 'LNOT', [0x3d] = 'CMP_NE', [0x3e] = 'CMP_NE_S', [0x3f] = 'CMP_EQ',
+    [0x40] = 'CMP_EQ_S', [0x41] = 'CMP_GT', [0x42] = 'CMP_GT_S', [0x43] = 'CMP_LT',
+    [0x44] = 'CMP_LT_S', [0x45] = 'CMP_GE', [0x46] = 'CMP_GE_S', [0x47] = 'CMP_LE',
+    [0x48] = 'CMP_LE_S', [0x49] = 'INC', [0x4a] = 'DEC', [0x70] = 'QUEUE_ANIM_CMD',
+    [0x71] = 'QUEUE_ANIM_CMD', [0x72] = 'QUEUE_ANIM_CMD', [0x73] = 'QUEUE_ANIM_CMD',
+    [0x74] = 'QUEUE_ANIM_CMD', [0x75] = 'QUEUE_ANIM_CMD', [0x76] = 'WAIT_CHAR_BUSY',
+    [0x77] = 'SETFLAG_CHAR0', [0x78] = 'CLRGLOBALS', [0x79] = 'CALLHOOK2', [0x7a] = 'WAIT_TRIGGER',
+    [0x7b] = 'WAIT_TYPEWRITER', [0x7c] = 'WAIT_FLAG4', [0x7d] = 'WAIT_COUNTER',
+    [0x7e] = 'WAIT_TEXTBOX_CLOSE', [0x7f] = 'SETSPEAKER', [0x80] = 'SPAWN_FX_A',
+    [0x81] = 'SET_TEXTBOX_MODE', [0x82] = 'SPAWN_FX_B', [0x83] = 'CAMERA_FX_A',
+    [0x84] = 'CAMERA_FX_B', [0x85] = 'SPAWN_NPC', [0x86] = 'LOAD_OVERLAY', [0x87] = 'TEXTFX_START',
+    [0x88] = 'REGISTER_EVENTHOOK?', [0x89] = 'QUEUE_ANIM_CMD', [0x8a] = 'QUEUE_ANIM_CMD',
+    [0x8b] = 'REMOVE_ICON', [0x8c] = 'WAIT_FRAMES', [0x8d] = 'PLAY_CUE', [0x8e] = 'PLAY_SFX_1?',
+    [0x8f] = 'PLAY_SFX_POS', [0x90] = 'ADD_ICON', [0x91] = 'CLOSE_TEXTBOX',
+    [0x92] = 'OPEN_TEXTBOX_M1', [0x93] = 'OPEN_TEXTBOX_RETRY', [0x94] = 'OPEN_TEXTBOX_M3',
+    [0x95] = 'RANDMOD', [0x96] = 'OPEN_CHOICE_MENU', [0x97] = 'OPEN_MSGBOX_FIXED',
+    [0x98] = 'OPEN_TEXTBOX_M4', [0x99] = 'WAIT_FLAG200', [0x9a] = 'GET_TEXTBOX_STATUS',
+    [0x9b] = 'GET_COUNTER', [0x9c] = 'START_TWEEN?', [0x9d] = 'DRIVE_TEXTBOX_TRANSITION?',
+    [0x9e] = 'SET_ROOM_PENDING', [0x9f] = 'CHANGE_ROOM', [0xa0] = 'START_TYPEWRITER',
+    [0xa1] = 'QUEUE_ANIM_CMD', [0xa2] = 'GET_CHAR_FIELD', [0xa3] = 'QUEUE_ANIM_CMD',
+    [0xa4] = 'REGISTER_TRIGGERZONE?', [0xa5] = 'CALLHOOK0', [0xa6] = 'CALLHOOK1',
+    [0xa7] = 'LOOKUP_PORTRAIT', [0xa8] = 'REGISTER_WATCHER?', [0xa9] = 'CHECK_MSGBOX_BUSY',
+    [0xab] = 'QUEUE_PARTY_SWAP', [0xac] = 'SPAWN_UI_ICON?', [0xad] = 'SPAWN_CHARACTER',
+    [0xae] = 'SET_TABLE_ENTRY?', [0xaf] = 'GET_CHAPTER_FLAG', [0xb0] = 'QUEUE_ANIM_CMD',
+    [0xb2] = 'PARTY_SLOT_CTRL', [0xb3] = 'QUEUE_ANIM_CMD', [0xb4] = 'QUEUE_ANIM_CMD',
+    [0xb5] = 'RESET_PORTRAIT_FLAGS', [0xb6] = 'CLEAR_PENDING_MSG', [0xb7] = 'KILL_EFFECT_SLOT',
+    [0xb8] = 'CALC_SIN', [0xb9] = 'CALC_COS', [0xba] = 'REGISTER_UI_CB',
+    [0xbb] = 'REGISTER_SIMPLE?', [0xbc] = 'SPAWN_FX_FIXED', [0xbd] = 'NOP_SKIP',
+    [0xbe] = 'SET_CFG_FLAGS', [0xbf] = 'REGISTER_TIMED_CB?', [0xc0] = 'QUEUE_ANIM_CMD',
+    [0xc1] = 'QUEUE_ANIM_CMD', [0xc2] = 'SET_FIELD_1W', [0xc3] = 'CLEAR_SPEAKER',
+    [0xc4] = 'ROOMEXT_C4?', [0xc5] = 'ROOMEXT_C5?', [0xc6] = 'ROOMEXT_C6?', [0xc7] = 'ROOMEXT_C7?',
+    [0xc8] = 'ROOMEXT_C8?', [0xc9] = 'MARK_OVERLAY_PENDING', [0xca] = 'ROOMEXT_CA?',
+    [0xcb] = 'SET_RESULT_IMM', [0xcc] = 'SPAWN_NPC_EXT', [0xcd] = 'SET_WAYPOINT',
+    [0xce] = 'SET_PAIR_FIELD?', [0xcf] = 'AUDIO_CALL_S?', [0xd0] = 'SET_TEXTBOX_RECT',
+    [0xd1] = 'SET_CHAR_HOMEPOS', [0xd2] = 'PLACE_CHAR_A', [0xd3] = 'EVAL_SIMPLE',
+    [0xd4] = 'SET_MSG_PORTRAIT', [0xd5] = 'PLACE_CHAR_B', [0xd6] = 'GET_CHAR_CONTEXT_VAL?',
+    [0xd7] = 'CLEAR_QUEUED_DIALOGUE?', [0xd8] = 'SET_CUTSCENE_TARGET', [0xd9] = 'REGISTER_CALLBACK',
+    [0xda] = 'QUEUE_ANIM_CMD', [0xdb] = 'QUEUE_ANIM_CMD', [0xdc] = 'QUEUE_ANIM_CMD',
+    [0xdd] = 'QUEUE_ANIM_CMD', [0xde] = 'PLAY_SFX_FIXED', [0xdf] = 'SET_AUDIO_FLAG',
+    [0xe0] = 'SET_FLAG_BIT', [0xe1] = 'SET_PARTY_LINEUP', [0xe2] = 'SNAPSHOT_LINEUP',
+    [0xe3] = 'RESTORE_LINEUP', [0xe4] = 'SET_PARTY_SKILL?', [0xe5] = 'CHECK_ITEM_OWNED',
+    [0xe6] = 'SET_PARTY_FIELD', [0xe7] = 'PLAY_SFX_POS_TRACKED', [0xe8] = 'ADD_COUNTER',
+    [0xe9] = 'STOP_SFX', [0xea] = 'CLEANUP_LINEUP', [0xeb] = 'ADD_PLAYTIME',
+    [0xec] = 'SET_FLAG_INV', [0xed] = 'GET_SPEAKER_MSGID',
 }
 
 -- opcode -> number of u32 immediates following the instruction word
 VP.disasm.opcodeImms = {
        [0x01] = 0, [0x02] = 0, [0x03] = 0, [0x04] = 0, [0x05] = 0, [0x06] = 0, [0x07] = 0,
     [0x08] = 0, [0x09] = 0, [0x0a] = 0, [0x0b] = 0, [0x0c] = 0, [0x0d] = 0, [0x0e] = 0,
-    [0x10] = 0, [0x11] = 0, [0x12] = 0, [0x13] = 1, [0x14] = 0, [0x15] = 0, [0x16] = 0, [0x17] = 0,
-    [0x18] = 1, [0x19] = 1, [0x1a] = 1, [0x1b] = 0, [0x1c] = 0, [0x1d] = 0, [0x1e] = 0, [0x1f] = 0,
+    [0x10] = 1, [0x11] = 0, [0x12] = 0, [0x13] = 1, [0x14] = 0, [0x15] = 0, [0x16] = 0, [0x17] = 0,
+    [0x18] = 1, [0x19] = 1, [0x1a] = 1, [0x1b] = 0, [0x1c] = 1, [0x1d] = 0, [0x1e] = 0, [0x1f] = 0,
     [0x20] = 0, [0x21] = 1, [0x22] = 0, [0x23] = 1, [0x24] = 0, [0x25] = 1, [0x26] = 0, [0x27] = 1,
     [0x28] = 0, [0x29] = 1, [0x2a] = 0,
     [0x3d] = 1, [0x3f] = 1,
@@ -39,6 +93,11 @@ VP.disasm.opcodeImms = {
     [0xc0] = 2, [0xc2] = 1, [0xc9] = 1,
     [0xd9] = 2,
     [0xe6] = 1, [0xeb] = 1,
+    -- Read off the handlers' ip advances.
+    [0x2b] = 1, [0x2d] = 1, [0x2f] = 1, [0x33] = 1, [0x35] = 1, [0x37] = 1, [0x39] = 1, [0x47] = 1,
+    [0x84] = 2, [0x90] = 2, [0x96] = 1, [0x97] = 1, [0x9c] = 1, [0xa4] = 4, [0xac] = 1, [0xad] = 2,
+    [0xae] = 2, [0xba] = 2, [0xbc] = 3, [0xbd] = 1, [0xbf] = 1, [0xcc] = 6, [0xcd] = 3, [0xce] = 1,
+    [0xd0] = 2, [0xd1] = 1, [0xd2] = 2, [0xd8] = 2, [0xe1] = 1, [0xe4] = 1, [0xe7] = 2,
 }
 
 -- Encoding of the self-immediate value embedded in the opcode word
@@ -151,6 +210,9 @@ VP.disasm.opcodeFromStack = {
     [0xdd] = true,
     [0xe6] = true,
     [0xeb] = true,
+    [0x90] = true, [0x97] = true, [0x9c] = true, [0xa4] = true, [0xb7] = true, [0xb8] = true,
+    [0xb9] = true, [0xbd] = true, [0xbf] = true, [0xe4] = true, [0xe5] = true, [0xe8] = true,
+    [0xe9] = true,
 }
 
 -- Disassemble one instruction from `logic` (a File). Returns the new PC. If `out`
@@ -182,11 +244,11 @@ function VP.disasm.step(state)
     local name = VP.disasm.opcodeNames[state.code]
     if out then
         if name then
-            out:write(string.format('%-8s', name))
+            out:write(string.format('%-22s ', name))
         elseif VP.disasm.opcodeKnown[state.code] then
-            out:write(string.format('OP_%02X   ', state.code))
+            out:write(string.format('%-22s ', string.format('OP_%02X', state.code)))
         else
-            out:write(string.format('UNK%02X   ', state.code))
+            out:write(string.format('%-22s ', string.format('UNK%02X', state.code)))
         end
     end
 
