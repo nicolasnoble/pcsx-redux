@@ -1,6 +1,6 @@
 PCSX.settings.emulator.FullCaching = true
 
--- Respect any VP table pre-populated by -exec arguments (e.g. for overriding
+-- Respect any VP table pre-populated by a wrapper script (e.g. for overriding
 -- VP.arguments.disc1 / disc2 paths) so the user doesn't have to edit this file
 -- to run against discs in different locations.
 VP = VP or {}
@@ -36,15 +36,24 @@ d 'utils.lua'
 generateFileMap()
 decodeFonts()
 
--- Disc paths can be overridden by passing -exec to pcsx-redux BEFORE -dofile:
---   pcsx-redux -cli \
---       -exec "VP={arguments={disc1='/path/to/cd1.cue', disc2='/path/to/cd2.cue'}}" \
---       -dofile main.lua
-VP.arguments.disc1 = VP.arguments.disc1 or 'C:/Games/PSX/vp/vp-disc1.cue'
-VP.arguments.disc2 = VP.arguments.disc2 or 'C:/Games/PSX/vp/vp-disc2.cue'
+-- Disc paths come from the VP_DISC1 / VP_DISC2 environment variables:
+--   VP_DISC1=/path/to/cd1.cue VP_DISC2=/path/to/cd2.cue \
+--       pcsx-redux -cli -dofile main.lua
+-- Passing them with -exec does not work: -exec runs after -dofile. A wrapper
+-- script that fills in VP.arguments and then dofiles this one works too.
+VP.arguments.disc1 = VP.arguments.disc1 or os.getenv('VP_DISC1') or 'C:/Games/PSX/vp/vp-disc1.cue'
+VP.arguments.disc2 = VP.arguments.disc2 or os.getenv('VP_DISC2') or 'C:/Games/PSX/vp/vp-disc2.cue'
 
 probeIsoFile(VP.arguments.disc1)
 probeIsoFile(VP.arguments.disc2)
+
+if not VP.globals.isos.US.CD1 and not VP.globals.isos.US.CD2 then
+    print('No Valkyrie Profile US disc found. Tried:')
+    print('  ' .. VP.arguments.disc1)
+    print('  ' .. VP.arguments.disc2)
+    PCSX.quit(1)
+    return
+end
 
 readIndex()
 
