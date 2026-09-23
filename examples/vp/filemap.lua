@@ -67,7 +67,6 @@ local mapspans = {
 }
 
 local handmap = {
-    [   1] = { dir = 'MAIN/OVERLAY' },
     [   2] = { dir = 'MISC', ext = 'txt' },
     [   3] = { dir = 'MISC', ext = 'txt' },
     [   4] = { dir = 'MAIN/SOUNDS', ext = 'wag' },
@@ -76,9 +75,6 @@ local handmap = {
 
     [ 618] = { dir = 'SOUNDS/MISC', ext = 'wag' },
     [1021] = { dir = 'SOUNDS/MISC', ext = 'wag' },
-
-    -- main battle overlay
-    [1490] = { dir = 'MAIN/OVERLAY'},
 
     [1824] = { dir = 'GFX/MAGIC01', ext = 'agx', ftype = 'arcgfx', },
     [1838] = { dir = 'GFX/MAGIC02', ext = 'agx', ftype = 'arcgfx', },
@@ -101,13 +97,22 @@ local handmap = {
 
     -- MIPS code
     [1638] = { dir = 'MAIN/CODE', ext = 'agx', ftype = 'arcgfx', },
-    [2174] = { dir = 'MAIN/CODE', ext = 'bin' },
-    [2292] = { dir = 'MAIN/CODE', ext = 'bin' },
-    [2293] = { dir = 'MAIN/CODE', ext = 'bin' },
-    [4733] = { dir = 'MAIN/CODE', ext = 'bin' },
-    [4794] = { dir = 'MAIN/CODE', ext = 'bin' },
-    [4796] = { dir = 'MAIN/CODE', ext = 'bin' },
-    [4806] = { dir = 'MAIN/CODE', ext = 'bin' },
+
+    -- Executables. The SLUS function at 0x800105b0 decompresses chunk 0 to
+    -- 0x8002f824, moves the stack to 0x80200000 and jumps there, so each one
+    -- replaces the previous one.
+    [   1] = { dir = 'MAIN/CODE', ext = 'bin', loadAddr = 0x8002f824 }, -- boot, runs 2292 or 4796
+    [1490] = { dir = 'MAIN/CODE', ext = 'bin', loadAddr = 0x8002f824 }, -- battle, runs 2292 or 4806
+    [2174] = { dir = 'MAIN/CODE', ext = 'bin', loadAddr = 0x8002f824 }, -- run by 2292
+    [2292] = { dir = 'MAIN/CODE', ext = 'bin', loadAddr = 0x8002f824 }, -- field, runs 1490, 2174, 4733, 4794, 4796
+    [4733] = { dir = 'MAIN/CODE', ext = 'bin', loadAddr = 0x8002f824 }, -- run by 2292
+    [4794] = { dir = 'MAIN/CODE', ext = 'bin', loadAddr = 0x8002f824 }, -- run by 2292
+    [4796] = { dir = 'MAIN/CODE', ext = 'bin', loadAddr = 0x8002f824 }, -- run by 1 and 2292
+    [4806] = { dir = 'MAIN/CODE', ext = 'bin', loadAddr = 0x8002f824 }, -- run by 1490
+
+    -- Room code. 2292 decompresses chunk 0 of 2293 to 0x800899b0, the end of
+    -- its own image, and copies each room's type 18 member to the same place.
+    [2293] = { dir = 'MAIN/CODE', ext = 'bin', loadAddr = 0x800899b0 },
 
     [2294] = { dir = 'MISC/SCRIPT', ext = 'script', ftype = 'cscript', },
 
