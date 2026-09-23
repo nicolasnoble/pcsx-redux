@@ -34,6 +34,7 @@ d 'cscript.lua'
 d 'slz.lua'
 d 'utils.lua'
 d 'vfs.lua'
+d 'glyphs.lua'
 
 generateFileMap()
 decodeFonts()
@@ -93,6 +94,23 @@ local function drawNode(node)
     end
 end
 
+local function drawPreview(v)
+    local ptrs, err = VP.vfs.ptrs(v)
+    if not ptrs then
+        imgui.TextUnformatted('Error: ' .. tostring(err))
+        return
+    end
+    local font = browser.disc and browser.disc.region or 'US'
+    for i = v.first, #ptrs do
+        local window, pages = VP.glyphs.parse(ptrs[i])
+        for p, lines in ipairs(pages) do
+            imgui.TextUnformatted(string.format('<ptr %d>%s', i, #pages > 1 and string.format('  page %d/%d', p, #pages) or ''))
+            local missing = VP.glyphs.drawPage(window, lines, font, 2)
+            if missing > 0 then imgui.TextUnformatted(missing .. ' characters without a glyph') end
+        end
+    end
+end
+
 local function drawViewer(node)
     imgui.TextUnformatted(node.name .. (node.size and ('  ' .. formatSize(node.size)) or ''))
     -- Opening the node once computes its children, which is where script
@@ -105,6 +123,13 @@ local function drawViewer(node)
     end
     tabs[#tabs + 1] = node.hexViewer
     imgui.safe.BeginTabBar('viewers', function()
+        for _, v in ipairs(node.viewers) do
+            if v.load then
+                imgui.safe.BeginTabItem('Preview', function()
+                    imgui.safe.BeginChild('preview', 0, 0, 0, function() drawPreview(v) end)
+                end)
+            end
+        end
         for _, v in ipairs(tabs) do
             imgui.safe.BeginTabItem(v.name, function()
                 imgui.safe.BeginChild('text', 0, 0, 0, imgui.constant.WindowFlags.HorizontalScrollbar, function()

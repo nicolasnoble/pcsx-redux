@@ -14,7 +14,8 @@
 --   ext       file extension, from the file map
 --   tag       archive entry tag, for subfiles
 --   children  nil until expand() has run
---   viewers   list of { name = ..., render = function() return text end }
+--   viewers   list of { name = ..., render = function() return text end }, or for
+--             scripts { name = ..., first = ..., load = function() return ptrs end }
 --   err       error message from the last failed expansion, if any
 
 VP.vfs = VP.vfs or {}
@@ -51,22 +52,22 @@ local function scriptText(ptrs, first)
     return table.concat(lines, '\n')
 end
 
+-- Script viewers carry a load() returning the decoded pointer table, and the
+-- index of the first real pointer. The text view and the glyph preview are
+-- both built from it.
 local function roomScriptViewer(script, font, index)
     return {
         name = 'Room script',
-        render = function()
-            local ptrs = extract_room_script('room', script, font, { index = index })
-            return scriptText(ptrs, 3)
-        end,
+        first = 3,
+        load = function() return extract_room_script('room', script, font, { index = index }) end,
     }
 end
 
 local function simpleScriptViewer(script, font, style)
     return {
         name = 'Script',
-        render = function()
-            return scriptText(extract_simple_script('script', script, font, style))
-        end,
+        first = 1,
+        load = function() return extract_simple_script('script', script, font, style) end,
     }
 end
 
@@ -341,9 +342,25 @@ function VP.vfs.isLeaf(node)
     return false
 end
 
--- Renders a viewer, caching the text on the viewer itself.
+-- Returns a script viewer's pointer table, decoding it on first use. Returns
+-- nil and the error message if decoding failed.
+function VP.vfs.ptrs(viewer)
+    if not viewer.load then return nil end
+    if viewer.ptrs == nil and viewer.loadErr == nil then
+        local ok, ret = pcall(viewer.load)
+        if ok then viewer.ptrs = ret else viewer.loadErr = tostring(ret) end
+    end
+    return viewer.ptrs, viewer.loadErr
+end
+
+-- Renders a viewer as text, caching it on the viewer itself.
 function VP.vfs.render(viewer)
     if viewer.text then return viewer.text end
+    if viewer.load then
+        local ptrs, err = VP.vfs.ptrs(viewer)
+        viewer.text = ptrs and scriptText(ptrs, viewer.first) or ('Error: ' .. err)
+        return viewer.text
+    end
     local ok, ret = pcall(viewer.render)
     viewer.text = ok and ret or ('Error: ' .. tostring(ret))
     return viewer.text
