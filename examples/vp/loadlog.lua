@@ -121,6 +121,25 @@ local function fileName(index)
     return string.format('%04i', index)
 end
 
+local function cycleString(cycle) return (tostring(cycle):gsub('ULL$', '')) end
+
+-- GET /api/v1/lua/vp-loadlog[?since=N] with the web server enabled returns
+-- one tab separated line per event, starting after the first N events:
+-- event number, cycle, kind, index, file, address, caller.
+PCSX.WebServer = PCSX.WebServer or {}
+PCSX.WebServer.Handlers = PCSX.WebServer.Handlers or {}
+PCSX.WebServer.Handlers['vp-loadlog'] = function(request)
+    local since = tonumber((request.urlData.query or ''):match('since=(%d+)')) or 0
+    local lines = {}
+    local events = loadlog.events
+    for i = since + 1, #events do
+        local e = events[i]
+        lines[#lines + 1] = string.format('%d\t%s\t%s\t%s\t%s\t%08x\t%08x', i, cycleString(e.cycle), e.kind,
+                                          e.index and tostring(e.index) or '?', fileName(e.index), e.address, e.caller)
+    end
+    return table.concat(lines, '\n') .. (#lines > 0 and '\n' or '')
+end
+
 function loadlog.draw()
     local armed = loadlog.breakpoints ~= nil
     if imgui.Button(armed and 'Disarm' or 'Arm') then
@@ -143,7 +162,7 @@ function loadlog.draw()
         for _, e in ipairs(loadlog.events) do
             imgui.TableNextRow()
             imgui.TableNextColumn()
-            imgui.TextUnformatted((tostring(e.cycle):gsub('ULL$', '')))
+            imgui.TextUnformatted(cycleString(e.cycle))
             imgui.TableNextColumn()
             imgui.TextUnformatted(e.kind)
             imgui.TableNextColumn()
