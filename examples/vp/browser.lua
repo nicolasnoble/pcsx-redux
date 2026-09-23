@@ -35,6 +35,7 @@ d 'slz.lua'
 d 'utils.lua'
 d 'vfs.lua'
 d 'glyphs.lua'
+d 'images.lua'
 
 generateFileMap()
 decodeFonts()
@@ -120,6 +121,15 @@ local function drawViewer(node)
     if not node.isDir then VP.vfs.expand(node) end
     local tabs = {}
     for _, v in ipairs(node.viewers) do tabs[#tabs + 1] = v end
+    if not node.imageViewers then
+        node.imageViewers = {}
+        if not node.isDir then
+            local ok, tim = pcall(function() return VP.images.parseTim(node.open()) end)
+            if ok and tim then node.imageViewers[#node.imageViewers + 1] = VP.images.timViewer(node, tim) end
+            node.imageViewers[#node.imageViewers + 1] = VP.images.rawViewer(node)
+        end
+    end
+    for _, v in ipairs(node.imageViewers) do tabs[#tabs + 1] = v end
     if not node.hexViewer then
         node.hexViewer = { name = 'Hex', render = function() return VP.vfs.hexdump(node) end }
     end
@@ -135,7 +145,7 @@ local function drawViewer(node)
         for _, v in ipairs(tabs) do
             imgui.safe.BeginTabItem(v.name, function()
                 imgui.safe.BeginChild('text', 0, 0, 0, imgui.constant.WindowFlags.HorizontalScrollbar, function()
-                    imgui.TextUnformatted(VP.vfs.render(v))
+                    if v.draw then v.draw() else imgui.TextUnformatted(VP.vfs.render(v)) end
                 end)
             end)
         end
