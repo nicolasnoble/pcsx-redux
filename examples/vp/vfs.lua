@@ -111,7 +111,37 @@ local function subNode(parent, i, tag, offset, size, file)
     })
 end
 
+-- What room archive (.arm / .sarc) entries hold, by tag.
+local roomTags = {
+    [0] = 'room header', [2] = 'tileset', [4] = 'script', [7] = 'font', [8] = 'table', [12] = 'clut',
+    [13] = 'sprite', [16] = 'offset table', [17] = 'tile map', [18] = 'code', [22] = 'code', [23] = 'sound',
+}
+
+-- Same for .agx entries, by the tag's upper 24 bits.
+local function agxKind(tag)
+    local hi = bit.band(tag, 0xffffff00)
+    if hi == 0x00300900 then return 'script' end
+    if hi == 0x00300800 then return 'font' end
+    if hi >= 0x00101000 and hi <= 0x00101500 then return 'code' end
+    if hi == 0x00100400 then return 'table' end
+    if hi == 0x00700500 or hi == 0x00100500 then return 'offset table' end
+    if hi == 0x00701800 then return 'sound' end
+    if hi == 0x00000700 then return 'clut' end
+end
+
 local containers = {}
+
+-- Music: a u32 offset to the instrument bank, an SLZ block at +4 holding the
+-- sequence, and the bank at that offset.
+containers.bgm = function(node, file)
+    local size = file:size()
+    local off = file:readU32At(0)
+    if off < 20 or off >= size then error 'Bad music header' end
+    return {
+        newNode({ name = 'sequence', size = off - 4, kind = 'SLZ', open = function() return file:subFile(4, off - 4) end }),
+        newNode({ name = 'bank', size = size - off, open = function() return file:subFile(off, size - off) end }),
+    }
+end
 
 containers.arcroom = function(node, file)
     local nfiles = file:readU32At(0)
@@ -122,6 +152,7 @@ containers.arcroom = function(node, file)
         local tag = file:readU32At(8 * i)
         local size = file:readU32At(8 * i + 4)
         children[i] = subNode(node, i, tag, offset, size, file)
+        children[i].kind = roomTags[tag]
         offset = offset + size
     end
     if node.ext == 'arm' then
@@ -144,6 +175,7 @@ containers.arcgfx = function(node, file)
         local tag = file:readU32At(8 * i)
         local size = file:readU32At(8 * i + 4)
         children[i] = subNode(node, i, tag, offset, size, file)
+        children[i].kind = agxKind(tag)
         offset = offset + size
     end
     pairScripts(children, function(c)
@@ -206,6 +238,16 @@ local function expandContent(node)
     end
     local handler = node.ftype and containers[node.ftype]
     if handler then return handler(node, file) end
+    -- Some .wag entries are small archives of sound records, laid out like an
+    -- .agx: u32 count, u32 0, then (tag, size) pairs covering the file.
+    if node.ext == 'wag' and file:size() >= 16 then
+        local n = file:readU32At(0)
+        if n > 0 and n < 64 and file:readU32At(4) == 0 and 8 + n * 8 <= file:size() then
+            local total = 8 + n * 8
+            for i = 1, n do total = total + file:readU32At(8 * i + 4) end
+            if total <= file:size() and file:size() - total < 2048 then return containers.arcgfx(node, file) end
+        end
+    end
     return {}
 end
 

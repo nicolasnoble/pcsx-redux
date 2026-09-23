@@ -19,7 +19,7 @@ end
 print(string.format('disc: %s %s disc %d', disc.exe, disc.region, disc.disc))
 
 local all = os.getenv('VP_BROWSE_ALL') == '1'
-local stats = { nodes = 0, errors = 0, viewers = 0, viewerErrors = 0, entries = 0 }
+local stats = { nodes = 0, errors = 0, viewers = 0, viewerErrors = 0, entries = 0, tims = 0, sounds = 0, kinds = {} }
 local samples = {}
 
 local function walk(node, depth, isEntry)
@@ -39,6 +39,14 @@ local function walk(node, depth, isEntry)
             samples[v.name] = node.name .. '\n' .. text:sub(1, 300)
         end
     end
+    if #children == 0 and not node.isDir then
+        local ok, file = pcall(node.open)
+        if ok then
+            if VP.images.parseTim(file) then stats.tims = stats.tims + 1 end
+            if VP.sounds.parse(file) then stats.sounds = stats.sounds + 1 end
+        end
+    end
+    if node.kind then stats.kinds[node.kind] = (stats.kinds[node.kind] or 0) + 1 end
     for _, c in ipairs(children) do walk(c, depth + 1) end
 end
 
@@ -67,5 +75,10 @@ walkDir(indexTop)
 
 print(string.format('entries=%d nodes=%d expandErrors=%d viewers=%d viewerErrors=%d',
     stats.entries, stats.nodes, stats.errors, stats.viewers, stats.viewerErrors))
+print(string.format('tims=%d sounds=%d', stats.tims, stats.sounds))
+local kinds = {}
+for k, n in pairs(stats.kinds) do kinds[#kinds + 1] = k .. '=' .. n end
+table.sort(kinds)
+print('kinds: ' .. table.concat(kinds, ' '))
 for name, s in pairs(samples) do print('--- sample ' .. name .. ': ' .. s) end
 PCSX.quit(0)

@@ -36,6 +36,7 @@ d 'utils.lua'
 d 'vfs.lua'
 d 'glyphs.lua'
 d 'images.lua'
+d 'sounds.lua'
 
 generateFileMap()
 decodeFonts()
@@ -77,6 +78,7 @@ local function drawNode(node)
     if VP.vfs.isLeaf(node) then flags = flags + imgui.constant.TreeNodeFlags.Leaf end
     if browser.selected == node then flags = flags + imgui.constant.TreeNodeFlags.Selected end
     local label = node.name
+    if node.kind then label = label .. ' - ' .. node.kind end
     if node.size then label = label .. '  (' .. formatSize(node.size) .. ')' end
     if #node.viewers > 0 then label = label .. '  [' .. node.viewers[1].name .. ']' end
     if node.forceOpen then
@@ -126,6 +128,8 @@ local function drawViewer(node)
         if not node.isDir then
             local ok, tim = pcall(function() return VP.images.parseTim(node.open()) end)
             if ok and tim then node.imageViewers[#node.imageViewers + 1] = VP.images.timViewer(node, tim) end
+            local okS, snd = pcall(function() return VP.sounds.parse(node.open()) end)
+            if okS and snd then node.imageViewers[#node.imageViewers + 1] = VP.sounds.viewer(snd) end
             node.imageViewers[#node.imageViewers + 1] = VP.images.rawViewer(node)
         end
     end
