@@ -19,7 +19,7 @@ end
 print(string.format('disc: %s %s disc %d', disc.exe, disc.region, disc.disc))
 
 local all = os.getenv('VP_BROWSE_ALL') == '1'
-local stats = { nodes = 0, errors = 0, viewers = 0, viewerErrors = 0, entries = 0, tims = 0, sounds = 0, kinds = {} }
+local stats = { nodes = 0, errors = 0, viewers = 0, viewerErrors = 0, entries = 0, tims = 0, sounds = 0, windows = 0, runtimeWindows = 0, kinds = {} }
 local samples = {}
 
 local function walk(node, depth, isEntry)
@@ -35,7 +35,17 @@ local function walk(node, depth, isEntry)
         if text:sub(1, 6) == 'Error:' then
             stats.viewerErrors = stats.viewerErrors + 1
             print('VIEWER ERROR ' .. node.name .. ': ' .. text)
-        elseif not samples[v.name] then
+        else
+            local ptrs = VP.vfs.ptrs(v)
+            for i = v.first or 1, ptrs and #ptrs or 0 do
+                local window = VP.glyphs.parse(ptrs[i])
+                if window then
+                    stats.windows = stats.windows + 1
+                    if #window.unknown > 0 then stats.runtimeWindows = stats.runtimeWindows + 1 end
+                end
+            end
+        end
+        if text:sub(1, 6) ~= 'Error:' and not samples[v.name] then
             samples[v.name] = node.name .. '\n' .. text:sub(1, 300)
         end
     end
@@ -75,7 +85,7 @@ walkDir(indexTop)
 
 print(string.format('entries=%d nodes=%d expandErrors=%d viewers=%d viewerErrors=%d',
     stats.entries, stats.nodes, stats.errors, stats.viewers, stats.viewerErrors))
-print(string.format('tims=%d sounds=%d', stats.tims, stats.sounds))
+print(string.format('tims=%d sounds=%d windows=%d runtimeWindows=%d', stats.tims, stats.sounds, stats.windows, stats.runtimeWindows))
 local kinds = {}
 for k, n in pairs(stats.kinds) do kinds[#kinds + 1] = k .. '=' .. n end
 table.sort(kinds)

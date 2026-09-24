@@ -86,6 +86,48 @@ function VP.glyphs.atlas()
     return atlas or buildAtlas()
 end
 
+-- Screen rectangle of the text area described by a <window .../> line, or nil.
+-- A fixed window is the one the 0x0090 helper opens. With placement="helper",
+-- small x and y values are the 0x033C helper's placement codes. Values only
+-- known at runtime come back in `unknown`, and a default position is used.
+function VP.glyphs.windowGeometry(head)
+    if head:match('type="fixed"') then return { x = 64, y = 32, width = 192, height = 14, unknown = {} } end
+    local function attr(name) return head:match(name .. '="([^"]*)"') end
+    local w, h = tonumber(attr('width')), tonumber(attr('height'))
+    if not w or not h then return nil end
+    local x, y = tonumber(attr('x')), tonumber(attr('y'))
+    local window = { width = w, height = h, unknown = {} }
+    if head:match('placement="helper"') then
+        if x == 0 or x == 2 then
+            x = 24
+        elseif x == 1 or x == 3 then
+            x = 296 - w
+        elseif x == 4 then
+            x = 160 - math.floor(w / 2)
+        elseif x and x >= 8 and x < 16 then
+            window.unknown[#window.unknown + 1] = 'side of actor ' .. x
+            x = 24
+        end
+        if y == 2 then
+            y = 16
+        elseif y == 3 then
+            y = 192 - h
+        elseif y == 4 then
+            y = 120 - math.floor(h / 2)
+        end
+    end
+    if not x then
+        window.unknown[#window.unknown + 1] = 'x'
+        x = 24
+    end
+    if not y then
+        window.unknown[#window.unknown + 1] = 'y'
+        y = 16
+    end
+    window.x, window.y = x, y
+    return window
+end
+
 -- Splits one pointer's text into its window geometry and its pages, each page
 -- being a list of lines with the tags already resolved.
 function VP.glyphs.parse(ptr)
@@ -93,11 +135,7 @@ function VP.glyphs.parse(ptr)
     for line in (ptr .. '\n'):gmatch('(.-)\n') do lines[#lines + 1] = line end
     local window
     if lines[1] and lines[1]:match('^<window') or lines[1] == '<nowindowdetected/>' then
-        local head = table.remove(lines, 1)
-        local x, y, width, height = head:match('x="(%-?%d+)" y="(%-?%d+)" width="(%-?%d+)" height="(%-?%d+)"')
-        if x then
-            window = { x = tonumber(x), y = tonumber(y), width = tonumber(width), height = tonumber(height) }
-        end
+        window = VP.glyphs.windowGeometry(table.remove(lines, 1))
     end
     local pages, page = {}, {}
     for _, line in ipairs(lines) do

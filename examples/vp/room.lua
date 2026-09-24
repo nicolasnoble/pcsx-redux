@@ -83,18 +83,27 @@ local function extractTextboxes(logic, ptrStart, out, ptrsRaws)
         local opcode = rdOp(pc)
         local txtptr, x, y, width, height
         if bit.band(opcode, 0x00100000) ~= 0 then
-            -- Operand list came off the stack: walk back six PSH instructions.
-            local psh = {}
-            for i = 1, 6 do psh[i] = rdOp(pc - i) end
-            for i = 1, 6 do
-                if bit.band(psh[i], 0xff000000) ~= 0x12000000 then return end
-            end
+            -- Operands on the stack. The handler pops the actor id first, then
+            -- x, y, width, height and the text pointer, so walking back from
+            -- the opcode that is pc-1 (actor), pc-2 (x) ... pc-6 (text). Each
+            -- geometry push is either a literal or a variable read.
             local arg = {}
-            for i = 1, 6 do arg[i] = bit.band(psh[i], 0x7fffff) end
+            for i = 2, 6 do
+                local psh = rdOp(pc - i)
+                local op = bit.band(psh, 0xff000000)
+                if op == 0x12000000 then
+                    arg[i] = bit.band(psh, 0x7fffff)
+                elseif op == 0x0B000000 and i ~= 6 then
+                    arg[i] = 'var'
+                else
+                    return
+                end
+            end
+            if bit.band(rdOp(pc - 1), 0xff000000) ~= 0x12000000 then return end
             txtptr = arg[6] + 1 - ptrStart
-            x = arg[5]; y = arg[4]; width = arg[3]; height = arg[2]
+            x = arg[2]; y = arg[3]; width = arg[4]; height = arg[5]
         else
-            txtptr = bit.band(opcode, 0xff) + 1 - ptrStart
+            txtptr = bit.band(opcode, 0xffff) + 1 - ptrStart
             local arg1 = rdOp(pc + 1)
             local arg2 = rdOp(pc + 2)
             x = bit.band(arg1, 0xffff)
@@ -125,9 +134,13 @@ local function extractTextboxes(logic, ptrStart, out, ptrsRaws)
             end
         end
         local txtptr = arg[2] + 1 - ptrStart
+        -- The helper at 0x033C treats x and y as placement codes when they
+        -- are small: x 0/2 left, 1/3 right, 4 centered, 8-15 the side of that
+        -- actor; y 2 top, 3 bottom, 4 centered. Anything else is a position.
         addTextbox(txtptr, {
             x = arg[6] or 'var', y = arg[5] or 'var',
             width = arg[4] or 'var', height = arg[3] or 'var',
+            placement = true,
         })
     end
 
@@ -265,8 +278,9 @@ function extract_room_script(fname, script, font, fileInfo)
                 ptrsContents[i] = '<window type="auto"/>\n' .. ptrsContents[i]
             else
                 ptrsContents[i] = string.format(
-                    '<window x="%s" y="%s" width="%s" height="%s"/>\n',
-                    tostring(tb.x), tostring(tb.y), tostring(tb.width), tostring(tb.height))
+                    '<window x="%s" y="%s" width="%s" height="%s"%s/>\n',
+                    tostring(tb.x), tostring(tb.y), tostring(tb.width), tostring(tb.height),
+                    tb.placement and ' placement="helper"' or '')
                     .. ptrsContents[i]
             end
         else

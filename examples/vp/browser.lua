@@ -110,6 +110,13 @@ local function drawPreview(v)
     if changed then v.previewPtr = n end
     local i = v.previewPtr
     local window, pages = VP.glyphs.parse(ptrs[i])
+    if window then
+        imgui.TextUnformatted(string.format('window %d,%d %dx%d', window.x, window.y, window.width, window.height))
+        if window.unknown and #window.unknown > 0 then
+            imgui.SameLine()
+            imgui.TextUnformatted('(set at runtime: ' .. table.concat(window.unknown, ', ') .. ')')
+        end
+    end
     for p, lines in ipairs(pages) do
         if #pages > 1 then imgui.TextUnformatted(string.format('page %d/%d', p, #pages)) end
         local missing = VP.glyphs.drawPage(window, lines, font, 2)
