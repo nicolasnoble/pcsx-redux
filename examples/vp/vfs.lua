@@ -55,12 +55,27 @@ end
 -- Script viewers carry a load() returning the decoded pointer table, and the
 -- index of the first real pointer. The text view and the glyph preview are
 -- both built from it.
+-- Room scripts also get a Logic viewer: the disassembly of the room bytecode,
+-- with the text each textbox opcode opens, written by the same pass.
 local function roomScriptViewer(script, font, index)
-    return {
+    local logic = {}
+    local sink = { write = function(_, s) logic[#logic + 1] = s end }
+    local viewer = {
         name = 'Room script',
         first = 3,
-        load = function() return extract_room_script('room', script, font, { index = index }) end,
+        load = function()
+            return extract_room_script('room', script, font, { index = index, logicSink = sink })
+        end,
     }
+    local logicViewer = {
+        name = 'Logic',
+        render = function()
+            local ptrs, err = VP.vfs.ptrs(viewer)
+            if not ptrs then error(err) end
+            return table.concat(logic)
+        end,
+    }
+    return viewer, logicViewer
 end
 
 local function simpleScriptViewer(script, font, style)
@@ -96,7 +111,8 @@ local function pairScripts(children, roleOf, makeViewer)
             if #leaves > #roles then error('Too many sub-chunks in ' .. child.name) end
         end
         if script and font then
-            table.insert(child.viewers, 1, makeViewer(script, font))
+            local viewers = { makeViewer(script, font) }
+            for k = #viewers, 1, -1 do table.insert(child.viewers, 1, viewers[k]) end
             script, font = nil, nil
         end
     end
