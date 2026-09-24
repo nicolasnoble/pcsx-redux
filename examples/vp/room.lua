@@ -50,7 +50,7 @@ end
 -- subroutines), and associate each textbox with the text-pointer it references.
 -- Returns a table mapping pointer_index -> { x, y, width, height } or
 -- { typ = 'fixed' } / { typ = 'auto' } / nil.
-local function extractTextboxes(logic, ptrStart)
+local function extractTextboxes(logic, ptrStart, out, ptrsRaws)
     local textboxes = {}
 
     local function rdOp(pc)
@@ -58,13 +58,25 @@ local function extractTextboxes(logic, ptrStart)
         return logic:readU32()
     end
 
+    -- With `out`, the disassembly is written there, and each textbox opcode is
+    -- followed by the raw text of the pointer it opens.
     local function addTextbox(txtptr, tb)
         if txtptr < 0 then return end
-        if textboxes[txtptr + ptrStart] then
+        local idx = txtptr + ptrStart
+        if out then
+            out:write('\n')
+            if ptrsRaws[idx] then
+                out:write(ptrsRaws[idx])
+                if textboxes[idx] then out:write('\n****SUSPECT****PTR ALREADY RECORDED****: ' .. idx) end
+            else
+                out:write('****SUSPECT****PTR TOO LARGE****: ' .. idx)
+            end
+        end
+        if textboxes[idx] then
             -- Already recorded; later hits get marked but the first stays.
             return
         end
-        textboxes[txtptr + ptrStart] = tb
+        textboxes[idx] = tb
     end
 
     local function txtProcess(pc)
@@ -141,7 +153,10 @@ local function extractTextboxes(logic, ptrStart)
         end
     end
 
-    VP.disasm.run(logic, nil, {
+    VP.disasm.run(logic, out, {
+        [0x17] = function()
+            if out then out:write('\n-----------------------------------------------------\n') end
+        end,
         [0x92] = txtProcess,
         [0x93] = txtProcess,
         [0x94] = txtProcess,
@@ -237,11 +252,8 @@ function extract_room_script(fname, script, font, fileInfo)
         disasmOut = Support.File.open(fname .. '/EXTRA/logic.txt', 'TRUNCATE')
     end
     checkRoomLogic(logic)
-    local textboxes = extractTextboxes(logic, ptrStart)
-    if disasmOut then
-        VP.disasm.run(logic, disasmOut, { [0x17] = function() disasmOut:write('\n--\n') end })
-        disasmOut:close()
-    end
+    local textboxes = extractTextboxes(logic, ptrStart, disasmOut, ptrsRaws)
+    if disasmOut then disasmOut:close() end
 
     -- Prepend textbox info to each pointer's content.
     for i = ptrStart, nPtrs do
