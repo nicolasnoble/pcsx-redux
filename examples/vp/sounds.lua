@@ -36,7 +36,9 @@ function VP.sounds.parse(file)
     return snd
 end
 
-function VP.sounds.viewer(snd)
+-- The descriptor carries no field that is obviously a sample rate, so the
+-- rate is a knob.
+function VP.sounds.viewer(snd, openFile)
     local lines = {
         string.format('Sound record: descriptor at 0x%x, %d bytes of SPU ADPCM at 0x%x', snd.hdr, snd.adpcmSize, snd.adpcmOffset),
         string.format('%d frames (%d samples), %d malformed, end flag on frame %s',
@@ -46,7 +48,33 @@ function VP.sounds.viewer(snd)
     }
     for i, w in ipairs(snd.desc) do lines[#lines + 1] = string.format('  +%02x  %08x', (i - 1) * 4, w) end
     local text = table.concat(lines, '\n')
-    return { name = 'Sound', render = function() return text end }
+    local v = { name = 'Sound', rate = 22050 }
+    function v.draw()
+        if PCSX.SPU and PCSX.SPU.playAudio then
+            imgui.PushItemWidth(150)
+            local changed, n = imgui.InputInt('sample rate', v.rate, 100, 1000)
+            if changed then v.rate = math.max(1, math.min(176400, n)) end
+            imgui.PopItemWidth()
+            imgui.SameLine()
+            if imgui.Button('Play') then
+                if v.sound then v.sound:stop() end
+                local ok, err = pcall(function()
+                    local data = openFile():readAt(snd.adpcmSize, snd.adpcmOffset)
+                    v.sound = PCSX.SPU.playAudio(data, { format = 'spu', rate = v.rate })
+                end)
+                v.err = not ok and tostring(err) or nil
+            end
+            imgui.SameLine()
+            if imgui.Button('Stop') and v.sound then v.sound:stop() end
+            if v.sound and v.sound:isPlaying() then
+                imgui.SameLine()
+                imgui.TextUnformatted('playing')
+            end
+            if v.err then imgui.TextUnformatted('Error: ' .. v.err) end
+        end
+        imgui.TextUnformatted(text)
+    end
+    return v
 end
 
 -- Dump handler for music entries: the SLZ sequence at +4 goes through the

@@ -139,7 +139,7 @@ local function drawViewer(node)
             local ok, tim = pcall(function() return VP.images.parseTim(node.open()) end)
             if ok and tim then node.imageViewers[#node.imageViewers + 1] = VP.images.timViewer(node, tim) end
             local okS, snd = pcall(function() return VP.sounds.parse(node.open()) end)
-            if okS and snd then node.imageViewers[#node.imageViewers + 1] = VP.sounds.viewer(snd) end
+            if okS and snd then node.imageViewers[#node.imageViewers + 1] = VP.sounds.viewer(snd, node.open) end
             node.imageViewers[#node.imageViewers + 1] = VP.images.rawViewer(node)
         end
     end
