@@ -268,6 +268,25 @@ function extract_room_script(fname, script, font, fileInfo)
     local textboxes = extractTextboxes(logic, ptrStart, disasmOut, ptrsRaws)
     if disasmOut and disasmOut.close then disasmOut:close() end
 
+    -- Every room opens the same system messages at the start of its logic
+    -- with a placeholder 16x16 window, but the field executable opens them
+    -- itself through its own helper (0x80060948 in the 2292 exec) with fixed
+    -- geometry. Keyed by the text index the opcode carries.
+    local nativeWindows = {
+        [2] = { x = 20, y = 'var', width = 280, height = 12 },
+        [3] = { x = 42, y = 32, width = 236, height = 70 },
+        [4] = { x = 74, y = 32, width = 172, height = 56 },
+        [5] = { x = 48, y = 32, width = 224, height = 42 },
+        [6] = { x = 58, y = 32, width = 204, height = 42 },
+    }
+    for text, tb in pairs(nativeWindows) do
+        local prev = textboxes[text + 1]
+        if prev and prev.x == 16 and prev.y == 16 and prev.width == 16 and prev.height == 16 then
+            tb.native = true
+            textboxes[text + 1] = tb
+        end
+    end
+
     -- Prepend textbox info to each pointer's content.
     for i = ptrStart, nPtrs do
         local tb = textboxes[i]
@@ -280,7 +299,7 @@ function extract_room_script(fname, script, font, fileInfo)
                 ptrsContents[i] = string.format(
                     '<window x="%s" y="%s" width="%s" height="%s"%s/>\n',
                     tostring(tb.x), tostring(tb.y), tostring(tb.width), tostring(tb.height),
-                    tb.placement and ' placement="helper"' or '')
+                    tb.placement and ' placement="helper"' or tb.native and ' source="native"' or '')
                     .. ptrsContents[i]
             end
         else
