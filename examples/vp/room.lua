@@ -260,13 +260,13 @@ function extract_room_script(fname, script, font, fileInfo)
     end
 
     -- Run the disasm pass to extract textbox geometry per pointer.
-    local disasmOut = nil
-    if VP.arguments.dump then
+    local disasmOut = fileInfo and fileInfo.logicSink
+    if not disasmOut and VP.arguments.dump then
         disasmOut = Support.File.open(fname .. '/EXTRA/logic.txt', 'TRUNCATE')
     end
     checkRoomLogic(logic)
     local textboxes = extractTextboxes(logic, ptrStart, disasmOut, ptrsRaws)
-    if disasmOut then disasmOut:close() end
+    if disasmOut and disasmOut.close then disasmOut:close() end
 
     -- Prepend textbox info to each pointer's content.
     for i = ptrStart, nPtrs do
