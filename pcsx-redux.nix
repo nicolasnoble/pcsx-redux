@@ -40,8 +40,8 @@ let
     ({
       owner = "grumpycoders";
       repo = "zep";
-      rev = "969ae7ea35ae583f215e6f3e724366e0815d58f9";
-      hash = "sha256-iblFvaBzZL8lRhAzYh9bmoBW4GzSaMyl35dHpGoyJlw=";
+      rev = "1c107cbe1ed39e5d453cb5d9fb5811abfe644571";
+      hash = "sha256-n2N5/llbPAytHrXZLTjT7tA3q633Vz1i8yBj8WTlRmM=";
     })
     ({
       owner = "pcsx-redux";
@@ -80,10 +80,10 @@ let
       hash = "sha256-PknWLxYuXQ73TCFN+eKOJDNLGbg/ZqKSF6mFxkJG6vI=";
     })
     ({
-      owner = "mdqinc";
-      repo = "SDL_GameControllerDB";
-      rev = "b1e342774cbb35467dfdd3634d4f0181a76cbc89";
-      hash = "sha256-LYvO+chDVo6D++fuFbxqSRltGW3y82SESmtFj39TdSA=";
+      owner = "epezent";
+      repo = "implot";
+      rev = "d65a2bef53d32502407de3a4be80f191e2f412d7";
+      hash = "sha256-s7URArbirN8uiInhi95eQW7aoq5Clc67NzUCzcslAi8=";
     })
     ({
       owner = "taocpp";
@@ -119,8 +119,8 @@ let
     ({
       owner = "pcsx-redux";
       repo = "nugget";
-      rev = "77adff516017044f2c6d9b21f66c124b9593959a";
-      hash = "sha256-N6FmNautSbIGNfsfNDdmy4jqj6dco8dXj5GBdKadQkI=";
+      rev = "d93840921b5ad7ed515e95b0e414f1b1e2038b1a";
+      hash = "sha256-+THJqpj64/43NAuEERCdOXzrW/jykk4IoL8RCFax+Xs=";
       dest = "src/mips";
     })
     ({

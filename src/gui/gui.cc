@@ -66,6 +66,7 @@ extern "C" {
 #include "fmt/chrono.h"
 #include "gui/gui.h"
 #include "gui/luaimguiextra.h"
+#include "gui/luaimplot.h"
 #include "gui/luatvg.h"
 #include "gui/resources.h"
 #include "gui/shaders/crt-lottes.h"
@@ -74,18 +75,20 @@ extern "C" {
 #include "imgui_impl_sdl3.h"
 #include "imgui_internal.h"
 #include "imgui_stdlib.h"
+#include "implot/implot.h"
+#include "implot/implot_internal.h"
 #include "json.hpp"
 #include "lua/extra.h"
 #include "lua/glffi.h"
 #include "lua/luafile.h"
 #include "lua/luawrapper.h"
-#include "thorvg/inc/thorvg.h"
 #include "spu/interface.h"
 #include "support/bezier.h"
 #include "support/mem4g.h"
 #include "support/uvfile.h"
 #include "support/zfile.h"
 #include "supportpsx/binloader.h"
+#include "thorvg/inc/thorvg.h"
 #include "tracy/Tracy.hpp"
 
 unsigned PCSX::GUI::MarkDown::m_id = 0;
@@ -177,7 +180,8 @@ PCSX::GUI::GUI(std::vector<std::string>& favorites)
       m_selectBiosDialog(l_("Select BIOS"), favorites),
       m_selectEXP1Dialog(l_("Select EXP1"), favorites),
       m_isoBrowser(settings.get<ShowIsoBrowser>().value, favorites, [this]() { useMonoFont(); }),
-      m_pioCart(settings.get<ShowPIOCartConfig>().value, favorites) {
+      m_pioCart(settings.get<ShowPIOCartConfig>().value, favorites),
+      m_gpuDump(settings.get<ShowGPUDump>().value, favorites) {
     assert(g_gui == nullptr);
     g_gui = this;
 }
@@ -369,6 +373,7 @@ void PCSX::GUI::setLua(Lua L) {
     setLuaCommon(L);
     LoadImguiBindings(L.getState());
     LuaFFI::open_imguiextra(this, L);
+    LuaFFI::open_implot(L);
     LuaFFI::open_gl(L);
     LuaFFI::open_tvg(this, L);
     {
@@ -580,8 +585,7 @@ void PCSX::GUI::init(std::function<void()> applyArguments) {
     // window creation (Win32 WGL is the strict case) a clean retry needs a
     // fresh window too, so we destroy and recreate both.
     if (!m_window || !m_glContext) {
-        g_system->log(LogClass::UI,
-                      "SDL failed to create OpenGL 3.2 core context, retrying with any 3.0 profile\n");
+        g_system->log(LogClass::UI, "SDL failed to create OpenGL 3.2 core context, retrying with any 3.0 profile\n");
         if (m_glContext) {
             SDL_GL_DestroyContext(m_glContext);
             m_glContext = nullptr;
@@ -654,6 +658,7 @@ void PCSX::GUI::init(std::function<void()> applyArguments) {
     // Setup ImGui binding
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
+    ImPlot::CreateContext();
     auto& io = ImGui::GetIO();
     {
         io.IniFilename = nullptr;
@@ -879,6 +884,7 @@ void PCSX::GUI::init(std::function<void()> applyArguments) {
 void PCSX::GUI::close() {
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplSDL3_Shutdown();
+    ImPlot::DestroyContext();
     ImGui::DestroyContext();
     // Tear down all GL-backed resources (ThorVG canvases) BEFORE
     // dropping the GL context they live in.
@@ -1006,9 +1012,9 @@ void PCSX::GUI::startFrame() {
             case SDL_EVENT_KEY_DOWN:
             case SDL_EVENT_KEY_UP: {
                 const int action = event.type == SDL_EVENT_KEY_DOWN ? 1 : 0;
-                g_system->m_eventBus->signal(Events::Keyboard{
-                    static_cast<int>(event.key.key), static_cast<int>(event.key.scancode), action,
-                    static_cast<int>(event.key.mod)});
+                g_system->m_eventBus->signal(Events::Keyboard{static_cast<int>(event.key.key),
+                                                              static_cast<int>(event.key.scancode), action,
+                                                              static_cast<int>(event.key.mod)});
                 break;
             }
             default:
@@ -1552,6 +1558,7 @@ in Configuration->Emulation, restart PCSX-Redux, then try again.)"));
                         ImGui::EndMenu();
                     }
                     ImGui::MenuItem(_("Show GPU logger"), nullptr, &m_gpuLogger.m_show);
+                    ImGui::MenuItem(_("Show GPU dump recorder / player"), nullptr, &m_gpuDump.m_show);
                     ImGui::MenuItem(_("Show GPU debug"), nullptr, &PCSX::g_emulator->m_gpu->m_showDebug);
                     ImGui::EndMenu();
                 }
@@ -1590,6 +1597,7 @@ in Configuration->Emulation, restart PCSX-Redux, then try again.)"));
             ImGui::Separator();
             if (ImGui::BeginMenu(_("Help"))) {
                 ImGui::MenuItem(_("Show ImGui Demo"), nullptr, &m_showDemo);
+                ImGui::MenuItem(_("Show ImPlot Demo"), nullptr, &m_showImPlotDemo);
                 ImGui::Separator();
                 ImGui::MenuItem(_("Show UvFile information"), nullptr, &m_showHandles);
                 ImGui::Separator();
@@ -1677,6 +1685,7 @@ in Configuration->Emulation, restart PCSX-Redux, then try again.)"));
     }
 
     if (m_showDemo) ImGui::ShowDemoWindow();
+    if (m_showImPlotDemo) ImPlot::ShowDemoWindow();
 
     ImGui::SetNextWindowPos(ImVec2(10, 20), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(1024, 512), ImGuiCond_FirstUseEver);
@@ -1887,6 +1896,7 @@ in Configuration->Emulation, restart PCSX-Redux, then try again.)"));
     if (g_emulator->m_gpu->m_showCfg) changed |= g_emulator->m_gpu->configure();
     if (g_emulator->m_gpu->m_showDebug) g_emulator->m_gpu->debug();
     if (m_gpuLogger.m_show) m_gpuLogger.draw(g_emulator->m_gpuLogger.get(), _("GPU Logger"));
+    if (m_gpuDump.m_show) m_gpuDump.draw(_("GPU Dump"));
     if (m_heapViewer.m_show) m_heapViewer.draw(g_emulator->m_mem.get(), _("PSYQo Heap Viewer"));
 
     if (m_showUiCfg) {
@@ -2108,6 +2118,17 @@ the update and manually apply it.)")));
             L.push();
             L.settable(LUA_GLOBALSINDEX);
         }
+        // A script that errors (or forgets to close) between ImPlot Begin* and End* leaves ImPlot's
+        // current plot/subplot set, and the next native BeginPlot would then throw its mismatch assert.
+        // Calling End* here is unsafe since the enclosing ImGui window may already be gone, so just drop
+        // the dangling state; ImGui's own error recovery takes care of the ID stack.
+        ImPlotContext* gp = ImPlot::GetCurrentContext();
+        if (gp && (gp->CurrentPlot || gp->CurrentSubplot || gp->CurrentAlignmentH || gp->CurrentAlignmentV)) {
+            ImPlot::ResetCtxForNextPlot(gp);
+            ImPlot::ResetCtxForNextSubplot(gp);
+            ImPlot::ResetCtxForNextAlignedPlots(gp);
+            gp->CurrentItems = nullptr;
+        }
     } else {
         L.pop();
     }
@@ -2195,14 +2216,7 @@ bool PCSX::GUI::configure() {
             if (!g_system->running()) SDL_GL_SetSwapInterval(m_idleSwapInterval);
         }
         ImGui::Separator();
-        if (ImGui::Button(_("Reset Scaler"))) {
-            changed = true;
-            settings.get<Emulator::SettingScaler>() = 100;
-        }
-        float scale = settings.get<Emulator::SettingScaler>();
-        scale /= 100.0f;
-        changed |= ImGui::SliderFloat(_("Speed Scaler"), &scale, 0.1f, 25.0f);
-        settings.get<Emulator::SettingScaler>() = scale * 100.0f;
+        // Emulation speed now lives at the audio sink (SPU::Speed), set in the SPU configuration window.
         changed |= ImGui::Checkbox(_("Enable XA decoder"), &settings.get<Emulator::SettingXa>().value);
         changed |= ImGui::Checkbox(_("Always enable SPU IRQ"), &settings.get<Emulator::SettingSpuIrq>().value);
         changed |= ImGui::Checkbox(_("Decode MDEC videos in B&W"), &settings.get<Emulator::SettingBnWMdec>().value);

@@ -74,6 +74,7 @@ target("pcsx-redux", function()
     )
 
     add_files("third_party/imgui/*.cpp", { cxxflags = "-include src/forced-includes/imgui.h" })
+    add_files("third_party/implot/*.cpp", { cxxflags = "-include src/forced-includes/implot.h" })
 
     add_deps("luajit", "thorvg")
     add_packages("capstone", "fmt", "freetype", "libcurl", "libsdl3", "libuv", "zlib",

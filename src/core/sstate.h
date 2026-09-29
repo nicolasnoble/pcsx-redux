@@ -78,9 +78,10 @@ typedef Protobuf::MessageField<DelaySlotInfo, TYPESTRING("delay_slot_info_2"), 1
 typedef Protobuf::FieldRef<Protobuf::UInt32, TYPESTRING("current_delayed_load"), 16> CurrentDelayedLoad;
 typedef Protobuf::RepeatedFieldRef<Protobuf::UInt64, 32, TYPESTRING("interrupt_targets"), 17> IntTargetsField;
 typedef Protobuf::FieldRef<Protobuf::Bool, TYPESTRING("in_isr"), 18> InISR;
+typedef Protobuf::FieldRef<Protobuf::UInt64, TYPESTRING("muldiv_ready"), 19> MulDivReady;
 typedef Protobuf::Message<TYPESTRING("Registers"), GPR, CP0, CP2D, CP2C, PC, Code, Cycle, Interrupt, ICacheAddr,
                           ICacheCode, NextIsDelaySlot, DelaySlotInfo1, DelaySlotInfo2, CurrentDelayedLoad,
-                          IntTargetsField, InISR>
+                          IntTargetsField, InISR, MulDivReady>
     Registers;
 typedef Protobuf::MessageField<Registers, TYPESTRING("registers"), 4> RegistersField;
 
@@ -131,9 +132,12 @@ typedef Protobuf::Field<Protobuf::UInt32, TYPESTRING("noiseClock"), 16> SPUNoise
 typedef Protobuf::Field<Protobuf::UInt32, TYPESTRING("noiseCount"), 17> SPUNoiseCount;
 typedef Protobuf::Field<Protobuf::UInt32, TYPESTRING("noiseVal"), 18> SPUNoiseVal;
 
+// ENDX latch, one bit per voice
+typedef Protobuf::Field<Protobuf::UInt32, TYPESTRING("endx"), 19> SPUEndx;
+
 typedef Protobuf::Message<TYPESTRING("SPU"), SPURam, SPUPorts, XAField, SPUIrq, SPUIrqPtr, Channels, SPUAddr, SPUCtrl,
                           SPUStat, CBStartIndex, CBCurrIndex, CBEndIndex, CBVoiceIndex, CBCDLeft, CBCDRight,
-                          SPUNoiseClock, SPUNoiseCount, SPUNoiseVal>
+                          SPUNoiseClock, SPUNoiseCount, SPUNoiseVal, SPUEndx>
     SPU;
 typedef Protobuf::MessageField<SPU, TYPESTRING("spu"), 6> SPUField;
 
@@ -264,9 +268,10 @@ typedef Protobuf::Message<TYPESTRING("Rcnt"), RcntMode, RcntTarget, RcntRate, Rc
     Rcnt;
 typedef Protobuf::RepeatedField<Rcnt, 4, TYPESTRING("rcnts"), 1> Rcnts;
 typedef Protobuf::Field<Protobuf::UInt32, TYPESTRING("hsync_count"), 2> HSyncCount;
-typedef Protobuf::Field<Protobuf::Int32, TYPESTRING("spu_sync_countdown"), 3> SPUSyncCountdown;
+// Field 3 was spu_sync_countdown, dropped when the SPU stopped being pumped on the
+// CPU's scanline schedule. DO NOT REUSE FIELD NUMBER 3 in Counters.
 typedef Protobuf::Field<Protobuf::UInt64, TYPESTRING("psx_next_counter"), 4> PSXNextCounter;
-typedef Protobuf::Message<TYPESTRING("Counters"), Rcnts, HSyncCount, SPUSyncCountdown, PSXNextCounter> Counters;
+typedef Protobuf::Message<TYPESTRING("Counters"), Rcnts, HSyncCount, PSXNextCounter> Counters;
 typedef Protobuf::MessageField<Counters, TYPESTRING("counters"), 10> CountersField;
 
 typedef Protobuf::Field<Protobuf::UInt32, TYPESTRING("reg0"), 1> MDECReg0;

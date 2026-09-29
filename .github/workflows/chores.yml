@@ -16,8 +16,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: recursive
           set-safe-directory: true
+      - name: Fetch submodules
+        run: ./.github/scripts/update-submodules.sh
       - name: Install gettext
         run: sudo apt-get install -y gettext
       - name: Regenerate i18n files
@@ -44,8 +45,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: recursive
           set-safe-directory: true
+      - name: Fetch submodules
+        run: ./.github/scripts/update-submodules.sh
       - name: Format code
         run: ./tools/code-format/format.sh
       - name: Create Pull Request
@@ -80,5 +82,5 @@ jobs:
           PAT: ${{ secrets.EXPORT_PAT }}
         run: |
           git config -l | grep 'http\..*\.extraheader' | cut -d= -f1 | xargs -L1 git config --unset-all
-          git remote add support https://rixnobis:$PAT@github.com/pcsx-redux/support.git
-          git push --force https://rixnobis:$PAT@github.com/pcsx-redux/support.git main
+          git remote add support "https://rixnobis:$PAT@github.com/pcsx-redux/support.git"
+          git push --force "https://rixnobis:$PAT@github.com/pcsx-redux/support.git" main
