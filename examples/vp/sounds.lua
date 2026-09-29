@@ -38,6 +38,17 @@ end
 
 -- The descriptor carries no field that is obviously a sample rate, so the
 -- rate is a knob.
+-- Decodes the record's SPU ADPCM up to and including the frame carrying the
+-- end flag. Returns an int16_t array and the number of samples in it.
+function VP.sounds.decode(snd, file)
+    local data = file:readAt(snd.adpcmSize, snd.adpcmOffset)
+    local frames = snd.endFrame or snd.frames
+    local samples = ffi.new('int16_t[?]', frames * 28 + 1)
+    local decoder = PCSX.Adpcm.NewDecoder()
+    for i = 0, frames - 1 do decoder:decodeSPUBlock(data.data + i * 16, samples + i * 28) end
+    return samples, frames * 28
+end
+
 function VP.sounds.viewer(snd, openFile)
     local lines = {
         string.format('Sound record: descriptor at 0x%x, %d bytes of SPU ADPCM at 0x%x', snd.hdr, snd.adpcmSize, snd.adpcmOffset),
@@ -71,6 +82,23 @@ function VP.sounds.viewer(snd, openFile)
                 imgui.TextUnformatted('playing')
             end
             if v.err then imgui.TextUnformatted('Error: ' .. v.err) end
+        end
+        if implot and PCSX.Adpcm then
+            if not v.samples and not v.decodeErr then
+                local ok, a, n = pcall(VP.sounds.decode, snd, openFile())
+                if ok then v.samples, v.count = a, n else v.decodeErr = tostring(a) end
+            end
+            if v.decodeErr then
+                imgui.TextUnformatted('Decode error: ' .. v.decodeErr)
+            else
+                -- The rate is part of the id, so changing it refits the axes
+                -- while leaving the user free to zoom otherwise.
+                implot.safe.BeginPlot('##waveform' .. v.rate, -1, 200, function()
+                    implot.SetupAxes('seconds', '')
+                    implot.SetupAxesLimits(0, v.count / v.rate, -32768, 32767)
+                    implot.PlotLine('samples', v.samples, v.count, 1 / v.rate, 0)
+                end)
+            end
         end
         imgui.TextUnformatted(text)
     end
