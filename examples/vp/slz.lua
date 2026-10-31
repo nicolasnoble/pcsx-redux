@@ -1,148 +1,130 @@
-function isSLZ(signature)
-    if signature == 0x005a4c53 then return true end
-    if signature == 0x015a4c53 then return true end
-    if signature == 0x025a4c53 then return true end
-    if signature == 0x035a4c53 then return true end
-    return false
+-- SLZ containers: N chunks, each a 16-byte header (signature, sizeIn,
+-- sizeOut, seekNext) followed by its payload, the last one with seekNext == 0.
+--
+-- SLZ1 and SLZ2 are LZSS variants, described here as grammars for
+-- PCSX.Compression. The same schema object decodes and encodes, so the packer
+-- and the reader cannot disagree about the format.
+--
+--   JJJJJJJJ LLLLJJJJ            match:     dist = b0 | (b1 & 0x0f) << 8, len = (b1 >> 4) + 3
+--   VVVVVVVV 1111RRRR            fill:      len nibble == 0xF, val = b0, run = (b1 & 0x0f) + 3
+--   RRRRRRRR 11110000 VVVVVVVV   long fill: len nibble == 0xF and run nibble == 0,
+--                                           run = b0 + 19, val = b2
+--
+-- SLZ1 has no fill and runs until a zero-distance token, with no bound on its
+-- destination: the game's decoder stops on that token and nothing else. So
+-- the encoder has to emit it, and does, as an ordinary item taking a flag bit.
+-- SLZ2 has both fills and stops on the output length, so it has no
+-- terminator. A match reaching before the start of the output reads zeroes.
+
+VP.slz = VP.slz or {}
+
+local MATCH = {
+    bytes = 2,
+    match = { len = { at = { 1, 0xf0, -4 }, bias = 3 }, dist = { at = { { 0, 0xff, 0 }, { 1, 0x0f, 8 } } } },
+}
+
+local CONTROL = { unit = 1, perGroup = 8, lsbFirst = true, oneMeans = 'literal' }
+local WINDOW = { base = 'relative', maxDist = 0x0fff, fillByte = 0, overlap = true }
+
+-- The game's own compressor never reached further back than 4096 minus the
+-- longest match. The decoders do not need that bound, but staying inside it
+-- keeps the output inside what the original discs exercised.
+VP.slz.SLZ1 = PCSX.Compression.schema {
+    name = 'SLZ1',
+    control = CONTROL,
+    window = WINDOW,
+    emit = { ringSize = 4096, terminator = true },
+    productions = {
+        { bytes = 2, guards = { { at = { { 0, 0xff, 0 }, { 1, 0x0f, 8 } }, eq = 0 } }, stop = true },
+        MATCH,
+    },
+}
+
+VP.slz.SLZ2 = PCSX.Compression.schema {
+    name = 'SLZ2',
+    control = CONTROL,
+    window = WINDOW,
+    emit = { ringSize = 4096 },
+    productions = {
+        {
+            bytes = 3,
+            guards = { { at = { 1, 0xf0, -4 }, eq = 0x0f }, { at = { 1, 0x0f }, eq = 0 } },
+            fill = { run = { at = { 0, 0xff }, bias = 19 }, value = { at = { 2, 0xff } } },
+        },
+        {
+            bytes = 2,
+            guards = { { at = { 1, 0xf0, -4 }, eq = 0x0f } },
+            fill = { run = { at = { 1, 0x0f }, bias = 3 }, value = { at = { 0, 0xff } } },
+        },
+        MATCH,
+    },
+}
+
+VP.slz.signatures = {
+    [0x005a4c53] = 0,
+    [0x015a4c53] = 1,
+    [0x025a4c53] = 2,
+    [0x035a4c53] = 3,
+}
+
+function isSLZ(signature) return VP.slz.signatures[signature] ~= nil end
+
+local function toBuffer(str)
+    local f = Support.File.buffer()
+    f:write(str)
+    f:rSeek(0)
+    local buf = f:read(#str)
+    f:close()
+    return buf
 end
 
-local function slz0Decompress(file, size)
-    return file:read(size)
-end
-
-local function slz1Decompress(file, sizeIn, sizeOut)
-    -- print('Decompressing ' .. sizeOut .. ' bytes using scheme 1')
-    local out = Support.NewLuaBuffer(sizeOut)
-    local pos = 0
-    local bitmap = 0x100
-    while pos < sizeOut do
-        if bitmap == 0x100 then
-            bitmap = file:readU8()
-            -- print('Read bitmap 0x' .. bit.tohex(bitmap, 2))
-            bitmap = bit.bor(bitmap, 0x10000)
-        end
-        local compressed = bit.band(bitmap, 1) == 0
-        bitmap = bit.rshift(bitmap, 1)
-        if compressed then
-            local info = file:readU16()
-            local jump = bit.band(info, 0xfff)
-            local length = bit.rshift(info, 12) + 3
-            local needlePos = pos - jump
-            -- print('Got 0x' .. bit.tohex(info, 4) .. ' - copying ' .. length .. ' bytes from ' .. needlePos .. ' (' .. jump .. ')')
-            for i = 1, length do
-                local value
-                if needlePos < 0 then
-                    value = 0
-                else
-                    value = out[needlePos]
-                end
-                -- print('Copying 0x' .. bit.tohex(value, 2) .. ' to 0x' .. bit.tohex(pos) .. ' from 0x' .. bit.tohex(needlePos))
-                out[pos] = value
-                pos = pos + 1
-                needlePos = needlePos + 1
-            end
-        else
-            local b = file:readU8()
-            -- print('Copying byte 0x' .. bit.tohex(b, 2) .. ' from source to 0x' .. bit.tohex(pos))
-            out[pos] = b
-            pos = pos + 1
-        end
-    end
-    return out
-end
-
-local function slz2Decompress(file, sizeIn, sizeOut)
-    -- print('Decompressing ' .. sizeOut .. ' bytes using scheme 2')
-    local out = Support.NewLuaBuffer(sizeOut)
-    local pos = 0
-    local bitmap = 0x100
-    while pos < sizeOut do
-        if bitmap == 0x100 then
-            bitmap = file:readU8()
-            -- print('Read bitmap 0x' .. bit.tohex(bitmap, 2))
-            bitmap = bit.bor(bitmap, 0x10000)
-        end
-        local compressed = bit.band(bitmap, 1) == 0
-        bitmap = bit.rshift(bitmap, 1)
-        if compressed then
-            local info = file:readU16()
-            local length = bit.rshift(info, 12) + 3
-            if length == 18 then
-                length = bit.band(bit.rshift(info, 8), 0x0f) + 3
-                local value = bit.band(info, 0xff)
-                -- print('Got 0x' .. bit.tohex(info, 4) .. ' - repeating ' .. length .. ' times 0x' .. bit.tohex(value, 2) .. ' to 0x' .. bit.tohex(pos))
-                if length == 3 then
-                    length = value + 19
-                    value = file:readU8()
-                    -- print('Extended RLE: new length = ' .. length .. ', and new value = 0x' .. bit.tohex(value, 2))
-                end
-                for i = 1, length do
-                    out[pos] = value
-                    pos = pos + 1
-                end
-            else
-                local jump = bit.band(info, 0xfff)
-                local needlePos = pos - jump
-                -- print('Got 0x' .. bit.tohex(info, 4) .. ' - copying ' .. length .. ' bytes from ' .. needlePos .. ' (' .. jump .. ')')
-                for i = 1, length do
-                    local value
-                    if needlePos < 0 then
-                        value = 0
-                    else
-                        value = out[needlePos]
-                    end
-                    -- print('Copying 0x' .. bit.tohex(value, 2) .. ' to 0x' .. bit.tohex(pos) .. ' from 0x' .. bit.tohex(needlePos))
-                    out[pos] = value
-                    pos = pos + 1
-                    needlePos = needlePos + 1
-                end
-            end
-        else
-            local b = file:readU8()
-            -- print('Copying byte 0x' .. bit.tohex(b, 2) .. ' from source to 0x' .. bit.tohex(pos))
-            out[pos] = b
-            pos = pos + 1
-        end
-    end
-    return out
-end
-
--- SLZ3 wraps a raw UCL-NRV2E compressed payload. The decoder is the
--- PCSX.Misc.uclUnpack Lua binding (ucl_nrv2e_decompress_safe_8 under the hood);
--- on the PSX side the SLZ-aware runtime gets the equivalent decoder via the
--- slz3_patch table injected into SLUS.
-local function slz3Decompress(file, sizeIn, sizeOut)
-    local compressed = file:read(sizeIn)
-    local out = Support.NewLuaBuffer(sizeOut)
-    PCSX.Misc.uclUnpack(compressed, sizeOut, out)
-    return out
-end
-
-function slzDecompress(file)
+-- Returns the raw chunks of an SLZ container: { scheme, sizeIn, sizeOut, data },
+-- with data the payload as a string.
+function VP.slz.chunks(file)
     file:rSeek(0)
-    local hasMore = true
     local ret = {}
-    while hasMore do
+    while true do
         local tell = file:rTell()
         local signature = file:readU32()
+        local scheme = VP.slz.signatures[signature]
+        if not scheme then error 'Not an SLZ file' end
         local sizeIn = file:readU32()
         local sizeOut = file:readU32()
         local seekNext = file:readU32()
-        hasMore = seekNext ~= 0
-        local out
-        if signature == 0x005a4c53 then
-            out = slz0Decompress(file, sizeIn)
-        elseif signature == 0x015a4c53 then
-            out = slz1Decompress(file, sizeIn, sizeOut)
-        elseif signature == 0x025a4c53 then
-            out = slz2Decompress(file, sizeIn, sizeOut)
-        elseif signature == 0x035a4c53 then
-            out = slz3Decompress(file, sizeIn, sizeOut)
-        else
-            error "Not an SLZ file"
-        end
-        ret[#ret + 1] = out
+        ret[#ret + 1] = { scheme = scheme, sizeIn = sizeIn, sizeOut = sizeOut, data = tostring(file:read(sizeIn)) }
+        if seekNext == 0 then break end
         file:rSeek(tell + seekNext)
     end
+    return ret
+end
+
+-- Decodes one chunk to a string.
+function VP.slz.decode(chunk)
+    if chunk.scheme == 0 then return chunk.data end
+    if chunk.scheme == 3 then
+        -- SLZ3 wraps a raw UCL-NRV2E payload. The retail game has no decoder
+        -- for it: the translation's patched executable adds one.
+        local out = Support.NewLuaBuffer(chunk.sizeOut)
+        PCSX.Misc.uclUnpack(chunk.data, chunk.sizeOut, out)
+        return tostring(out)
+    end
+    local schema = chunk.scheme == 1 and VP.slz.SLZ1 or VP.slz.SLZ2
+    local plain = schema:decode(chunk.data, chunk.sizeOut)
+    if #plain ~= chunk.sizeOut then
+        error(string.format('SLZ%d chunk decoded to %d bytes, expected %d', chunk.scheme, #plain, chunk.sizeOut))
+    end
+    return plain
+end
+
+-- Encodes plaintext under scheme 1 or 2.
+function VP.slz.encode(scheme, plain)
+    local schema = scheme == 1 and VP.slz.SLZ1 or VP.slz.SLZ2
+    return schema:encode(plain)
+end
+
+-- Returns the decompressed chunks as LuaBuffers.
+function slzDecompress(file)
+    local ret = {}
+    for i, chunk in ipairs(VP.slz.chunks(file)) do ret[i] = toBuffer(VP.slz.decode(chunk)) end
     return ret
 end
