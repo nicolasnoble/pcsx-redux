@@ -243,27 +243,36 @@ test('query filters', function()
     db:close()
 end)
 
-test('beforeSave refuses an overflowing reviewed row', function()
+test('beforeSave refuses a reviewed row the game cannot wrap', function()
     local db = tmpdb()
     local long = chars(string.rep('W', 40))
     local box = { x = 24, y = 16, width = 100, height = 42 }
     local ok, err = db:put({ key = KEY, idx = 3, tokens = long, status = 2 }, 0, { box = box })
     eq(ok, nil, 'refused')
-    truthy(err and err:find('line 1', 1, true), 'message names the line: ' .. tostring(err))
+    truthy(err and err:find('wider than the box', 1, true), 'message names the cause: ' .. tostring(err))
     eq(db:get(KEY, 3), nil, 'nothing written')
     truthy(db:put({ key = KEY, idx = 3, tokens = long, status = 1 }, 0, { box = box }), 'a draft may overflow')
     local w = VP.glyphs.measureTokens(long)[1][1]
     local row = db:get(KEY, 3)
     row.status, row.boxW = 2, w
     truthy(db:put(row, row.version, { box = box }), 'reviewed once the box override is wide enough')
+    -- The game wraps a long line at its spaces and scrolls a page with more
+    -- lines than the box holds: neither stops a review.
+    local words = chars(string.rep('WWW ', 30))
+    local okW, errW = db:put({ key = KEY, idx = 4, tokens = words, status = 2 }, 0, { box = box })
+    truthy(okW, 'a line that wraps into a scrolling page is reviewed: ' .. tostring(errW))
+    local problems, notes, pages = VP.tdb.fitProblems(words, box)
+    eq(#problems, 0, 'no problems')
+    truthy(#pages[1] > 3 and #notes == 1, 'wrapped to ' .. #pages[1] .. ' lines, one scroll note')
     local tall = chars('a')
     for _ = 1, 3 do
         tall[#tall + 1] = { c = 0, args = {} }
         tall[#tall + 1] = { ch = 'a' }
     end
-    local okT, errT = db:put({ key = KEY, idx = 4, tokens = tall, status = 2 }, 0, { box = box })
-    eq(okT, nil, 'four lines in a three-line box refused')
-    truthy(errT:find('4 lines', 1, true), 'message: ' .. tostring(errT))
+    local okT, errT = db:put({ key = KEY, idx = 6, tokens = tall, status = 2 }, 0, { box = box })
+    truthy(okT, 'four lines in a three-line box scroll, and are reviewed: ' .. tostring(errT))
+    local _, tallNotes = VP.tdb.fitProblems(tall, box)
+    truthy(tallNotes[1] and tallNotes[1]:find('4 lines in a 3-line box', 1, true), 'note: ' .. tostring(tallNotes[1]))
     truthy(db:put({ key = KEY, idx = 5, tokens = long, status = 2 }, 0, { box = { width = 'var', height = 'var' } }),
         'unknown box dimensions are not checked')
     db:close()

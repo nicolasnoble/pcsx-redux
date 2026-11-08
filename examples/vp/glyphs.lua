@@ -236,6 +236,45 @@ end
 -- pagesFromTokens), with the widths of the font database of `set` ('US' by
 -- default). Returns { { line widths of page 1 }, ... } and the number of
 -- characters with no glyph in that database.
+-- Breaks a line the way the game's textbox does: a line wider than the box
+-- wraps at the last space that keeps it within width, and the spaces at the
+-- break are dropped. Measured in game on retail strings (the 3615 and 3622
+-- samples on Board#1975). Returns the wrapped lines and whether some word is
+-- wider than the box on its own. width nil returns the line unchanged.
+function VP.glyphs.wrapLine(line, width, set)
+    if type(width) ~= 'number' then return { line }, false end
+    local map = set == 'JP' and VP.constants.fontJP or VP.constants.font
+    local out, cur, tooWide = {}, line:match('^ *'), false
+    local hasWord = false
+    for word, spaces in line:gmatch('([^ ]+)( *)') do
+        local w = layoutLine(word, map)
+        if w > width then tooWide = true end
+        if hasWord and layoutLine(cur .. word, map) > width then
+            out[#out + 1] = (cur:gsub(' +$', ''))
+            cur = word .. spaces
+        else
+            cur = cur .. word .. spaces
+        end
+        hasWord = true
+    end
+    out[#out + 1] = (cur:gsub(' +$', ''))
+    return out, tooWide
+end
+
+-- pagesFromTokens with every line wrapped to width.
+function VP.glyphs.wrapPages(pages, width, set)
+    local out, tooWide = {}, false
+    for p, lines in ipairs(pages) do
+        out[p] = {}
+        for _, line in ipairs(lines) do
+            local wrapped, wide = VP.glyphs.wrapLine(line, width, set)
+            if wide then tooWide = true end
+            for _, l in ipairs(wrapped) do out[p][#out[p] + 1] = l end
+        end
+    end
+    return out, tooWide
+end
+
 function VP.glyphs.measureTokens(tokens, lookup, style, set)
     local map = set == 'JP' and VP.constants.fontJP or VP.constants.font
     local widths, missing = {}, 0

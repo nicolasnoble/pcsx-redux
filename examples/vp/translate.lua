@@ -19,7 +19,7 @@ T.author = T.author or os.getenv('VP_AUTHOR') or os.getenv('USER') or ''
 -- Pixels per game pixel in the page previews.
 T.previewScale = T.previewScale or 2
 local PAGE_W, PAGE_H = 320, 240
-local RED, GREEN = 0xff5050ff, 0xff60d060
+local RED, GREEN, YELLOW = 0xff5050ff, 0xff60d060, 0xff40c8e8
 
 function T.open(path)
     if T.db then T.db:close() end
@@ -321,20 +321,22 @@ local function drawTranslate(v, room)
     imgui.Separator()
     imgui.BeginGroup()
     imgui.TextUnformatted('Original')
-    drawPages(origWindow, origPages, 'US', 'origpages')
+    drawPages(origWindow, (VP.glyphs.wrapPages(origPages, (originalBox(tb) or {}).width)), 'US', 'origpages')
     imgui.EndGroup()
     imgui.SameLine()
     imgui.BeginGroup()
     imgui.TextUnformatted('Translation')
     if tokens then
         local box = VP.tdb.effectiveBox(row or {}, originalBox(tb))
-        local problems = VP.tdb.fitProblems(tokens, box, v.lookup)
-        if #problems == 0 then
+        local problems, notes, wrapped = VP.tdb.fitProblems(tokens, box, v.lookup)
+        if #problems == 0 and #notes == 0 then
             colored(GREEN, 'Fits the box.')
         else
             for _, p in ipairs(problems) do colored(RED, p) end
+            for _, n in ipairs(notes) do colored(YELLOW, n) end
         end
-        drawPages(trWindow, VP.glyphs.pagesFromTokens(tokens, v.lookup, extra.style), 'US', 'trpages')
+        -- Drawn wrapped, as the game will show it.
+        drawPages(trWindow, wrapped, 'US', 'trpages')
     end
     imgui.EndGroup()
 

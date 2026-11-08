@@ -438,36 +438,36 @@ function VP.tdb.effectiveBox(row, original)
     }
 end
 
--- beforeSave hook: a reviewed row must fit its box. Each line has to fit the
--- box width, and each page fit the box height at 14 pixels a line (a 12 pixel
--- box holds one line, 42 three, 70 five). When the width or height is only known
--- at run time, that dimension is not checked. context.box is the original
--- textbox, context.lookup the script font's glyph-to-character map for any {g}
--- token.
+-- beforeSave hook: a reviewed row must be showable in its box. The game wraps
+-- a line wider than the box at a space and scrolls a page with more lines than
+-- the box holds (14 pixels a line: a 12 pixel box holds one line, 42 three, 70
+-- five), so neither stops a review; a missing glyph or a single word wider than
+-- the box does. When the width is only known at run time, wrapping is not
+-- checked. context.box is the original textbox, context.lookup the script
+-- font's glyph-to-character map for any {g} token.
 function VP.tdb.fitHook(row, context)
     if row.status ~= VP.tdb.status.reviewed or not row.tokens then return nil end
     local box = VP.tdb.effectiveBox(row, context.box)
     local problems = VP.tdb.fitProblems(row.tokens, box, context.lookup)
-    if #problems > 0 then return 'Does not fit its box, so it cannot be marked reviewed: ' .. problems[1] end
+    if #problems > 0 then return 'Cannot be marked reviewed: ' .. problems[1] end
     return nil
 end
 
+-- Returns the problems that stop a review, and the notes that do not (pages
+-- that scroll).
 function VP.tdb.fitProblems(tokens, box, lookup)
-    local problems = {}
+    local problems, notes = {}, {}
     local widths, missing = VP.glyphs.measureTokens(tokens, lookup)
     if missing > 0 then problems[#problems + 1] = missing .. ' characters have no glyph' end
+    local pages, tooWide = VP.glyphs.wrapPages(VP.glyphs.pagesFromTokens(tokens, lookup), box.width)
+    if tooWide then
+        problems[#problems + 1] = string.format('a word is wider than the box (%d px) and cannot wrap', box.width)
+    end
     local maxLines = type(box.height) == 'number' and math.floor((box.height + 2) / 14) or nil
-    for p, page in ipairs(widths) do
-        if type(box.width) == 'number' then
-            for l, w in ipairs(page) do
-                if w > box.width then
-                    problems[#problems + 1] = string.format('page %d line %d is %d px, the box is %d px', p, l, w, box.width)
-                end
-            end
-        end
+    for p, page in ipairs(pages) do
         if maxLines and #page > maxLines then
-            problems[#problems + 1] = string.format('page %d has %d lines, the box holds %d', p, #page, maxLines)
+            notes[#notes + 1] = string.format('page %d is %d lines in a %d-line box, it scrolls', p, #page, maxLines)
         end
     end
-    return problems
+    return problems, notes, pages
 end
