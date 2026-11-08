@@ -52,6 +52,7 @@ end
 -- { typ = 'fixed' } / { typ = 'auto' } / nil.
 local function extractTextboxes(logic, ptrStart, out, ptrsRaws)
     local textboxes = {}
+    ptrsRaws = ptrsRaws or {}
 
     local function rdOp(pc)
         logic:rSeek(pc * 4)
@@ -60,9 +61,18 @@ local function extractTextboxes(logic, ptrStart, out, ptrsRaws)
 
     -- With `out`, the disassembly is written there, and each textbox opcode is
     -- followed by the raw text of the pointer it opens.
-    local function addTextbox(txtptr, tb)
+    -- tb.sites lists, for every opcode that opens this pointer, where each
+    -- literal geometry value lives in the logic: { pc =, kind = 'psh' | 'lo' | 'hi' }
+    -- per field, nil for a value computed at run time.
+    local function addTextbox(txtptr, tb, site)
         if txtptr < 0 then return end
         local idx = txtptr + ptrStart
+        if textboxes[idx] then
+            local sites = textboxes[idx].sites
+            if sites and site then sites[#sites + 1] = site end
+        else
+            tb.sites = { site }
+        end
         if out then
             out:write('\n')
             if ptrsRaws[idx] then
@@ -81,7 +91,7 @@ local function extractTextboxes(logic, ptrStart, out, ptrsRaws)
 
     local function txtProcess(pc)
         local opcode = rdOp(pc)
-        local txtptr, x, y, width, height
+        local txtptr, x, y, width, height, site
         if bit.band(opcode, 0x00100000) ~= 0 then
             -- Operands on the stack. The handler pops the actor id first, then
             -- x, y, width, height and the text pointer, so walking back from
@@ -102,6 +112,8 @@ local function extractTextboxes(logic, ptrStart, out, ptrsRaws)
             if bit.band(rdOp(pc - 1), 0xff000000) ~= 0x12000000 then return end
             txtptr = arg[6] + 1 - ptrStart
             x = arg[2]; y = arg[3]; width = arg[4]; height = arg[5]
+            local function at(i) if arg[i] ~= 'var' then return { pc = pc - i, kind = 'psh' } end end
+            site = { x = at(2), y = at(3), width = at(4), height = at(5) }
         else
             txtptr = bit.band(opcode, 0xffff) + 1 - ptrStart
             local arg1 = rdOp(pc + 1)
@@ -110,8 +122,12 @@ local function extractTextboxes(logic, ptrStart, out, ptrsRaws)
             y = bit.rshift(arg1, 16)
             width = bit.band(arg2, 0xffff)
             height = bit.rshift(arg2, 16)
+            site = {
+                x = { pc = pc + 1, kind = 'lo' }, y = { pc = pc + 1, kind = 'hi' },
+                width = { pc = pc + 2, kind = 'lo' }, height = { pc = pc + 2, kind = 'hi' },
+            }
         end
-        addTextbox(txtptr, { x = x, y = y, width = width, height = height })
+        addTextbox(txtptr, { x = x, y = y, width = width, height = height }, site)
     end
 
     local function processSubtxt(pc)
@@ -134,6 +150,7 @@ local function extractTextboxes(logic, ptrStart, out, ptrsRaws)
             end
         end
         local txtptr = arg[2] + 1 - ptrStart
+        local function at(i) if arg[i] then return { pc = pc - i, kind = 'psh' } end end
         -- The helper at 0x033C treats x and y as placement codes when they
         -- are small: x 0/2 left, 1/3 right, 4 centered, 8-15 the side of that
         -- actor; y 2 top, 3 bottom, 4 centered. Anything else is a position.
@@ -141,7 +158,7 @@ local function extractTextboxes(logic, ptrStart, out, ptrsRaws)
             x = arg[6] or 'var', y = arg[5] or 'var',
             width = arg[4] or 'var', height = arg[3] or 'var',
             placement = true,
-        })
+        }, { x = at(6), y = at(5), width = at(4), height = at(3) })
     end
 
     local function processSubtxt2(pc)
@@ -179,6 +196,10 @@ local function extractTextboxes(logic, ptrStart, out, ptrsRaws)
 
     return textboxes
 end
+
+VP.room = VP.room or {}
+-- Textbox geometry and patch sites of a room script's logic (a LuaBuffer).
+function VP.room.textboxes(logic, ptrStart) return extractTextboxes(logic, ptrStart or 3) end
 
 -- Extract a full room script: read header, validate via checkRoomLogic, decode
 -- per-pointer text via the font/glyph lookup, run a disassembly pass to extract

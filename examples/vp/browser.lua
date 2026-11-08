@@ -37,6 +37,7 @@ d 'vfs.lua'
 d 'glyphs.lua'
 d 'tdb.lua'
 d 'translate.lua'
+d 'preview.lua'
 -- The GUI loads this resource at startup; without a GUI (-no-ui) it does not.
 if not (PCSX.FileViewers and PCSX.FileViewers.soundViewer) then d '../../resources/fileviewers.lua' end
 d 'images.lua'
