@@ -1,13 +1,20 @@
+-- Glyphs are looked up by width and bitmap together: some bitmaps appear twice
+-- in a database with different widths (the US font has the space at 4 pixels
+-- and the ideographic space at 8, both blank), and the width tells them apart.
+local function glyphKey(width, data)
+    return width .. '-' .. data
+end
+
 function decodeFonts()
     VP.constants.fontByData = {}
     for k, v in pairs(VP.constants.font) do
         v.text = k
-        VP.constants.fontByData[v.data] = deepCopy(v)
+        VP.constants.fontByData[glyphKey(v.width, v.data)] = deepCopy(v)
     end
     VP.constants.fontJPByData = {}
     for k, v in pairs(VP.constants.fontJP) do
         v.text = k
-        VP.constants.fontJPByData[v.data] = deepCopy(v)
+        VP.constants.fontJPByData[glyphKey(v.width, v.data)] = deepCopy(v)
     end
 end
 
@@ -30,8 +37,15 @@ function extractFont(file, fileInfo)
 
     for i = 1, numGlyphs do
         local glyph = base64.encode(tostring(file:read(height * 2)))
-        local fontData = VP.constants.fontByData[glyph]
-        if not fontData then error('Could not find glyph ' .. glyph .. ' in the database...') end
+        local fontData = VP.constants.fontByData[glyphKey(widths[i], glyph)]
+        -- Fonts are padded with blank glyphs of width 0, which stand for no
+        -- character.
+        if not fontData and widths[i] == 0 and not glyph:find('[^A=]') then
+            fontData = { width = 0, height = height, data = glyph, padding = true }
+        end
+        if not fontData then
+            error('Could not find glyph ' .. glyph .. ' of width ' .. widths[i] .. ' in the database...')
+        end
         ret[i] = deepCopy(fontData)
         if VP.arguments.dumpGlyphs then
             local dest = Support.File.open(dir .. string.format("/%03i-%02i.raw", i, widths[i]), 'TRUNCATE')
