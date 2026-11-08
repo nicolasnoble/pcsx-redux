@@ -80,7 +80,7 @@ local function roomScriptViewer(script, font, index)
             return table.concat(logic)
         end,
     }
-    return viewer, logicViewer
+    return viewer, logicViewer, VP.translate.viewer(viewer)
 end
 
 local function simpleScriptViewer(script, font, style)
