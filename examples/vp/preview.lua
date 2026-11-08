@@ -8,11 +8,16 @@
 -- base from the script's own header, so a script rebuilt with a different
 -- layout is followed as long as its header is right.
 --
--- Two breakpoints do the patching. At malloc's entry, when it is called by the
--- chunk allocator on behalf of case 4 chunk 0, the compressed chunk is decoded
--- here, its key looked up, the translated script rebuilt, and the allocation
--- grown to fit it. Once the chunk is decompressed, the rebuilt script is
--- written over it.
+-- Chunk 1 of the same member is the room's font, which holds only the glyphs
+-- the room uses, so a translation can need glyphs added to it.
+--
+-- Three breakpoints do the patching. At malloc's entry, when it is called by
+-- the chunk allocator on behalf of case 4 chunk 0, both compressed chunks are
+-- decoded here, the script's key looked up, the font extended and the script
+-- rebuilt, and the allocation grown to fit; the font's allocation is grown
+-- the same way when its turn comes. Once each chunk is decompressed, the
+-- rebuilt one is written over it, after checking the buffer holds exactly
+-- what the rebuild started from.
 --
 -- Breakpoints only fire with the debugger enabled.
 
@@ -25,6 +30,9 @@ local ALLOC_RETURN = 0x800122b0 -- return address of the malloc call in 0x800122
 local CASE4_SCRIPT_ALLOC = 0x8006bdc0 -- return address of case 4's chunk 0 allocation
 local CASE4_SCRIPT_DONE = 0x8006bde0 -- after case 4's chunk 0 decompression
 local SCRIPT_PTR = 0x8007f1ac
+local CASE4_FONT_ALLOC = 0x8006bdf4 -- return address of case 4's chunk 1 (font) allocation
+local CASE4_FONT_DONE = 0x8006be14 -- after case 4's chunk 1 decompression
+local FONT_PTR = 0x8007f1d8
 local HEADER_SIZE = 28
 local DIGITS_SIZE = 0x33
 
@@ -164,7 +172,76 @@ function preview.rowsFor(db, key)
     return rows, n
 end
 
--- Rebuilt scripts by key, so a room entered twice is rebuilt once per change.
+-- A room's font (chunk 1 of the same member): u32 count, u32 height,
+-- u8 widths[count], then count bitmaps of height u16 rows. Glyph index g in a
+-- string is the g-th glyph of this font.
+function preview.parseFont(s)
+    local u32 = function(o) return ffi.cast('uint32_t*', ffi.cast('const char*', s) + o)[0] end
+    local count, height = u32(0), u32(4)
+    if 8 + count + count * height * 2 ~= #s then error('Not a room font: ' .. #s .. ' bytes') end
+    local font = { height = height, widths = {}, bitmaps = {}, index = {} }
+    for i = 1, count do
+        font.widths[i] = s:byte(8 + i)
+        font.bitmaps[i] = s:sub(9 + count + (i - 1) * height * 2, 8 + count + i * height * 2)
+        local k = font.widths[i] .. '-' .. font.bitmaps[i]
+        if font.widths[i] > 0 and not font.index[k] then font.index[k] = i end
+    end
+    return font
+end
+
+function preview.buildFont(font)
+    local count = #font.widths
+    local head = ffi.new('uint32_t[2]', count, font.height)
+    local widths = {}
+    for i = 1, count do widths[i] = string.char(font.widths[i]) end
+    return ffi.string(head, 8) .. table.concat(widths) .. table.concat(font.bitmaps)
+end
+
+-- Turns the { ch } tokens of rows into { g } tokens of the room's font, adding
+-- glyphs from the font database that the room does not have. Returns the new
+-- rows, the new font bytes (nil when unchanged) and the number of glyphs added.
+function preview.resolveChars(rows, fontBytes)
+    local font = preview.parseFont(fontBytes)
+    local added = 0
+    local out = {}
+    for idx, row in pairs(rows) do
+        local r = {}
+        for k, v in pairs(row) do r[k] = v end
+        local toks = { terminated = row.tokens.terminated }
+        for i, t in ipairs(row.tokens) do
+            if t.ch then
+                local g = VP.constants.font[t.ch]
+                if not g then error(string.format('pointer %d: no glyph for %s in the font database', idx, t.ch)) end
+                if g.height ~= font.height then error('pointer ' .. idx .. ': glyph height does not match the room font') end
+                local bitmap = base64.decode(g.data)
+                local k = g.width .. '-' .. bitmap
+                local n = font.index[k]
+                if not n then
+                    font.widths[#font.widths + 1] = g.width
+                    font.bitmaps[#font.bitmaps + 1] = bitmap
+                    n = #font.widths
+                    font.index[k] = n
+                    added = added + 1
+                end
+                toks[i] = { g = n }
+            else
+                toks[i] = t
+            end
+        end
+        r.tokens = toks
+        out[idx] = r
+    end
+    if added == 0 then return out, nil, 0 end
+    -- The bitmaps follow the widths, so an odd count would misalign them.
+    if #font.widths % 2 == 1 then
+        font.widths[#font.widths + 1] = 0
+        font.bitmaps[#font.bitmaps + 1] = string.rep('\0', font.height * 2)
+    end
+    return out, preview.buildFont(font), added
+end
+
+-- Rebuilt rooms by script key and font hash, so a room entered twice is
+-- rebuilt once per change.
 preview.cache = preview.cache or {}
 preview.log = preview.log or {}
 
@@ -174,96 +251,138 @@ local function note(s)
     if #log > 200 then table.remove(log, 1) end
 end
 
-function preview.invalidate(key)
-    if key then preview.cache[key] = nil else preview.cache = {} end
-end
+function preview.invalidate() preview.cache = {} end
 
--- Returns the rebuilt script for an original, or nil when nothing applies.
-function preview.patched(original)
-    local key = VP.text.fnv1a64(original)
-    local cached = preview.cache[key]
-    if cached then return cached.bytes, key, cached end
+-- Returns the cache entry for a room's original script and font:
+-- { key, n, script, font, added, problems, error }, script nil when nothing applies.
+function preview.patched(script, font)
+    local key = VP.text.fnv1a64(script)
+    local ck = key .. ':' .. VP.text.fnv1a64(font)
+    local cached = preview.cache[ck]
+    if cached then return cached end
+    local entry = { key = key, n = 0 }
+    preview.cache[ck] = entry
     local db = preview.db
-    if not db then return nil, key end
+    if not db then return entry end
     local rows, n = preview.rowsFor(db, key)
-    local entry = { n = n }
-    if n > 0 then
-        local ok, bytes, problems = pcall(preview.rebuild, original, rows)
-        if ok then
-            entry.bytes, entry.problems = bytes, problems
-        else
-            entry.error = bytes
-        end
-    end
-    preview.cache[key] = entry
-    return entry.bytes, key, entry
+    entry.n = n
+    if n == 0 then return entry end
+    local ok, err = pcall(function()
+        local resolved, newFont, added = preview.resolveChars(rows, font)
+        local bytes, problems = preview.rebuild(script, resolved)
+        entry.script, entry.font, entry.added, entry.problems = bytes, newFont, added, problems
+    end)
+    if not ok then entry.error = tostring(err) end
+    return entry
 end
 
 local mem = PCSX.getMemPtr()
 local function r32(a) return ffi.cast('uint32_t*', mem + bit.band(a, 0x1ffffc))[0] end
 
+local function decodeChunk(address)
+    local scheme = VP.slz.signatures[r32(address)]
+    if not scheme then error(string.format('chunk at %08x has no SLZ signature', address)) end
+    local sizeIn, sizeOut = r32(address + 4), r32(address + 8)
+    return VP.slz.decode({
+        scheme = scheme, sizeIn = sizeIn, sizeOut = sizeOut,
+        data = ffi.string(mem + bit.band(address + 16, 0x1fffff), sizeIn),
+    }), sizeOut
+end
+
 local pending
+
+local function grow(regs, size, bytes)
+    -- Rounded up to a word, and never smaller than what the game decompresses.
+    local want = math.max(size, bit.band(#bytes + 3, bit.bnot(3)))
+    regs.GPR.n.a0 = want
+    return want
+end
 
 local function onMalloc()
     local regs = PCSX.getRegisters()
     if regs.GPR.n.ra ~= ALLOC_RETURN then return true end
-    if r32(regs.GPR.n.sp + 24) ~= CASE4_SCRIPT_ALLOC then return true end
-    pending = nil
-    local chunkAddress = regs.GPR.n.a1
-    local scheme = VP.slz.signatures[r32(chunkAddress)]
-    if not scheme then
-        note(string.format('script chunk at %08x has no SLZ signature', chunkAddress))
-        return true
+    local caller = r32(regs.GPR.n.sp + 24)
+    if caller == CASE4_SCRIPT_ALLOC then
+        pending = nil
+        local chunk0 = regs.GPR.n.a1
+        local ok, err = pcall(function()
+            local script, size = decodeChunk(chunk0)
+            local next = r32(chunk0 + 12)
+            if next == 0 then error('the script chunk has no font chunk after it') end
+            local font, fontSize = decodeChunk(chunk0 + next)
+            local entry = preview.patched(script, font)
+            if entry.error then note('script ' .. entry.key .. ': not patched, ' .. entry.error) end
+            if not entry.script then return end
+            pending = { entry = entry, script = script, size = size, font = font, fontSize = fontSize }
+            local want = grow(regs, size, entry.script)
+            note(string.format('script %s: %d strings, %d glyphs added, script %d -> %d bytes', entry.key,
+                               entry.n, entry.added, size, want))
+        end)
+        if not ok then note('script load: ' .. tostring(err)) end
+    elseif caller == CASE4_FONT_ALLOC and pending and pending.entry.font then
+        grow(regs, pending.fontSize, pending.entry.font)
     end
-    local sizeIn, sizeOut = r32(chunkAddress + 4), r32(chunkAddress + 8)
-    local ok, original = pcall(VP.slz.decode, {
-        scheme = scheme, sizeIn = sizeIn, sizeOut = sizeOut,
-        data = ffi.string(mem + bit.band(chunkAddress + 16, 0x1fffff), sizeIn),
-    })
-    if not ok then
-        note('decoding the script chunk failed: ' .. tostring(original))
-        return true
-    end
-    local bytes, key, entry = preview.patched(original)
-    if entry and entry.error then note('script ' .. key .. ': not patched, ' .. entry.error) end
-    if not bytes then return true end
-    pending = { key = key, bytes = bytes, size = sizeOut, original = original }
-    -- Rounded up to a word, and never smaller than what the game would read.
-    local want = math.max(sizeOut, bit.band(#bytes + 3, bit.bnot(3)))
-    regs.GPR.n.a0 = want
-    note(string.format('script %s: %d strings translated, buffer %d -> %d bytes', key, entry.n, sizeOut, want))
     return true
+end
+
+-- Writes bytes over the buffer at *pointer when it holds original.
+local function overwrite(pointer, original, bytes, what)
+    local buf = r32(pointer)
+    if buf == 0 then
+        note(what .. ': the game got no buffer, not patched')
+        return false
+    end
+    if ffi.string(mem + bit.band(buf, 0x1fffff), #original) ~= original then
+        note(string.format('%s: buffer at %08x does not hold the decoded original, not patched', what, buf))
+        return false
+    end
+    ffi.copy(mem + bit.band(buf, 0x1fffff), bytes, #bytes)
+    return buf
 end
 
 local function onScriptDone()
     if not pending then return true end
     local p = pending
-    pending = nil
-    local buf = r32(SCRIPT_PTR)
-    if buf == 0 then
-        note('script ' .. p.key .. ': the game got no buffer, not patched')
+    local at = overwrite(SCRIPT_PTR, p.script, p.entry.script, 'script ' .. p.entry.key)
+    if not at then
+        pending = nil
         return true
     end
-    -- What the game just decompressed must be the script the rebuild came from.
-    local got = ffi.string(mem + bit.band(buf, 0x1fffff), p.size)
-    if got ~= p.original then
-        note(string.format('script %s: buffer at %08x does not hold the decoded script, not patched', p.key, buf))
-        return true
+    p.scriptAt = at
+    if not p.entry.font then
+        pending = nil
+        preview.lastPatch = { key = p.entry.key, address = at, size = #p.entry.script, cycle = PCSX.getCPUCycles() }
+        note(string.format('script %s: patched at %08x', p.entry.key, at))
     end
-    ffi.copy(mem + bit.band(buf, 0x1fffff), p.bytes, #p.bytes)
-    preview.lastPatch = { key = p.key, address = buf, size = #p.bytes, cycle = PCSX.getCPUCycles() }
-    note(string.format('script %s: patched at %08x, %d bytes', p.key, buf, #p.bytes))
     return true
 end
 
--- db: a VP.tdb database. Arms the two breakpoints.
+local function onFontDone()
+    if not pending or not pending.scriptAt then return true end
+    local p = pending
+    pending = nil
+    local at = overwrite(FONT_PTR, p.font, p.entry.font, 'font of ' .. p.entry.key)
+    if not at then
+        -- The script names glyphs the font does not have: put the original back.
+        ffi.copy(mem + bit.band(p.scriptAt, 0x1fffff), p.script, #p.script)
+        note('script ' .. p.entry.key .. ': restored, its font could not be patched')
+        return true
+    end
+    preview.lastPatch = { key = p.entry.key, address = p.scriptAt, size = #p.entry.script, font = at,
+                          cycle = PCSX.getCPUCycles() }
+    note(string.format('script %s: patched at %08x, font at %08x', p.entry.key, p.scriptAt, at))
+    return true
+end
+
+-- db: a VP.tdb database. Arms the breakpoints.
 function preview.arm(db)
     preview.disarm()
     preview.db = db
     preview.invalidate()
     preview.breakpoints = {
-        PCSX.addBreakpoint(MALLOC, 'Exec', 4, 'VP preview', onMalloc, 'script alloc'),
-        PCSX.addBreakpoint(CASE4_SCRIPT_DONE, 'Exec', 4, 'VP preview', onScriptDone, 'script loaded'),
+        PCSX.addBreakpoint(MALLOC, 'Exec', 4, 'VP preview', onMalloc, 'room script alloc'),
+        PCSX.addBreakpoint(CASE4_SCRIPT_DONE, 'Exec', 4, 'VP preview', onScriptDone, 'room script loaded'),
+        PCSX.addBreakpoint(CASE4_FONT_DONE, 'Exec', 4, 'VP preview', onFontDone, 'room font loaded'),
     }
 end
 
