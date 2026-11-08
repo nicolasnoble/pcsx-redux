@@ -321,7 +321,8 @@ local function drawTranslate(v, room)
     imgui.Separator()
     imgui.BeginGroup()
     imgui.TextUnformatted('Original')
-    drawPages(origWindow, (VP.glyphs.wrapPages(origPages, (originalBox(tb) or {}).width)), 'US', 'origpages')
+    local ob = originalBox(tb)
+    drawPages(origWindow, VP.glyphs.scrollPages((VP.glyphs.wrapPages(origPages, ob.width)), ob.height), 'US', 'origpages')
     imgui.EndGroup()
     imgui.SameLine()
     imgui.BeginGroup()
@@ -335,8 +336,9 @@ local function drawTranslate(v, room)
             for _, p in ipairs(problems) do colored(RED, p) end
             for _, n in ipairs(notes) do colored(YELLOW, n) end
         end
-        -- Drawn wrapped, as the game will show it.
-        drawPages(trWindow, wrapped, 'US', 'trpages')
+        -- Drawn as the game leaves it: wrapped, and a page taller than the box
+        -- scrolled to its last lines.
+        drawPages(trWindow, VP.glyphs.scrollPages(wrapped, box.height), 'US', 'trpages')
     end
     imgui.EndGroup()
 

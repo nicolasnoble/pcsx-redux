@@ -275,6 +275,20 @@ function VP.glyphs.wrapPages(pages, width, set)
     return out, tooWide
 end
 
+-- What the box shows once a page has typed out: a page with more lines than
+-- the box holds (14 pixels a line) has scrolled to its last lines. height nil
+-- returns the pages unchanged.
+function VP.glyphs.scrollPages(pages, height)
+    if type(height) ~= 'number' then return pages end
+    local keep = math.max(1, math.floor((height + 2) / 14))
+    local out = {}
+    for p, lines in ipairs(pages) do
+        out[p] = {}
+        for l = math.max(1, #lines - keep + 1), #lines do out[p][#out[p] + 1] = lines[l] end
+    end
+    return out
+end
+
 function VP.glyphs.measureTokens(tokens, lookup, style, set)
     local map = set == 'JP' and VP.constants.fontJP or VP.constants.font
     local widths, missing = {}, 0
