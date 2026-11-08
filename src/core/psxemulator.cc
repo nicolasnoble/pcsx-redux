@@ -175,6 +175,13 @@ void PCSX::Emulator::setLua() {
     LuaBindings::open_events(L);
     LuaFFI::open_compression(L);
     LuaFFI::open_sqlite(L);
+    {
+        static int lualoader = 1;
+        static const char* textTable = (
+#include "lua/texttable.lua"
+        );
+        L.load(textTable, "src:lua/texttable.lua");
+    }
     LuaSupportPSX::open_adpcm(L);
     LuaSupportPSX::open_assembler(L);
     LuaSupportPSX::open_binaries(L);
