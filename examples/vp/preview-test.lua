@@ -3,6 +3,8 @@
 --   1. no rows: the rebuilt script is byte-identical to the original;
 --   2. every string given back as its own tokens, and every literal box value
 --      given back as itself: still byte-identical;
+--   0. an accented letter appended to a room font advances as far as its base
+--      letter does in that same font;
 --   3. one string made longer and one box widened: the rebuilt script parses,
 --      the changed string reads back as the new tokens, every other string and
 --      the rest of the logic are unchanged, and the box reads back widened.
@@ -21,7 +23,13 @@ if not VP.vfs.identify(iso) then
     return PCSX.quit(1)
 end
 
-local stats = { scripts = 0, identity = 0, selfRows = 0, changed = 0, boxes = 0, failures = 0, skipped = 0 }
+local stats = { scripts = 0, identity = 0, selfRows = 0, changed = 0, boxes = 0, failures = 0, skipped = 0, accents = 0 }
+
+-- Accented letters and the letter they are drawn on.
+local bases = {
+    ['à'] = 'a', ['â'] = 'a', ['ç'] = 'c', ['è'] = 'e', ['é'] = 'e', ['ê'] = 'e', ['ë'] = 'e',
+    ['î'] = 'i', ['ï'] = 'i', ['ô'] = 'o', ['ù'] = 'u', ['û'] = 'u', ['ü'] = 'u',
+}
 local seen = {}
 
 local function fail(path, what)
@@ -58,6 +66,27 @@ local function check(path, v)
     if seen[extra.key] then return end
     seen[extra.key] = true
     stats.scripts = stats.scripts + 1
+
+    if v.fontFile then
+        local fontBytes = tostring(v.fontFile:readAt(v.fontFile:size(), 0))
+        local font = VP.preview.parseFont(fontBytes)
+        for acc, base in pairs(bases) do
+            local b = VP.constants.font[base]
+            local bi = font.index[b.width .. '-' .. base64.decode(b.data)]
+            local present = font.index[VP.constants.font[acc].width .. '-' .. base64.decode(VP.constants.font[acc].data)]
+            if bi and not present then
+                local _, newFont = VP.preview.resolveChars({ [3] = { tokens = { { ch = acc } } } }, fontBytes)
+                local nf = VP.preview.parseFont(newFont)
+                local added = #font.widths + 1
+                stats.accents = stats.accents + 1
+                if nf.widths[added] ~= font.widths[bi] then
+                    fail(path, string.format('appended %s advances %d, %s in this font advances %d', acc, nf.widths[added],
+                                             base, font.widths[bi]))
+                    break
+                end
+            end
+        end
+    end
 
     local ok, out = pcall(VP.preview.rebuild, bytes, {})
     if not ok then return fail(path, 'identity rebuild raised ' .. tostring(out)) end
@@ -145,8 +174,9 @@ local function walkDir(dir, path)
 end
 walkDir(VP.vfs.expand(VP.vfs.root(iso))[2], '')
 
-print(string.format('scripts=%d identity=%d self=%d changed=%d boxes=%d skipped=%d failures=%d',
-    stats.scripts, stats.identity, stats.selfRows, stats.changed, stats.boxes, stats.skipped, stats.failures))
+print(string.format('scripts=%d identity=%d self=%d changed=%d boxes=%d accents=%d skipped=%d failures=%d',
+    stats.scripts, stats.identity, stats.selfRows, stats.changed, stats.boxes, stats.accents, stats.skipped, stats.failures))
 local pass = stats.failures == 0 and stats.scripts > 1000 and stats.identity == stats.scripts and stats.boxes > 0
+    and stats.accents > 0
 print(pass and 'PASS' or 'FAIL')
 PCSX.quit(pass and 0 or 1)

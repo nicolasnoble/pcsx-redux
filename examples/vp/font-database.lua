@@ -1,19 +1,22 @@
 local font = {}
-font['æ'] = { width = 9, height = 12, data = 'AAAAAAAAAAAAd4AIgH8AiICIAHcAAAAA' }
-font['à'] = { width = 5, height = 12, data = 'AAAAQAAgAAAAcAAIAHgAiACIAHgAAAAA' }
-font['â'] = { width = 5, height = 12, data = 'AAAAIABQAAAAcAAIAHgAiACIAHgAAAAA' }
-font['ç'] = { width = 5, height = 12, data = 'AAAAAAAAAAAAcACIAIAAgACIAHAAIABA' }
-font['è'] = { width = 5, height = 12, data = 'AAAAQAAgAAAAcACIAPgAgACIAHAAAAAA' }
-font['ê'] = { width = 5, height = 12, data = 'AAAAIABQAAAAcACIAPgAgACIAHAAAAAA' }
-font['é'] = { width = 5, height = 12, data = 'AAAAEAAgAAAAcACIAPgAgACIAHAAAAAA' }
-font['ë'] = { width = 5, height = 12, data = 'AAAAAABQAAAAcACIAPgAgACIAHAAAAAA' }
+-- The French letters at the top are not in the retail fonts. Their widths are
+-- advances like every retail glyph's: the bitmap plus one blank column, the
+-- same as the letter an accent sits on.
+font['æ'] = { width = 10, height = 12, data = 'AAAAAAAAAAAAd4AIgH8AiICIAHcAAAAA' }
+font['à'] = { width = 6, height = 12, data = 'AAAAQAAgAAAAcAAIAHgAiACIAHgAAAAA' }
+font['â'] = { width = 6, height = 12, data = 'AAAAIABQAAAAcAAIAHgAiACIAHgAAAAA' }
+font['ç'] = { width = 6, height = 12, data = 'AAAAAAAAAAAAcACIAIAAgACIAHAAIABA' }
+font['è'] = { width = 6, height = 12, data = 'AAAAQAAgAAAAcACIAPgAgACIAHAAAAAA' }
+font['ê'] = { width = 6, height = 12, data = 'AAAAIABQAAAAcACIAPgAgACIAHAAAAAA' }
+font['é'] = { width = 6, height = 12, data = 'AAAAEAAgAAAAcACIAPgAgACIAHAAAAAA' }
+font['ë'] = { width = 6, height = 12, data = 'AAAAAABQAAAAcACIAPgAgACIAHAAAAAA' }
 font['î'] = { width = 3, height = 12, data = 'AAAAQACgAAAAQABAAEAAQABAAEAAAAAA' }
 font['ï'] = { width = 3, height = 12, data = 'AAAAAACgAAAAQABAAEAAQABAAEAAAAAA' }
-font['œ'] = { width = 9, height = 12, data = 'AAAAAAAAAAAAd4CIgI8AiICIAHcAAAAA' }
-font['ô'] = { width = 5, height = 12, data = 'AAAAIABQAAAAcACIAIgAiACIAHAAAAAA' }
-font['ù'] = { width = 5, height = 12, data = 'AAAAQAAgAAAAiACIAIgAiACYAGgAAAAA' }
-font['û'] = { width = 5, height = 12, data = 'AAAAIABQAAAAiACIAIgAiACYAGgAAAAA' }
-font['ü'] = { width = 5, height = 12, data = 'AAAAAABQAAAAiACIAIgAiACYAGgAAAAA' }
+font['œ'] = { width = 10, height = 12, data = 'AAAAAAAAAAAAd4CIgI8AiICIAHcAAAAA' }
+font['ô'] = { width = 6, height = 12, data = 'AAAAIABQAAAAcACIAIgAiACIAHAAAAAA' }
+font['ù'] = { width = 6, height = 12, data = 'AAAAQAAgAAAAiACIAIgAiACYAGgAAAAA' }
+font['û'] = { width = 6, height = 12, data = 'AAAAIABQAAAAiACIAIgAiACYAGgAAAAA' }
+font['ü'] = { width = 6, height = 12, data = 'AAAAAABQAAAAiACIAIgAiACYAGgAAAAA' }
 font[' '] = { width = 4, height = 12, data = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' }
 font['!'] = { width = 3, height = 12, data = 'AAAAgACAAIAAgACAAIAAAAAAAIAAAAAA' }
 font['"'] = { width = 6, height = 12, data = 'AFAAoACgAAAAAAAAAAAAAAAAAAAAAAAA' }

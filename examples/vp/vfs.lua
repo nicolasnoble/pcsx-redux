@@ -66,6 +66,7 @@ local function roomScriptViewer(script, font, index)
         name = 'Room script',
         first = 3,
         script = script,
+        fontFile = font,
     }
     viewer.load = function()
         local ptrs, extra = extract_room_script('room', script, font, { index = index, logicSink = sink })
