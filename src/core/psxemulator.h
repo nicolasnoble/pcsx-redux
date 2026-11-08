@@ -208,6 +208,8 @@ class Emulator {
     typedef Setting<int, TYPESTRING("Dither"), 1> SettingDither;
     typedef Setting<bool, TYPESTRING("UseCachedDithering"), false> SettingCachedDithering;
     typedef Setting<bool, TYPESTRING("SoftGPUThreaded"), false> SettingSoftGPUThreaded;
+    // Draw every row in 480i, ignoring the GP0(E1h).10 field skip. Display only: GPUSTAT and timing are unchanged.
+    typedef Setting<bool, TYPESTRING("Deinterlace"), false> SettingDeinterlace;
     typedef Setting<bool, TYPESTRING("ReportGLErrors"), false> SettingGLErrorReporting;
     typedef Setting<int, TYPESTRING("ReportGLErrorsSeverity"), 1> SettingGLErrorReportingSeverity;
     typedef Setting<bool, TYPESTRING("FullCaching"), false> SettingFullCaching;
@@ -219,6 +221,7 @@ class Emulator {
     typedef Setting<bool, TYPESTRING("KioskMode"), false> SettingKioskMode;
     typedef Setting<bool, TYPESTRING("Mcd1Pocketstation"), false> SettingMcd1Pocketstation;
     typedef Setting<bool, TYPESTRING("Mcd2Pocketstation"), false> SettingMcd2Pocketstation;
+    typedef SettingPath<TYPESTRING("PocketstationBios")> SettingPocketstationBios;
     typedef SettingPath<TYPESTRING("BiosPath")> SettingBiosBrowsePath;
     typedef SettingPath<TYPESTRING("EXP1Filepath")> SettingEXP1Filepath;
     typedef SettingPath<TYPESTRING("EXP1BrowsePath")> SettingEXP1BrowsePath;
@@ -230,14 +233,14 @@ class Emulator {
              SettingBnWMdec, SettingAutoVideo, SettingVideo, SettingFastBoot, SettingDebugSettings, SettingRCntFix,
              SettingIsoPath, SettingLocale, SettingMcd1Inserted, SettingMcd2Inserted, SettingDynarec, Setting8MB,
              SettingMemoryFillValue, Setting2MBVRAM, SettingGUITheme, SettingDither, SettingCachedDithering,
-             SettingSoftGPUThreaded, SettingGLErrorReporting, SettingGLErrorReportingSeverity, SettingFullCaching,
-             SettingHardwareRenderer, SettingShownAutoUpdateConfig, SettingAutoUpdate, SettingMSAA,
+             SettingSoftGPUThreaded, SettingDeinterlace, SettingGLErrorReporting, SettingGLErrorReportingSeverity,
+             SettingFullCaching, SettingHardwareRenderer, SettingShownAutoUpdateConfig, SettingAutoUpdate, SettingMSAA,
              SettingLinearFiltering, SettingKioskMode, SettingMcd1Pocketstation, SettingMcd2Pocketstation,
-             SettingBiosBrowsePath, SettingEXP1Filepath, SettingEXP1BrowsePath, SettingPIOConnected,
-             SettingMapBrowsePath, SettingOpenDialogFavorites, SettingRewindInterval, SettingRewindCount,
-             SettingCDRomEntropySeed, SettingMcd1B, SettingMcd1C, SettingMcd1D, SettingMcd2B, SettingMcd2C,
-             SettingMcd2D, SettingMcd1BInserted, SettingMcd1CInserted, SettingMcd1DInserted, SettingMcd2BInserted,
-             SettingMcd2CInserted, SettingMcd2DInserted>
+             SettingPocketstationBios, SettingBiosBrowsePath, SettingEXP1Filepath, SettingEXP1BrowsePath,
+             SettingPIOConnected, SettingMapBrowsePath, SettingOpenDialogFavorites, SettingRewindInterval,
+             SettingRewindCount, SettingCDRomEntropySeed, SettingMcd1B, SettingMcd1C, SettingMcd1D, SettingMcd2B,
+             SettingMcd2C, SettingMcd2D, SettingMcd1BInserted, SettingMcd1CInserted, SettingMcd1DInserted,
+             SettingMcd2BInserted, SettingMcd2CInserted, SettingMcd2DInserted>
         settings;
     class PcsxConfig {
       public:
@@ -269,7 +272,9 @@ class Emulator {
     std::unique_ptr<RewindRing> m_rewindRing;
     bool m_rewindCaptureSuppressed = false;
     bool m_rewindCapturePending = false;
-    void captureRewindState();
+    // The pending capture comes from restartRewind(), see captureRewindState().
+    bool m_rewindRestartPending = false;
+    void captureRewindState(bool restarting = false);
 
     // Used for overclocking
     // Make the timing events trigger faster as we are currently assuming everything
@@ -327,6 +332,14 @@ class Emulator {
     void restoreRewindSnapshot(size_t index);
     void dropRewindSnapshotsAfter(uint64_t cycle);
     void suppressRewindCapture(bool suppress) { m_rewindCaptureSuppressed = suppress; }
+
+    // For a point in the emulation that a replay from an earlier snapshot can't reproduce, such as
+    // the shell being hijacked. clearRewindRing() drops every snapshot and returns whether there
+    // were any. restartRewind() does the same, then takes a snapshot if the ring was in use, or if
+    // it is capturing on its own. Called from Execute(), it has to be between two blocks, where the
+    // ShellReached event is signalled.
+    bool clearRewindRing();
+    void restartRewind(bool inUse = false);
 
     void setLua();
 

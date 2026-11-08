@@ -121,8 +121,8 @@ let
     ({
       owner = "pcsx-redux";
       repo = "nugget";
-      rev = "b81b2758b347f093b981b33af85a7edb5a2989af";
-      hash = "sha256-w7Z6lb+KzaO0hSj5exlaU8ltaGnXnitip7DOfzKOhEU=";
+      rev = "8a116567ad5202c53161266eaa2b9cc80460c689";
+      hash = "sha256-aVsNCSA51cIPcVeZMwk90ZgD8r9sf4ft+yeJuGsmvaY=";
       dest = "src/mips";
     })
     ({
@@ -130,6 +130,13 @@ let
       repo = "args";
       rev = "794f2dc7caa306984cf385cbb8e7176146514959";
       hash = "sha256-S5FaAtPY/mXsQ8aYsluxwwYZ1CK20/DRew3ltRkm2z8=";
+    })
+    ({
+      owner = "pcsx-redux";
+      repo = "pocketstation";
+      rev = "f3d029d0b8ac4952801634ab629f79288feb3755";
+      hash = "sha256-+SXqJy+O/wMJDa3/yw13X+4MxZ5AHSGDN9lmg/fkfKs=";
+      dest = "src/pocketstation";
     })
   ] ++ lib.optional stdenv.hostPlatform.isAarch {
     owner = "grumpycoders";

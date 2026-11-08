@@ -21,11 +21,13 @@
 
 #include <stdint.h>
 
+#include <map>
 #include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
 
+#include "core/gpu.h"
 #include "core/gpulogger.h"
 #include "support/file.h"
 
@@ -49,6 +51,7 @@ class GPUDumper {
         Readback = 0x04,
         TraceBegin = 0x05,
         GPUVersion = 0x06,
+        InterlaceField = 0x07,
         GameID = 0x10,
         VideoFormat = 0x11,
         Comment = 0x12,
@@ -71,6 +74,10 @@ class GPUDumper {
         if (m_state == State::Recording) push(GP1, &word, 1);
     }
     void read(unsigned count);
+    // GPUSTAT.31 in NTSC 480i, written ahead of the GP0 traffic it applies to whenever it changes.
+    void field(uint32_t bit31) {
+        if ((m_state == State::Recording) && (int32_t(bit31) != m_lastField)) writeField(bit31);
+    }
     void vsync(GPU* gpu, uint64_t cycle);
 
   private:
@@ -81,6 +88,7 @@ class GPUDumper {
     void string(uint8_t type, std::string_view str);
     void flushPending();
     void flushFile();
+    void writeField(uint32_t bit31);
 
     State m_state = State::Idle;
     IO<File> m_file;
@@ -89,6 +97,8 @@ class GPUDumper {
     uint32_t m_pendingReads = 0;
     std::vector<uint32_t> m_out;
     uint64_t m_frames = 0;
+    int32_t m_lastField = -1;
+    unsigned m_armedVsyncs = 0;
 };
 
 // Sequential reader for GPU dump files. It only splits the stream into packets; interpreting them is
@@ -107,6 +117,7 @@ class GPUDumpReader {
     void rewind() { m_ptr = 4; }
     bool atEnd() const { return m_ptr >= m_words.size(); }
     size_t position() const { return m_ptr; }
+    void setPosition(size_t ptr) { m_ptr = ptr; }
     size_t size() const { return m_words.size(); }
 
   private:
@@ -126,7 +137,11 @@ class GPUDumpPlayer {
     // Runs the next frame, up to and including its vsync. Returns false at the end of the dump.
     bool step();
     void rewind();
+    // Puts the player at the end of the given frame, as rewind() then that many step() calls would.
+    // It restarts from the closest cached snapshot when that is faster. Returns false past the end.
+    bool seek(uint64_t frame);
     uint64_t frame() const { return m_frame; }
+    uint64_t frameCount() const { return m_frameCount; }
     GPU* gpu() { return m_gpu.get(); }
     GPULogger* logger() { return &m_logger; }
     const std::string& gameID() const { return m_gameID; }
@@ -134,6 +149,19 @@ class GPUDumpPlayer {
 
   private:
     void execute(const GPUDumpReader::Packet& packet);
+    void cacheSnapshot();
+    // One snapshot every m_snapshotInterval frames, taken as step() reaches them. A snapshot holds
+    // 2MB of VRAM, so past c_maxSnapshots every other one is dropped and the interval doubles.
+    static constexpr uint64_t c_snapshotInterval = 30;
+    static constexpr size_t c_maxSnapshots = 128;
+    uint64_t m_snapshotInterval = c_snapshotInterval;
+    struct Snapshot {
+        size_t position;
+        int8_t fieldOverride;
+        GPU::Snapshot gpu;
+    };
+    std::map<uint64_t, Snapshot> m_snapshots;
+    uint64_t m_frameCount = 0;
     std::unique_ptr<GPU> m_gpu;
     GPULogger m_logger{false};
     GPUDumpReader m_reader;

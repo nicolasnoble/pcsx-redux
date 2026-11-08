@@ -33,6 +33,7 @@ void PCSX::GPUDumper::start(IO<File> file) {
     if (!file || file->failed()) return;
     m_file = file;
     m_frames = 0;
+    m_armedVsyncs = 0;
     m_state = State::Armed;
 }
 
@@ -59,11 +60,22 @@ void PCSX::GPUDumper::read(unsigned count) {
     m_pendingReads += count;
 }
 
+void PCSX::GPUDumper::writeField(uint32_t bit31) {
+    flushPending();
+    packet(InterlaceField, &bit31, 1);
+    m_lastField = bit31;
+}
+
 void PCSX::GPUDumper::vsync(GPU* gpu, uint64_t cycle) {
     switch (m_state) {
         case State::Idle:
             return;
         case State::Armed:
+            // While armed the GPU draws one 480i field at a time (GPU::deinterlace()). With the Deinterlace
+            // setting on, VRAM holds both fields drawn together until two whole fields have been drawn since
+            // arming, so the snapshot waits for the third vsync.
+            if (m_armedVsyncs < 3) m_armedVsyncs++;
+            if ((m_armedVsyncs < 3) && g_emulator->settings.get<Emulator::SettingDeinterlace>()) return;
             // Wait until the GP0 parser is between commands, or the replay would start mid-packet.
             if (gpu->isIdle()) begin(gpu);
             return;
@@ -82,6 +94,7 @@ void PCSX::GPUDumper::begin(GPU* gpu) {
     m_pending.clear();
     m_pendingReads = 0;
     m_pendingType = 0;
+    m_lastField = -1;
 
     uint32_t magic[4];
     memcpy(magic, c_magic, sizeof(magic));
@@ -206,7 +219,10 @@ void PCSX::GPUDumpPlayer::unload() {
     m_logger.clearFrameLog();
     m_logger.setOwner(nullptr);
     m_gpu.reset();
+    m_snapshots.clear();
+    m_snapshotInterval = c_snapshotInterval;
     m_frame = 0;
+    m_frameCount = 0;
     m_gameID.clear();
     m_comment.clear();
 }
@@ -222,11 +238,17 @@ bool PCSX::GPUDumpPlayer::load(IO<File> file) {
     unload();
     if (!m_reader.open(file)) return false;
     m_gpu = GPU::getSoft();
+    m_gpu->m_neverDeinterlace = true;
     m_gpu->detach(&m_logger);
     m_logger.setOwner(m_gpu.get());
     // No UI: a detached GPU must not draw into the main window. Callers read its VRAM instead.
     m_gpu->init(nullptr);
     rewind();
+    GPUDumpReader::Packet packet;
+    while (m_reader.next(packet)) {
+        if (packet.type == GPUDumper::VSync) m_frameCount++;
+    }
+    m_reader.setPosition(m_traceStart);
     return true;
 }
 
@@ -238,6 +260,9 @@ void PCSX::GPUDumpPlayer::rewind() {
     m_reader.rewind();
     m_gpu->writeStatus(0x00000000);
     m_gpu->clearVRAM();
+    // The player's GPU has no beam of its own; GPUSTAT.31 comes from the dump's field packets.
+    // A dump recorded before field packets existed has none, and keeps the live value.
+    m_gpu->m_fieldOverride = -1;
     GPUDumpReader::Packet packet;
     // Everything before the trace begin marker is state restoration. A dump without one starts live.
     size_t start = 4;
@@ -263,11 +288,60 @@ bool PCSX::GPUDumpPlayer::step() {
             m_gpu->vblank(true);
             m_frame++;
             m_logger.setFrame(m_frame);
+            cacheSnapshot();
             return true;
         }
         execute(packet);
     }
     return false;
+}
+
+void PCSX::GPUDumpPlayer::cacheSnapshot() {
+    if (m_frame % m_snapshotInterval != 0) return;
+    // A command cut by the vsync, or readback words still queued, would be lost: the snapshot only
+    // holds what a save state holds.
+    if (!m_gpu->isIdle() || m_gpu->hasPendingReadback()) return;
+    if (m_snapshots.contains(m_frame)) return;
+    if (m_snapshots.size() >= c_maxSnapshots) {
+        m_snapshotInterval *= 2;
+        std::erase_if(m_snapshots, [this](const auto& entry) { return entry.first % m_snapshotInterval != 0; });
+        if (m_frame % m_snapshotInterval != 0) return;
+    }
+    auto& snapshot = m_snapshots[m_frame];
+    snapshot.position = m_reader.position();
+    snapshot.fieldOverride = m_gpu->m_fieldOverride;
+    m_gpu->snapshot(snapshot.gpu);
+}
+
+bool PCSX::GPUDumpPlayer::seek(uint64_t frame) {
+    if (!m_gpu) return false;
+    if (frame > m_frameCount) return false;
+    if (frame == 0) {
+        rewind();
+        return true;
+    }
+    // The logger keeps the commands of the last frame played, so the restart point is at most the
+    // frame before the target, and the target frame itself is always played.
+    auto it = m_snapshots.upper_bound(frame - 1);
+    uint64_t from = 0;
+    if (it != m_snapshots.begin()) from = std::prev(it)->first;
+    if (m_frame >= frame || m_frame < from) {
+        if (from == 0) {
+            rewind();
+        } else {
+            auto& snapshot = std::prev(it)->second;
+            m_gpu->restore(snapshot.gpu);
+            m_gpu->m_fieldOverride = snapshot.fieldOverride;
+            m_reader.setPosition(snapshot.position);
+            m_frame = from;
+            m_logger.clearFrameLog();
+            m_logger.setFrame(from);
+        }
+    }
+    while (m_frame < frame) {
+        if (!step()) return false;
+    }
+    return true;
 }
 
 void PCSX::GPUDumpPlayer::execute(const GPUDumpReader::Packet& packet) {
@@ -286,6 +360,9 @@ void PCSX::GPUDumpPlayer::execute(const GPUDumpReader::Packet& packet) {
                 uint32_t count = std::min<uint32_t>(packet.words[0], 1024 * 1024 / 2);
                 for (uint32_t i = 0; i < count; i++) m_gpu->readData();
             }
+            break;
+        case GPUDumper::InterlaceField:
+            if (packet.length >= 1) m_gpu->m_fieldOverride = packet.words[0] & 1;
             break;
         case GPUDumper::GameID:
             m_gameID = packetString(packet);

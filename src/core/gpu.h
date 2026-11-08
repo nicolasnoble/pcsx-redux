@@ -101,6 +101,14 @@ class GPU {
     // GPUSTAT as the CPU reads it from 1F801814h: readStatus() plus the bits that follow the
     // beam position.
     uint32_t readStatusFromBus();
+    // When 0 or 1, readStatusFromBus() reports this as GPUSTAT.31 in NTSC 480i instead of following the
+    // emulated beam, and leaves GPUSTAT.13 clear. Set by the GPU dump player.
+    int8_t m_fieldOverride = -1;
+    // True when the Deinterlace setting draws both fields of a 480i frame. GPU dumps record the
+    // accurate path: the dump player's GPU sets m_neverDeinterlace, and the emulated GPU draws one
+    // field at a time while a dump is armed, so the dump's initial VRAM upload holds accurate fields.
+    bool deinterlace();
+    bool m_neverDeinterlace = false;
     // Returns true when the transfer stopped part way, with MADR and BCR already set.
     bool dma(uint32_t madr, uint32_t bcr, uint32_t chcr);
     static void gpuInterrupt();
@@ -145,6 +153,8 @@ class GPU {
     void setDumper(GPUDumper *dumper) { m_dumper = dumper; }
     // True when no GP0 command is partially received, so a dump can start cleanly.
     bool isIdle() const { return m_processor == &m_defaultProcessor; }
+    // True while VRAM-to-CPU words are queued for readData(). Not part of a save state.
+    bool hasPendingReadback() { return m_readFifo->size() != 0; }
     // The last word written for a given GP1 command.
     uint32_t getStatusControl(uint8_t cmd) const { return m_statusControl[cmd]; }
     // The last GP0(E3h), GP0(E4h) and GP0(E5h) words, low 24 bits.
@@ -164,7 +174,18 @@ class GPU {
     void deserialize(const SaveStateWrapper *);
     void restoreEnvironment(const uint8_t *env, uint32_t status);
 
+    // The GPU half of a save state, kept in memory: what serialize() writes, without the protobuf.
+    struct Snapshot {
+        uint32_t status;
+        uint32_t control[256];
+        uint8_t env[24];
+        std::vector<uint16_t> vram;
+    };
+    void snapshot(Snapshot &);
+    void restore(const Snapshot &);
+
   private:
+    void restoreState(uint32_t status, const uint16_t *vram, unsigned vramRows, const uint8_t *env);
     uint32_t s_usedAddr[3];
     bool CheckForEndlessLoop(uint32_t laddr);
     uint32_t gpuDmaChainSize(uint32_t addr);
@@ -432,19 +453,36 @@ class GPU {
     struct FastFill final : public Command, public Logged {
         std::string_view getName() override { return "Fast Fill"; }
         void drawLogNode(unsigned itemIndex, const DrawLogSettings &) override;
-        void execute(GPU *gpu) override { gpu->write0(this); }
+        void execute(GPU *gpu) override { draw(gpu); }
         void generateStatsInfo() override {}
         void cumulateStats(GPUStats *) override;
         void getVertices(AddTri &&, PixelOp) override;
         FastFill(GPU *parent) : Command(parent) {}
+        // Sends the fill to the GPU, split in two where it runs past the last addressable row,
+        // since the rows wrap to the top. Returns whether it was clipped or wrapped.
+        bool draw(GPU *gpu) const;
         void processWrite(Buffer &, Logged::Origin, uint32_t value, uint32_t length) override;
         void reset() override { m_state = READ_COLOR; }
         bool isInside(unsigned x, unsigned y) override {
-            return (x >= this->x) && (y >= this->y) && (x < this->x + this->w) && (y < this->y + this->h);
+            Rect r[2];
+            unsigned n = rects(r);
+            for (unsigned i = 0; i < n; i++) {
+                if ((x >= r[i].x) && (y >= r[i].y) && (x < r[i].x + r[i].w) && (y < r[i].y + r[i].h)) return true;
+            }
+            return false;
         }
+
+        struct Rect {
+            unsigned x, y, w, h;
+        };
+        // The rectangles the fill writes: one, or two where the rows run past wrapHeight.
+        unsigned rects(Rect out[2]) const;
 
         uint32_t color;
         unsigned x, y, w, h;
+        // Row count the fill wraps at, taken from the bank gate when the command is decoded
+        // (512 closed, 1024 open), so a logged fill replays and hit-tests like the live one.
+        unsigned wrapHeight = 512;
 
         struct {
             unsigned x, y, w, h;
@@ -1006,6 +1044,9 @@ class GPU {
     uint32_t m_drawingOffsetRaw = 0;
     bool m_vram2MBGateOpen = false;  // GP1(09h).0: 1 opens the upper 1MB bank
     uint32_t m_dmaDirection = 0;     // GP1(04h).0-1
+
+    // Writes GPUSTAT.31 to the dump ahead of GP0 traffic, in NTSC 480i.
+    void dumpField();
 
     // GPUSTAT.28 with GP1(04h)=2: low while a polygon or line command is partially received.
     bool dmaBlockRequestLow() const;

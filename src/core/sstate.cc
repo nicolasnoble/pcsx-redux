@@ -335,6 +335,8 @@ PCSX::SaveStates::SaveState PCSX::SaveStates::Access::constructSaveState() {
             CDSectorReadSinceSeek{cd->m_sectorReadSinceSeek},
             CDScexCountersReset{cd->m_scexCountersReset},
         },
+        PocketStationSlot{},
+        PocketStationSlot{},
     };
 }
 
@@ -369,6 +371,9 @@ std::string PCSX::SaveStates::save() {
     g_emulator->m_callStacks->serialize(&wrapper);
     serializePads(state);
 
+    g_emulator->m_sio->getMemoryCard(0)->savePocketstationState(state.get<PocketStation1Field>());
+    g_emulator->m_sio->getMemoryCard(1)->savePocketstationState(state.get<PocketStation2Field>());
+
     Protobuf::OutSlice slice;
     state.serialize(&slice);
     return slice.finalize();
@@ -401,6 +406,11 @@ void PCSX::SaveStates::capture(SaveState& state) {
     g_emulator->m_callStacks->serialize(&wrapper);
 
     serializePads(state);
+    /* The snapshot is reused, so a slot whose device went away must not keep the old blob. */
+    state.get<PocketStation1Field>().get<PocketStationDevice>().value.clear();
+    state.get<PocketStation2Field>().get<PocketStationDevice>().value.clear();
+    g_emulator->m_sio->getMemoryCard(0)->savePocketstationState(state.get<PocketStation1Field>());
+    g_emulator->m_sio->getMemoryCard(1)->savePocketstationState(state.get<PocketStation2Field>());
 
     /* And this is the half that never existed: the flat live -> copy for the ref/ptr fields. */
     state.capture();
@@ -431,6 +441,8 @@ void PCSX::SaveStates::restore(SaveState& state) {
     g_emulator->m_counters->deserialize(&wrapper);
     g_emulator->m_mdec->deserialize(&wrapper);
     deserializePads(state);
+    g_emulator->m_sio->getMemoryCard(0)->loadPocketstationState(state.get<PocketStation1Field>());
+    g_emulator->m_sio->getMemoryCard(1)->loadPocketstationState(state.get<PocketStation2Field>());
 
     auto& xa = state.get<SPUField>().get<SaveStates::XAField>();
 
@@ -463,6 +475,9 @@ void PCSX::SaveStates::restore(SaveState& state) {
         g_emulator->m_cpu->restorePCdrvFile(filename, fd, create, readPosition, writePosition);
     }
     g_emulator->m_callStacks->deserialize(&wrapper);
+    // Stack bounds are not saved: a guest that uses them sets them again on
+    // its next context switch, and until then nothing is checked.
+    g_emulator->m_cpu->clearStackBounds();
 
     g_system->m_eventBus->signal(Events::ExecutionFlow::SaveStateLoaded{});
 }
@@ -606,6 +621,8 @@ bool PCSX::SaveStates::load(std::string_view data) {
     g_emulator->m_counters->deserialize(&wrapper);
     g_emulator->m_mdec->deserialize(&wrapper);
     deserializePads(state);
+    g_emulator->m_sio->getMemoryCard(0)->loadPocketstationState(state.get<PocketStation1Field>());
+    g_emulator->m_sio->getMemoryCard(1)->loadPocketstationState(state.get<PocketStation2Field>());
 
     auto& xa = state.get<SPUField>().get<SaveStates::XAField>();
 
@@ -638,6 +655,9 @@ bool PCSX::SaveStates::load(std::string_view data) {
         g_emulator->m_cpu->restorePCdrvFile(filename, fd, create, readPosition, writePosition);
     }
     g_emulator->m_callStacks->deserialize(&wrapper);
+    // Stack bounds are not saved: a guest that uses them sets them again on
+    // its next context switch, and until then nothing is checked.
+    g_emulator->m_cpu->clearStackBounds();
 
     g_system->m_eventBus->signal(Events::ExecutionFlow::SaveStateLoaded{});
 
@@ -721,20 +741,40 @@ void PCSX::GPU::deserialize(const SaveStateWrapper* w) {
         m_statusControl[i] = getU32(control + i * 4);
     }
 
+    // A v4 state only carries 1MB of VRAM. Restore it into the lower bank and leave
+    // the upper one as clearVRAM() sets it on a fresh console of this fitment.
+    const bool vram1MB = w->state.get<SaveStateInfoField>().get<Version>().value == 4;
+    restoreState(gpu.get<GPUStatus>().value, reinterpret_cast<const uint16_t*>(gpu.get<GPUVRam>().value),
+                 vram1MB ? 512 : 1024, gpu.get<GPUEnvironment>().value);
+}
+
+void PCSX::GPU::snapshot(Snapshot& s) {
+    s.status = readStatus();
+    for (unsigned i = 0; i < 256; i++) s.control[i] = m_statusControl[i];
+    for (unsigned i = 0; i < 6; i++) setU32(s.env + i * 4, m_envRaw[i + 1]);
+    Slice vram = getVRAM();
+    const uint16_t* src = vram.data<uint16_t>();
+    s.vram.assign(src, src + 1024 * 1024);
+}
+
+void PCSX::GPU::restore(const Snapshot& s) {
+    reset();
+    restoreStatus(s.status);
+    for (unsigned i = 0; i < 256; i++) m_statusControl[i] = s.control[i];
+    restoreState(s.status, s.vram.data(), 1024, s.env);
+}
+
+void PCSX::GPU::restoreState(uint32_t status, const uint16_t* vram, unsigned vramRows, const uint8_t* env) {
     // GP1(09h) is not replayed through writeStatus below: an unwritten slot
     // reads 0, which would decode as GP1(00h). Restore the bank gate directly.
     drainRenderer();
     m_vram2MBGateOpen = m_statusControl[9] & 1;
-    m_dmaDirection = (gpu.get<GPUStatus>().value >> 29) & 3;
+    m_dmaDirection = (status >> 29) & 3;
     vramConfigChanged();
 
-    // A v4 state only carries 1MB of VRAM. Restore it into the lower bank and leave
-    // the upper one as clearVRAM() sets it on a fresh console of this fitment.
-    const bool vram1MB = w->state.get<SaveStateInfoField>().get<Version>().value == 4;
-    if (gpu.get<GPUVRam>().value) {
-        if (vram1MB) clearVRAM();
-        partialUpdateVRAM(0, 0, 1024, vram1MB ? 512 : 1024,
-                          reinterpret_cast<const uint16_t*>(gpu.get<GPUVRam>().value));
+    if (vram) {
+        if (vramRows < 1024) clearVRAM();
+        partialUpdateVRAM(0, 0, 1024, vramRows, vram);
     } else {
         clearVRAM();
     }
@@ -752,16 +792,16 @@ void PCSX::GPU::deserialize(const SaveStateWrapper* w) {
     writeStatus(saved[5]);
     writeStatus(saved[4]);
 
-    restoreEnvironment(gpu.get<GPUEnvironment>().value, gpu.get<GPUStatus>().value);
+    restoreEnvironment(env, status);
     // The GP1 and environment replays above rebuild the status word from commands, which loses
     // whatever was set since by other paths (the texpage of the last textured primitive, the
     // interlace field). The saved word is what the cpu read; that is what it has to read again,
-    // except for the bits readStatus() ORs in live (IRQ1, DMA request, ready-for-VRAM): those
-    // stay as the replay derived them.
-    constexpr uint32_t derived = 0x1b000000;
-    restoreStatus((gpu.get<GPUStatus>().value & ~derived) | (readStatusInternal() & derived));
+    // except for the bits readStatus() sets live (IRQ1, DMA request, ready for a command,
+    // ready-for-VRAM): those stay as the replay derived them.
+    constexpr uint32_t derived = 0x1f000000;
+    restoreStatus((status & ~derived) | (readStatusInternal() & derived));
     // The replayed GP1(00h)/GP1(02h) above clear the IRQ1 flag; put back the saved one.
-    m_irq1Flag = gpu.get<GPUStatus>().value & 0x01000000;
+    m_irq1Flag = status & 0x01000000;
 }
 
 void PCSX::MDEC::deserialize(const SaveStateWrapper* w) {

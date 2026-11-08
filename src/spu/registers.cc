@@ -76,7 +76,6 @@ uint16_t PCSX::SPU::impl::reconstructEnvelope(int ch, uint64_t cycle) {
         cp.cachedSample = 0;
         cp.cachedState = walk.ex().get<exState>().value;
         cp.cachedVol = 0;
-        cp.cachedFraction = 0;
         cp.cachedOn = true;
         resetAdpcmWalk(ch);
     }
@@ -90,7 +89,6 @@ uint16_t PCSX::SPU::impl::reconstructEnvelope(int ch, uint64_t cycle) {
 
     walk.ex().get<exState>().value = cp.cachedState;
     walk.ex().get<exEnvelopeVol>().value = cp.cachedVol;
-    walk.ex().get<exEnvelopeVolF>().value = cp.cachedFraction;
 
     // Key-off is a state transition at a known cycle, so the walk can cross it.
     // Expressed in STEPS, not samples, so it stays aligned with the frozen prefix.
@@ -115,14 +113,13 @@ uint16_t PCSX::SPU::impl::reconstructEnvelope(int ch, uint64_t cycle) {
             cp.cachedSample = steps;
             return 0;
         }
-        walk.step(s >= releaseAt, on);
+        walk.step(s >= releaseAt, on, firstStep + s);
         if (walkAdpcm) cp.pos += cp.pitchStep;
     }
 
     cp.cachedSample = steps;
     cp.cachedState = walk.ex().get<exState>().value;
     cp.cachedVol = walk.ex().get<exEnvelopeVol>().value;
-    cp.cachedFraction = walk.ex().get<exEnvelopeVolF>().value;
     cp.cachedOn = on;
     return (uint16_t)cp.cachedVol;
 }
@@ -290,6 +287,7 @@ void PCSX::SPU::impl::writeRegister(uint32_t reg, uint16_t val) {
     const uint64_t cycle = readerCycle();
     publishHorizon(cycle);
 
+    g_emulator->m_spuLogger->logRegWrite(r - 0xc00, val, regArea);
     regArea[(r - 0xc00) >> 1] = val;
 
     if (r >= 0x0c00 && r < 0x0d80) {
@@ -816,6 +814,14 @@ uint16_t PCSX::SPU::impl::readRegister(uint32_t reg) {
             } else {
                 stat &= ~StatusFlags::CBIndex;
             }
+            // Bits 7 and 9 rise together once a write DMA's data has landed in sound RAM, and read
+            // set again when DMA write mode comes back on before the next transfer. They are shown
+            // only while SPUSTAT's own bit 5 reads set, so they agree with the mode bits returned here:
+            // modplayer's SPUWaitIdle, which the OpenBIOS shell runs after its upload with the mode at
+            // stop, waits for (SPUSTAT & 0x7ff) == 0.
+            if ((stat & 0x20) && m_writeDMALandedCycle && readerCycle() >= m_writeDMALandedCycle) {
+                stat |= StatusFlags::DMARWRequest | StatusFlags::DMAReadRequest;
+            }
             PCSX::PSXSPU_LOGGER::Log("SPU.read, STAT = %04x\n", stat);
             return stat;
         }
@@ -869,7 +875,6 @@ void PCSX::SPU::impl::SoundOn(int start, int end, uint16_t val, uint64_t cycle) 
             cp.cachedSample = 0;
             cp.cachedState = 0;  // AdsrEnvelope's Attack
             cp.cachedVol = 0;
-            cp.cachedFraction = 0;
             cp.cachedOn = true;
             resetAdpcmWalk(ch);
             // One entry per voice actually keyed, carrying the address it is about to decode
