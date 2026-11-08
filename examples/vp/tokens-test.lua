@@ -1,8 +1,10 @@
 -- Round trip of the text token codec over every script on a Valkyrie Profile
 -- disc: each room-script and simple-script string is decoded to tokens and
 -- encoded back, and must give back exactly the bytes it was read from. Also
--- checks the room-script key (rooms with identical scripts get identical keys,
--- and different scripts different ones) and measures every string.
+-- checks that the editable text form (VP.text.toEditable / fromEditable) gives
+-- back the same characters and codes, checks the room-script key (rooms with
+-- identical scripts get identical keys, and different scripts different ones)
+-- and measures every string.
 --
 --   VP_DISC1=<disc.cue> pcsx-redux -cli -dofile examples/vp/tokens-test.lua
 --
@@ -54,7 +56,7 @@ end
 
 local stats = {
     rooms = 0, simple = 0, strings = 0, tokens = 0, glyphs = 0, zeros = 0, wide = 0, unterminated = 0,
-    failures = 0, loadErrors = 0, padding = 0, outOfFont = 0, trailing = 0, missing = 0, widest = 0, codes = {},
+    failures = 0, loadErrors = 0, editDiffs = 0, padding = 0, outOfFont = 0, trailing = 0, missing = 0, widest = 0, codes = {},
 }
 local byKey, keyOf = {}, {}
 
@@ -98,6 +100,34 @@ local function check(where, extra)
             end
         end
         local widths, missing = VP.glyphs.measure(toks, extra.font, 'US', extra.style)
+        local lookup = extra.lookup or resolveFont(extra.font)
+        extra.lookup = lookup
+        -- Editable text round trip: back to the same characters and codes.
+        local ed = VP.text.toEditable(toks, lookup, extra.style)
+        local back, perr = VP.text.fromEditable(ed, extra.style)
+        local okEd = back and #back == #toks
+        if okEd then
+            for k, t in ipairs(toks) do
+                local b = back[k]
+                local want = t.g and lookup[t.g] ~= '<??>' and lookup[t.g] or nil
+                if t.g and want then
+                    okEd = okEd and b.ch == want
+                elseif t.g then
+                    okEd = okEd and b.g == t.g
+                elseif t.z then
+                    okEd = okEd and b.z
+                else
+                    okEd = okEd and b.c == t.c and #b.args == #t.args
+                    for a = 1, #t.args do okEd = okEd and b.args[a] == t.args[a] end
+                end
+            end
+        end
+        if not okEd then
+            stats.editDiffs = stats.editDiffs + 1
+            if stats.editDiffs <= 10 then
+                print(string.format('FAIL %s ptr %d: editable round trip: %s', where, i, tostring(perr)))
+            end
+        end
         stats.missing = stats.missing + missing
         for _, page in ipairs(widths) do
             for _, w in ipairs(page) do
@@ -174,7 +204,8 @@ print(string.format('keys=%d distinct scripts=%d keys shared by several rooms=%d
 print(string.format('rooms with bytes after the last string=%d, characters with no glyph=%d, widest line=%d px',
     stats.trailing, stats.missing, stats.widest))
 print(string.format('glyph tokens naming a padding glyph=%d, past the end of the font=%d', stats.padding, stats.outOfFont))
-print(string.format('TOKENS %s: %d strings, %d round-trip failures, %d load errors',
-    (stats.failures == 0 and stats.loadErrors == 0 and stats.strings > 0) and 'PASS' or 'FAIL',
-    stats.strings, stats.failures, stats.loadErrors))
-quit((stats.failures == 0 and stats.loadErrors == 0 and stats.strings > 0) and 0 or 1)
+local green = stats.failures == 0 and stats.loadErrors == 0 and stats.editDiffs == 0
+    and stats.strings > 0
+print(string.format('TOKENS %s: %d strings, %d round-trip failures, %d load errors, %d editable round-trip failures',
+    green and 'PASS' or 'FAIL', stats.strings, stats.failures, stats.loadErrors, stats.editDiffs))
+quit(green and 0 or 1)

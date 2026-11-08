@@ -199,6 +199,141 @@ function VP.text.renderTokens(tokens, lookup, style)
     return table.concat(xml), table.concat(raw)
 end
 
+-- Editable text form of a token list, for the translation editor. Characters
+-- are written as themselves, with { and } doubled. Code 0 is a newline, code 1
+-- is {new} followed by a newline, and every other code is a {tag}: the named
+-- ones below, {cN a b ...} for the rest. A glyph with no character in the font
+-- is {g N}, and the 0 inside a simple-script range {zero}.
+local tagNames = {
+    primary = {
+        [2] = 'pause', [3] = 'spd', [4] = 'clr', [5] = 'start', [7] = 'rep', [8] = 'siz', [14] = 'var',
+        [17] = 'delay', [18] = 'ssync', [19] = 'port',
+    },
+    secondary = { [2] = 'pause' },
+}
+-- Tags that stand for a code with fixed arguments.
+local tagAliases = {
+    primary = { rspd = { 3, { 255 } }, rrep = { 7, { 1 } }, rsiz = { 8, { 1 } }, dport = { 19, { 255, 255 } } },
+    secondary = {},
+}
+
+local function tagFor(tok, style)
+    for name, a in pairs(tagAliases[style]) do
+        if a[1] == tok.c then
+            local same = #a[2] == #tok.args
+            for i, v in ipairs(a[2]) do same = same and tok.args[i] == v end
+            if same then return name end
+        end
+    end
+    local name = tagNames[style][tok.c] or ('c' .. tok.c)
+    if #tok.args == 0 then return name end
+    return name .. ' ' .. table.concat(tok.args, ' ')
+end
+
+-- tokens: { g } (resolved through lookup, the script font's glyph -> character
+-- map) or { ch } tokens, and codes.
+function VP.text.toEditable(tokens, lookup, style)
+    style = style or 'primary'
+    local out = {}
+    for _, t in ipairs(tokens) do
+        local s
+        if t.z then
+            s = '{zero}'
+        elseif t.c == 0 then
+            s = '\n'
+        elseif t.c == 1 then
+            s = '{new}\n'
+        elseif t.c then
+            s = '{' .. tagFor(t, style) .. '}'
+        else
+            local ch = t.ch or (lookup and lookup[t.g])
+            if not ch or ch == '<??>' then
+                s = '{g ' .. t.g .. '}'
+            else
+                s = ch:gsub('[{}]', '%0%0')
+            end
+        end
+        out[#out + 1] = s
+    end
+    return table.concat(out)
+end
+
+-- Parses the editable form back to tokens. Characters become { ch } tokens and
+-- must exist in charset (the font database, VP.constants.font by default).
+-- Returns the tokens, or nil, a message, and the byte position of the problem.
+function VP.text.fromEditable(text, style, charset)
+    style = style or 'primary'
+    charset = charset or VP.constants.font
+    local tokens = {}
+    local codes = {}
+    for code, name in pairs(tagNames[style]) do codes[name] = code end
+    local pos = 1
+    while pos <= #text do
+        local c = text:sub(pos, pos)
+        if c == '\n' then
+            tokens[#tokens + 1] = { c = 0, args = {} }
+            pos = pos + 1
+        elseif c == '{' and text:sub(pos + 1, pos + 1) == '{' then
+            if not charset['{'] then return nil, 'No glyph for {', pos end
+            tokens[#tokens + 1] = { ch = '{' }
+            pos = pos + 2
+        elseif c == '}' and text:sub(pos + 1, pos + 1) == '}' then
+            if not charset['}'] then return nil, 'No glyph for }', pos end
+            tokens[#tokens + 1] = { ch = '}' }
+            pos = pos + 2
+        elseif c == '}' then
+            return nil, 'A lone } (write }} for the character)', pos
+        elseif c == '{' then
+            local close = text:find('}', pos, true)
+            if not close then return nil, 'Unclosed {', pos end
+            local words = {}
+            for w in text:sub(pos + 1, close - 1):gmatch('%S+') do words[#words + 1] = w end
+            local name = table.remove(words, 1)
+            if not name then return nil, 'Empty {}', pos end
+            local args = {}
+            for i, w in ipairs(words) do
+                local n = tonumber(w)
+                if not n or n % 1 ~= 0 or n < 0 or n > 255 then
+                    return nil, 'Argument ' .. i .. ' of {' .. name .. '} must be a byte value, 0 to 255', pos
+                end
+                args[i] = n
+            end
+            local tok
+            if name == 'new' then
+                tok = { c = 1, args = {} }
+            elseif name == 'zero' then
+                tok = { z = true }
+            elseif name == 'g' then
+                if #args ~= 1 or args[1] == 0 then return nil, '{g N} needs one glyph index', pos end
+                tok = { g = args[1] }
+            elseif tagAliases[style][name] then
+                local a = tagAliases[style][name]
+                if #args > 0 then return nil, '{' .. name .. '} takes no arguments', pos end
+                tok = { c = a[1], args = { unpack(a[2]) } }
+            else
+                local code = codes[name] or tonumber(name:match('^c(%d+)$'))
+                if not code or code >= 0x4000 - 1 then return nil, 'Unknown tag {' .. name .. '}', pos end
+                local want = VP.text.argBytes[style][code] or 0
+                if #args ~= want then
+                    return nil, string.format('{%s} takes %d arguments, got %d', name, want, #args), pos
+                end
+                tok = { c = code, args = args }
+            end
+            tokens[#tokens + 1] = tok
+            pos = close + 1
+            -- The newline written after {new} belongs to it.
+            if tok.c == 1 and text:sub(pos, pos) == '\n' then pos = pos + 1 end
+        else
+            local ch = text:match('^[%z\1-\127\194-\244][\128-\191]*', pos)
+            if not ch then return nil, 'Invalid UTF-8', pos end
+            if not charset[ch] then return nil, 'No glyph for ' .. ch, pos end
+            tokens[#tokens + 1] = { ch = ch }
+            pos = pos + #ch
+        end
+    end
+    return tokens
+end
+
 -- 64-bit FNV-1a over a byte string, as 16 lowercase hex digits.
 function VP.text.fnv1a64(s)
     local h = 0xcbf29ce484222325ULL

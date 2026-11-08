@@ -178,13 +178,62 @@ end
 -- glyph indices to characters; widths come from the font database of `set`
 -- ('US' by default, or 'JP'). `style` is the script style of the tokens.
 -- Returns { { line widths of page 1 }, { page 2 }, ... } and the number of
--- characters with no glyph.
+-- characters with no glyph. Laid out from the tokens, not from the rendered
+-- text, so a literal < or > glyph is not mistaken for a tag.
 function VP.glyphs.measure(tokens, font, set, style)
-    local text = VP.text.renderTokens(tokens, resolveFont(font), style or 'primary')
-    local _, pages = VP.glyphs.parse(text)
+    return VP.glyphs.measureTokens(tokens, font and resolveFont(font), style, set)
+end
+
+-- Pages of a token list, each a list of line strings, laid out the way parse
+-- lays out the rendered text: code 0 ends a line, code 1 ends a page, and in the
+-- primary style <st rep="N"/>X<rrep/> on one line becomes the first character
+-- of X repeated N times. Other codes draw nothing. Tokens are either { g = n },
+-- resolved through lookup (the script font, glyph index -> character), or
+-- { ch = c }, a character of the font database, as in a translation.
+function VP.glyphs.pagesFromTokens(tokens, lookup, style)
+    local primary = (style or 'primary') == 'primary'
+    local pages, page, line = {}, {}, {}
+    local repStart, repCount
+    local function endLine()
+        page[#page + 1] = table.concat(line)
+        line, repStart = {}, nil
+    end
+    for _, t in ipairs(tokens) do
+        if t.ch then
+            line[#line + 1] = t.ch
+        elseif t.g then
+            local ch = lookup and lookup[t.g]
+            if ch and ch ~= '<??>' then line[#line + 1] = ch end
+        elseif t.c == 0 then
+            endLine()
+        elseif t.c == 1 then
+            endLine()
+            pages[#pages + 1] = page
+            page = {}
+        elseif primary and t.c == 7 then
+            if t.args[1] ~= 1 then
+                repStart, repCount = #line + 1, t.args[1]
+            elseif repStart then
+                local first = line[repStart] or ''
+                for i = #line, repStart, -1 do line[i] = nil end
+                line[repStart] = first:rep(repCount)
+                repStart = nil
+            end
+        end
+    end
+    endLine()
+    pages[#pages + 1] = page
+    return pages
+end
+
+-- Pixel width of every line of every page of a token list (see
+-- pagesFromTokens), with the widths of the font database of `set` ('US' by
+-- default). Returns { { line widths of page 1 }, ... } and the number of
+-- characters with no glyph in that database.
+function VP.glyphs.measureTokens(tokens, lookup, style, set)
     local map = set == 'JP' and VP.constants.fontJP or VP.constants.font
     local widths, missing = {}, 0
-    for p, lines in ipairs(pages) do
+    for p, lines in ipairs(VP.glyphs.pagesFromTokens(tokens, lookup, style)) do
         widths[p] = {}
         for l, line in ipairs(lines) do
             local w, m = layoutLine(line, map)
