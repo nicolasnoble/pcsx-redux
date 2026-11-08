@@ -242,22 +242,32 @@ function extract_room_script(fname, script, font, fileInfo)
         end
     end
 
+    -- Each pointer's text is decoded to tokens, and the views are rendered from
+    -- them. `raw` keeps the bytes each token list was read from.
+    local tokens, raw = {}, {}
     for i = ptrStart, nPtrs do
-        ptrsContents[i] = ''
-        ptrsRaws[i] = ''
         local expectedPos = strBase + ptrs[i]
         local actual = tonumber(script:rTell())
         if expectedPos ~= actual then
             error(string.format("Script consistency failure for pointer %d: at %d, expected %d",
                 i, actual, expectedPos))
         end
-        while true do
-            local r, rr = extractChar(script, lookup, 'primary')
-            if not r then break end
-            ptrsContents[i] = ptrsContents[i] .. r
-            ptrsRaws[i] = ptrsRaws[i] .. rr
-        end
+        tokens[i] = VP.text.decodeTokens(script, 'primary')
+        local stop = tonumber(script:rTell())
+        raw[i] = tostring(script:readAt(stop - actual, actual))
+        script:rSeek(stop)
+        ptrsContents[i], ptrsRaws[i] = VP.text.renderTokens(tokens[i], lookup, 'primary')
     end
+    local trailing = script:size() - tonumber(script:rTell())
+    local extra = {
+        key = VP.text.scriptKey(script),
+        tokens = tokens,
+        raw = raw,
+        font = fontData,
+        first = ptrStart,
+        style = 'primary',
+        trailing = trailing,
+    }
 
     -- Run the disasm pass to extract textbox geometry per pointer.
     local disasmOut = fileInfo and fileInfo.logicSink
@@ -345,7 +355,8 @@ function extract_room_script(fname, script, font, fileInfo)
         end
     end
 
-    return ptrsContents
+    extra.textboxes = textboxes
+    return ptrsContents, extra
 end
 
 -- Walker for arcroom/sarc archives. .arm carries paired (script, font) at

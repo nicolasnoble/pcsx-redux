@@ -155,6 +155,46 @@ function VP.glyphs.parse(ptr)
     return window, pages
 end
 
+-- The advance rule shared by drawPage and measure: each character of a line
+-- advances by its glyph's width, and a character with no glyph in `map` is
+-- skipped. Calls fn(glyph, x) for each drawn glyph, x relative to the line's
+-- start. Returns the line's width and the number of characters skipped.
+local function layoutLine(line, map, fn)
+    local x, missing = 0, 0
+    for ch in line:gmatch('[%z\1-\127\194-\244][\128-\191]*') do
+        local g = map[ch]
+        if g then
+            if fn then fn(g, x) end
+            x = x + g.width
+        else
+            missing = missing + 1
+        end
+    end
+    return x, missing
+end
+
+-- Pixel width of every line of every page of a token list, as drawPage would
+-- lay it out. `font` is the script's font as extractFont returns it, which maps
+-- glyph indices to characters; widths come from the font database of `set`
+-- ('US' by default, or 'JP'). `style` is the script style of the tokens.
+-- Returns { { line widths of page 1 }, { page 2 }, ... } and the number of
+-- characters with no glyph.
+function VP.glyphs.measure(tokens, font, set, style)
+    local text = VP.text.renderTokens(tokens, resolveFont(font), style or 'primary')
+    local _, pages = VP.glyphs.parse(text)
+    local map = set == 'JP' and VP.constants.fontJP or VP.constants.font
+    local widths, missing = {}, 0
+    for p, lines in ipairs(pages) do
+        widths[p] = {}
+        for l, line in ipairs(lines) do
+            local w, m = layoutLine(line, map)
+            widths[p][l] = w
+            missing = missing + m
+        end
+    end
+    return widths, missing
+end
+
 local function drawSolid(a, name, ox, oy, x, y, w, h, scale)
     if w <= 0 or h <= 0 then return end
     local uv = a.solids[name]
@@ -187,19 +227,14 @@ function VP.glyphs.drawPage(window, lines, font, scale)
 
     local missing = 0
     for _, line in ipairs(lines) do
-        local x = xBase
-        for ch in line:gmatch('[%z\1-\127\194-\244][\128-\191]*') do
-            local g = map[ch]
-            if g then
-                if x < PAGE_W and yCurr < PAGE_H then
-                    imgui.SetCursorPos(ox + x * scale, oy + yCurr * scale)
-                    imgui.Image(a.texture, g.width * scale, g.height * scale, g.u0, g.v0, g.u1, g.v1)
-                end
-                x = x + g.width
-            else
-                missing = missing + 1
+        local _, m = layoutLine(line, map, function(g, dx)
+            local x = xBase + dx
+            if x < PAGE_W and yCurr < PAGE_H then
+                imgui.SetCursorPos(ox + x * scale, oy + yCurr * scale)
+                imgui.Image(a.texture, g.width * scale, g.height * scale, g.u0, g.v0, g.u1, g.v1)
             end
-        end
+        end)
+        missing = missing + m
         yCurr = yCurr + LINE_H
     end
 

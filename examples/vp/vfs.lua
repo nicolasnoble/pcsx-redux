@@ -54,7 +54,9 @@ end
 
 -- Script viewers carry a load() returning the decoded pointer table, and the
 -- index of the first real pointer. The text view and the glyph preview are
--- both built from it.
+-- both built from it. Once loaded, viewer.extra holds what the decoder returned
+-- beside the table: per-pointer tokens and raw bytes, the font, and for room
+-- scripts the script key and the textboxes.
 -- Room scripts also get a Logic viewer: the disassembly of the room bytecode,
 -- with the text each textbox opcode opens, written by the same pass.
 local function roomScriptViewer(script, font, index)
@@ -63,10 +65,13 @@ local function roomScriptViewer(script, font, index)
     local viewer = {
         name = 'Room script',
         first = 3,
-        load = function()
-            return extract_room_script('room', script, font, { index = index, logicSink = sink })
-        end,
+        script = script,
     }
+    viewer.load = function()
+        local ptrs, extra = extract_room_script('room', script, font, { index = index, logicSink = sink })
+        viewer.extra = extra
+        return ptrs
+    end
     local logicViewer = {
         name = 'Logic',
         render = function()
@@ -79,11 +84,13 @@ local function roomScriptViewer(script, font, index)
 end
 
 local function simpleScriptViewer(script, font, style)
-    return {
-        name = 'Script',
-        first = 1,
-        load = function() return extract_simple_script('script', script, font, style) end,
-    }
+    local viewer = { name = 'Script', first = 1 }
+    viewer.load = function()
+        local ptrs, extra = extract_simple_script('script', script, font, style)
+        viewer.extra = extra
+        return ptrs
+    end
+    return viewer
 end
 
 -- Pairs scripts with fonts across the entries of one archive, the same way the

@@ -41,19 +41,16 @@ function extract_simple_script(fname, script, font, style)
     ptrs[nPtrs] = script:size() - scriptBegin
     nPtrs = nPtrs - 1
 
-    local ptrsContents = {}
+    -- Each pointer's range is decoded to tokens, and the text is rendered from
+    -- them. `raw` keeps the bytes of each range.
+    local ptrsContents, tokens, raw = {}, {}, {}
     for i = 1, nPtrs do
-        ptrsContents[i] = ''
-        script:rSeek(scriptBegin + ptrs[i])
+        local startPos = scriptBegin + ptrs[i]
         local endPos = scriptBegin + ptrs[i + 1]
-        while tonumber(script:rTell()) ~= endPos do
-            local r, rr = extractChar(script, lookup, style)
-            if r then
-                ptrsContents[i] = ptrsContents[i] .. r
-            elseif tonumber(script:rTell()) ~= endPos then
-                ptrsContents[i] = ptrsContents[i] .. '<ZERO>'
-            end
-        end
+        script:rSeek(startPos)
+        tokens[i] = VP.text.decodeTokens(script, style, endPos)
+        raw[i] = tostring(script:readAt(endPos - startPos, startPos))
+        ptrsContents[i] = VP.text.renderTokens(tokens[i], lookup, style)
     end
 
     if VP.arguments.dump then
@@ -66,5 +63,5 @@ function extract_simple_script(fname, script, font, style)
         o:close()
     end
 
-    return ptrsContents
+    return ptrsContents, { tokens = tokens, raw = raw, font = fontData, first = 1, style = style }
 end
