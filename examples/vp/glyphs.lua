@@ -9,6 +9,12 @@
 VP.glyphs = VP.glyphs or {}
 
 local CELL_W, CELL_H, COLS = 16, 12, 64
+-- Every cell is surrounded by a transparent gutter. ImGui's OpenGL backend binds
+-- its own sampler, which filters linearly whatever the texture asks for, so a
+-- glyph drawn at a fractional scale would otherwise pick up the edge of the
+-- cell next to it in the atlas.
+local GUTTER = 1
+local STRIDE_W, STRIDE_H = CELL_W + 2 * GUTTER, CELL_H + 2 * GUTTER
 local PAGE_W, PAGE_H, LINE_H = 320, 240, 14
 
 -- Solid cells after the glyphs, used to draw the page and the window frame.
@@ -30,12 +36,12 @@ local function buildAtlas()
     local solidNames = { 'page', 'outer', 'inner' }
     local count = #entries + #solidNames
     local rows = math.ceil(count / COLS)
-    local w, h = COLS * CELL_W, rows * CELL_H
+    local w, h = COLS * STRIDE_W, rows * STRIDE_H
     local pix = ffi.new('uint32_t[?]', w * h)
     local maps = { US = {}, JP = {} }
 
     local function cellOrigin(i)
-        return (i % COLS) * CELL_W, math.floor(i / COLS) * CELL_H
+        return (i % COLS) * STRIDE_W + GUTTER, math.floor(i / COLS) * STRIDE_H + GUTTER
     end
 
     for i, e in ipairs(entries) do
