@@ -69,7 +69,13 @@ test('serialize round trip', function()
         { c = 19, args = { 255, 255 } }, { g = 17, wide = true }, { z = true },
     }
     local s = VP.tdb.serialize(toks)
-    eq(VP.tdb.deserialize(s), toks, 'tokens')
+    local back = VP.tdb.deserialize(s)
+    toks[6].args = {}
+    eq(back, toks, 'tokens')
+    -- What the editor stores must come back as the same editable text.
+    local text = '{port 1 0}Mère\n{ssync}{spd 20}Petite {{x}} !{new}\nSuite{pause}{delay 120 0}'
+    local stored = VP.tdb.deserialize(VP.tdb.serialize(assert(VP.text.fromEditable(text))))
+    eq(VP.text.toEditable(stored), text, 'editable text through the database')
     truthy(s:find('ch="é"', 1, true), 'readable text')
     for _, bad in ipairs({ '', '{', '{{ch="a"}', '{{x=1}}', '{os.exit()}', '{{ch="a"}} x', '{{c=1,args={1,}}}' }) do
         local ok = pcall(VP.tdb.deserialize, bad)

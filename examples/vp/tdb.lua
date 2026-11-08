@@ -145,6 +145,8 @@ function VP.tdb.deserialize(s)
                 fail('unknown field ' .. name)
             end
         end
+        -- A code with no argument bytes is written without args.
+        if t.c and not t.args then t.args = {} end
         tokens[#tokens + 1] = t
     end
     skip()

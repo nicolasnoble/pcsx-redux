@@ -16,7 +16,8 @@ local T = VP.translate
 T.path = T.path or os.getenv('VP_TDB') or 'vp-fr.tdb'
 T.author = T.author or os.getenv('VP_AUTHOR') or os.getenv('USER') or ''
 
-local SCALE = 2
+-- Pixels per game pixel in the page previews.
+T.previewScale = T.previewScale or 2
 local PAGE_W, PAGE_H = 320, 240
 local RED, GREEN = 0xff5050ff, 0xff60d060
 
@@ -140,6 +141,7 @@ local function counts(extra, ptrs)
 end
 
 local function drawPages(window, pages, set, id)
+    local SCALE = T.previewScale
     local h = 0
     for _ in ipairs(pages) do h = h + PAGE_H * SCALE + 24 end
     imgui.safe.BeginChild(id, PAGE_W * SCALE + 16, h + 8, 0, function()
@@ -156,7 +158,9 @@ local function drawConflict(v, extra, i, e, tokens)
         imgui.OpenPopup(id)
         e.openConflict = nil
     end
-    imgui.safe.BeginPopupModal(id, nil, imgui.constant.WindowFlags.AlwaysAutoResize, function()
+    -- The binding turns a nil p_open into a pointer to false, which closes the
+    -- modal at once; true gives it a working close button.
+    imgui.safe.BeginPopupModal(id, true, imgui.constant.WindowFlags.AlwaysAutoResize, function()
         local theirs = e.conflict
         if not theirs then
             imgui.CloseCurrentPopup()
