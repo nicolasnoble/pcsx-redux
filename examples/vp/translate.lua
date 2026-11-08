@@ -27,6 +27,8 @@ function T.open(path)
     local ok, db = pcall(VP.tdb.open, path)
     if ok then
         T.db, T.openPath = db, path
+        -- An armed in-game preview follows the database the editor uses.
+        if VP.preview and VP.preview.armed() then VP.preview.db = db end
     else
         T.dbError = tostring(db)
     end
@@ -192,6 +194,24 @@ local function drawConflict(v, extra, i, e, tokens)
     end)
 end
 
+-- The in-game preview: while armed, every room the game loads gets its saved
+-- translations (drafts and reviewed) patched in, from this database.
+local function drawPreviewControl()
+    local armed = VP.preview.armed()
+    local changed, on = imgui.Checkbox('Show translations in game', armed)
+    if changed then
+        if on then VP.preview.arm(T.db) else VP.preview.disarm() end
+    end
+    imgui.SameLine()
+    if VP.preview.armed() then
+        imgui.TextUnformatted('Applies when the game next loads a room. Needs the debugger enabled.')
+    else
+        imgui.TextUnformatted('Off.')
+    end
+    local log = VP.preview.log
+    if #log > 0 then imgui.TextUnformatted('Last: ' .. log[#log]) end
+end
+
 local function drawTranslate(v, room)
     imgui.TextUnformatted('Database')
     imgui.SameLine()
@@ -212,6 +232,7 @@ local function drawTranslate(v, room)
     if T.dbError then colored(RED, T.dbError) end
     if not T.db and not T.dbError then T.open(T.path) end
     if not T.db then return end
+    drawPreviewControl()
 
     local ptrs, err = VP.vfs.ptrs(room)
     if not ptrs then

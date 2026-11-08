@@ -240,9 +240,6 @@ function preview.resolveChars(rows, fontBytes)
     return out, preview.buildFont(font), added
 end
 
--- Rebuilt rooms by script key and font hash, so a room entered twice is
--- rebuilt once per change.
-preview.cache = preview.cache or {}
 preview.log = preview.log or {}
 
 local function note(s)
@@ -251,17 +248,12 @@ local function note(s)
     if #log > 200 then table.remove(log, 1) end
 end
 
-function preview.invalidate() preview.cache = {} end
-
--- Returns the cache entry for a room's original script and font:
+-- The patch for a room's original script and font, read from the database
+-- every time the room loads, so a save shows the next time the room is entered:
 -- { key, n, script, font, added, problems, error }, script nil when nothing applies.
 function preview.patched(script, font)
     local key = VP.text.fnv1a64(script)
-    local ck = key .. ':' .. VP.text.fnv1a64(font)
-    local cached = preview.cache[ck]
-    if cached then return cached end
     local entry = { key = key, n = 0 }
-    preview.cache[ck] = entry
     local db = preview.db
     if not db then return entry end
     local rows, n = preview.rowsFor(db, key)
@@ -378,7 +370,6 @@ end
 function preview.arm(db)
     preview.disarm()
     preview.db = db
-    preview.invalidate()
     preview.breakpoints = {
         PCSX.addBreakpoint(MALLOC, 'Exec', 4, 'VP preview', onMalloc, 'room script alloc'),
         PCSX.addBreakpoint(CASE4_SCRIPT_DONE, 'Exec', 4, 'VP preview', onScriptDone, 'room script loaded'),
