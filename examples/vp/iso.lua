@@ -9,7 +9,9 @@ function probeIsoFile(file)
     local binUSCD1 = reader:open 'SLUS_011.56;1'
     local binUSCD2 = reader:open 'SLUS_011.79;1'
     local binJPCD1 = reader:open 'SLPM_863.79;1'
+    if binJPCD1:failed() then binJPCD1 = reader:open 'SLPM_863.71;1' end
     local binJPCD2 = reader:open 'SLPM_863.80;1'
+    if binJPCD2:failed() then binJPCD2 = reader:open 'SLPM_863.72;1' end
     local binSquished = reader:open 'VALKYRIE.EXE;1'
 
     if not binUSCD1:failed() then

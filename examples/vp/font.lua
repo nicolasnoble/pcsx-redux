@@ -12,10 +12,12 @@ function decodeFonts()
         VP.constants.fontByData[glyphKey(v.width, v.data)] = deepCopy(v)
     end
     VP.constants.fontJPByData = {}
-    for k, v in pairs(VP.constants.fontJP) do
-        v.text = k
-        VP.constants.fontJPByData[glyphKey(v.width, v.data)] = deepCopy(v)
+    for _, e in ipairs(VP.constants.fontJPVariants) do
+        local v = deepCopy(e.glyph)
+        v.text = e.char
+        VP.constants.fontJPByData[glyphKey(v.width, v.data)] = v
     end
+    for k, v in pairs(VP.constants.fontJP) do v.text = k end
 end
 
 function extractFont(file, fileInfo)
@@ -37,7 +39,10 @@ function extractFont(file, fileInfo)
 
     for i = 1, numGlyphs do
         local glyph = base64.encode(tostring(file:read(height * 2)))
-        local fontData = VP.constants.fontByData[glyphKey(widths[i], glyph)]
+        -- A glyph is looked up in the US database first, then in the JP one,
+        -- so a US room never resolves to a JP character.
+        local key = glyphKey(widths[i], glyph)
+        local fontData = VP.constants.fontByData[key] or VP.constants.fontJPByData[key]
         -- Fonts are padded with blank glyphs of width 0, which stand for no
         -- character.
         if not fontData and widths[i] == 0 and not glyph:find('[^A=]') then

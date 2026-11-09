@@ -279,7 +279,9 @@ end
 local discs = {
     ['SLUS_011.56'] = { region = 'US', disc = 1 },
     ['SLUS_011.79'] = { region = 'US', disc = 2 },
-    ['SLPM_863.79'] = { region = 'JP', disc = 1 },
+    ['SLPM_863.71'] = { region = 'JP', disc = 1 }, -- v1.0 and v1.1
+    ['SLPM_863.72'] = { region = 'JP', disc = 2 },
+    ['SLPM_863.79'] = { region = 'JP', disc = 1 }, -- v1.2
     ['SLPM_863.80'] = { region = 'JP', disc = 2 },
     ['VALKYRIE.EXE'] = { region = 'US', disc = 0 },
 }
@@ -323,7 +325,8 @@ end
 
 -- Builds the game index tree: the file map's directories as folders, and the
 -- index entries present on this disc as files inside them.
-local function indexNode(iso)
+local function indexNode(iso, region)
+    local filemap = region == 'JP' and VP.globals.filemapJP or VP.globals.filemap
     return newNode({
         name = 'Game index',
         isDir = true,
@@ -348,7 +351,7 @@ local function indexNode(iso)
             for i = 1, VP.constants.indexCount - 1 do
                 local entry = VP.globals.index.entries[i]
                 if entry then
-                    local info = VP.globals.filemap[i] or {}
+                    local info = filemap[i] or {}
                     local dir = (info.dir or 'DUMP/UNKNOWN'):gsub('^DUMP/', '')
                     local ext = info.ext or 'out'
                     local sectorSize = info.sectorSize or 2048
@@ -375,7 +378,8 @@ function VP.vfs.root(iso)
         name = 'Disc',
         isDir = true,
         expand = function()
-            return { isoDirNode(reader, iso, '', 'ISO9660'), indexNode(iso) }
+            local disc = VP.vfs.identify(iso)
+            return { isoDirNode(reader, iso, '', 'ISO9660'), indexNode(iso, disc and disc.region) }
         end,
     })
 end

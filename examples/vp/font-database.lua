@@ -446,7 +446,18 @@ font['ﾛ'] = { width = 7, height = 12, data = 'AAAAAAD4AIgAiACIAIgAiACIAPgAiAAA
 font['ﾝ'] = { width = 7, height = 12, data = 'AAAAgABAAEQABAAEAAgACAAQACAAwAAA' }
 font['ﾞ'] = { width = 3, height = 12, data = 'AEAAIACAAEAAAAAAAAAAAAAAAAAAAAAA' }
 
-local fontJP = {}
+-- The JP list below names some characters several times, with different
+-- bitmaps (three '-' glyphs). Every assignment is kept in fontJPVariants, in
+-- file order, so all of them can be recognized in a room font; fontJP itself
+-- keeps the last one per character.
+local fontJPByChar, fontJPVariants = {}, {}
+local fontJP = setmetatable({}, {
+    __index = fontJPByChar,
+    __newindex = function(_, k, v)
+        fontJPVariants[#fontJPVariants + 1] = { char = k, glyph = v }
+        fontJPByChar[k] = v
+    end,
+})
 fontJP[' '] = { width = 3, height = 11, data = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==' }
 fontJP['!'] = { width = 2, height = 11, data = 'AAAAgACAAIAAgAAAAAAAgAAAAAAAAA==' }
 fontJP['"'] = { width = 6, height = 11, data = 'AFAAoAAAAAAAAAAAAAAAAAAAAAAAAA==' }
@@ -3003,4 +3014,5 @@ fontJP['ﾞ'] = { width = 3, height = 12, data = 'AEAAIACAAEAAAAAAAAAAAAAAAAAAAA
 fontJP['ﾞ'] = { width = 3, height = 12, data = 'AIAAQAAAAIAAAAAAAAAAAAAAAAAAAAAA' }
 
 VP.constants.font = font
-VP.constants.fontJP = fontJP
+VP.constants.fontJP = fontJPByChar
+VP.constants.fontJPVariants = fontJPVariants

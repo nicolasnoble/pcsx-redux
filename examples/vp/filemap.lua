@@ -1,14 +1,12 @@
 VP.globals.filemap = { }
 
---[[
-local mapspans = {
-    { idx_s = 3604, idx_e = 4732, data = { dir = 'GAME/ROOMS', ext = 'arm', ftype = 'arcroom', }, },
-}
-
-local mapspans = {
+-- The Japanese discs have their own index layout. Only the room archives are
+-- mapped: they sit 117 entries after the US ones (3721-4849 against
+-- 3604-4732). Everything else on a JP disc shows as UNKNOWN.
+VP.globals.filemapJP = {}
+local mapspansJP = {
     { idx_s = 3721, idx_e = 4849, data = { dir = 'GAME/ROOMS', ext = 'arm', ftype = 'arcroom', }, },
 }
-]]--
 
 local mapspans = {
     { idx_s =    9, idx_e =  131, data = { dir = 'SOUNDS/ATK+DEATH', ext = 'wag' }, },
@@ -210,5 +208,13 @@ function generateFileMap()
         VP.globals.filemap[k] = deepCopy(v)
         VP.globals.filemap[k].name = string.format('%04i', k)
         VP.globals.filemap[k].dir = 'DUMP/' .. v.dir
+    end
+
+    for _, v in pairs(mapspansJP) do
+        for i = v.idx_s, v.idx_e do
+            VP.globals.filemapJP[i] = deepCopy(v.data)
+            VP.globals.filemapJP[i].name = string.format('%04i', i)
+            VP.globals.filemapJP[i].dir = 'DUMP/' .. VP.globals.filemapJP[i].dir
+        end
     end
 end

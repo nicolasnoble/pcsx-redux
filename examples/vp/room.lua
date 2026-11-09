@@ -253,9 +253,18 @@ function extract_room_script(fname, script, font, fileInfo)
     ptrsRaws[2] = ''
     local ptrStart = 3
 
-    -- Validate the fixed 0x33-byte digit translation header.
+    -- Validate the digit translation header: 0x33 bytes on the US discs. The JP
+    -- discs carry the same table counting further, to 0x6e (0x70 bytes); the
+    -- third pointer says where it ends.
     local hdr = VP.scriptTypes.room.header
-    for i = 1, VP.scriptTypes.room.size do
+    local hdrSize = VP.scriptTypes.room.size
+    if ptrs[ptrStart] and ptrs[ptrStart] ~= hdrSize then
+        hdrSize = ptrs[ptrStart]
+        hdr = { 0x01, 0x02, 0x00 }
+        for b = 0x03, hdrSize - 2 do hdr[#hdr + 1] = b end
+        hdr[#hdr + 1] = 0x00
+    end
+    for i = 1, hdrSize do
         local b = script:readU8()
         if b ~= hdr[i] then
             error(string.format("Room script header mismatch at byte %d: got 0x%02x, expected 0x%02x",
