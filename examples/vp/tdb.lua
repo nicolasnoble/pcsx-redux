@@ -291,6 +291,7 @@ sqlite.__index = sqlite
 VP.tdb.backends.sqlite = sqlite
 
 function sqlite.open(path, options)
+    if not PCSX.SQLite then error('This build of PCSX-Redux has no PCSX.SQLite, so it cannot open a translation database', 0) end
     local self = setmetatable({ db = PCSX.SQLite.open(path) }, sqlite)
     self.db:busyTimeout(5000)
     -- sqlite runs on the GUI thread, so a commit's fsyncs stall the frame. In WAL
