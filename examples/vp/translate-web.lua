@@ -125,7 +125,8 @@ end
 local function header(back)
     local target, source = M.languages()
     return H.div {
-        H.a { href = link { { 'p', 'list' } }, 'Scripts' }, ' | database ', H.code(M.openPath or M.path),
+        H.a { href = link { { 'p', 'list' } }, 'Scripts' }, ' | ', H.a { href = link { { 'p', 'glyphs' } }, 'Glyphs' },
+        ' | database ', H.code(M.openPath or M.path),
         M.db and H.form { method = 'post', action = link { { 'p', 'languages' } }, style = 'display: inline',
             ' | translating from ',
             H.input { type = 'text', name = 'source', value = source, size = 6, title = 'BCP 47 tag, e.g. en' },
@@ -408,8 +409,15 @@ function W.handle(request)
         if not back:match('^/') then back = BASE end
         return redirect(back)
     end
+    local route = W.routes[p]
+    if route then return route(request, q, form) end
     return html('404 Not Found', 'Not found', { H.p('Unknown page ' .. p) })
 end
+
+-- Other pages (translate-web-glyphs.lua) register here: routes[p](request,
+-- query, form), with the helpers they share.
+W.routes = W.routes or {}
+W.util = { html = html, link = link, redirect = redirect, header = header, ensureDb = ensureDb, BASE = BASE }
 
 PCSX.WebServer = PCSX.WebServer or {}
 PCSX.WebServer.Handlers = PCSX.WebServer.Handlers or {}
