@@ -217,6 +217,8 @@ local tagAliases = {
     secondary = {},
 }
 
+VP.text.tagNames, VP.text.tagAliases = tagNames, tagAliases
+
 local function tagFor(tok, style)
     for name, a in pairs(tagAliases[style]) do
         if a[1] == tok.c then
@@ -228,6 +230,16 @@ local function tagFor(tok, style)
     local name = tagNames[style][tok.c] or ('c' .. tok.c)
     if #tok.args == 0 then return name end
     return name .. ' ' .. table.concat(tok.args, ' ')
+end
+
+-- The tag name a code token gets in the editable form, without its arguments
+-- (an alias such as dport when the arguments match one): nil for code 0 (a
+-- newline) and code 1 ({new}).
+function VP.text.tagName(tok, style)
+    style = style or 'primary'
+    if tok.c == 0 then return nil end
+    if tok.c == 1 then return 'new' end
+    return (tagFor(tok, style):match('^%S+'))
 end
 
 -- tokens: { g } (resolved through lookup, the script font's glyph -> character

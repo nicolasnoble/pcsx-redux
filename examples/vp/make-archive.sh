@@ -6,6 +6,6 @@ here=$(cd "$(dirname "$0")" && pwd)
 out=$(realpath -m "${1:-vp-translate.zip}")
 rm -f "$out"
 cd "$here"
-files=$(ls *.lua translate-web.js | grep -v -e '-test\.lua$' -e '^main\.lua$')
+files=$(ls *.lua translate-web.js | grep -v -e '-test\.lua$' -e '-gen\.lua$' -e '^main\.lua$')
 zip -q -X -9 "$out" $files
 echo "$out: $(echo $files | wc -w) files"

@@ -186,6 +186,7 @@ local function drawTranslate(v, room)
     drawJapaneseDisc(v)
     drawPreviewControl()
     VP.glyphEditor.draw(v)
+    VP.tags.drawImgui()
 
     local ptrs, err = VP.vfs.ptrs(room)
     if not ptrs then

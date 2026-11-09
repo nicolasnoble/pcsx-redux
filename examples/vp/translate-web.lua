@@ -123,6 +123,7 @@ local function header(back)
     local target, source = M.languages()
     return H.div {
         H.a { href = link { { 'p', 'list' } }, 'Scripts' }, ' | ', H.a { href = link { { 'p', 'glyphs' } }, 'Glyphs' },
+        ' | ', H.a { href = link { { 'p', 'tags' } }, 'Control codes' },
         ' | database ', H.code(M.openPath or M.path),
         M.db and H.form { method = 'post', action = link { { 'p', 'languages' } }, style = 'display: inline',
             ' | translating from ',

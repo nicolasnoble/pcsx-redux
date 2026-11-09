@@ -204,3 +204,29 @@ W.routes.glyphsave = function(request, q, form)
     end
     return editorPage(ge, nil, nil, sample)
 end
+
+-- ?p=tags: the control-code manual (tags.lua).
+W.routes.tags = function(request, q)
+    local rows = { class = 'tags',
+        H.tr { H.th 'tag', H.th 'code', H.th 'arguments', H.th 'count', H.th 'strings', H.th 'status', H.th 'notes' } }
+    for _, r in ipairs(VP.tags.rows()) do
+        rows[#rows + 1] = H.tr {
+            H.td(H.code(r.tag)), H.td(tostring(r.code)), H.td(VP.tags.argText(r)),
+            H.td { class = 'num', r.count and tostring(r.count) or '-' },
+            H.td { class = 'num', r.strings and tostring(r.strings) or '-' },
+            H.td(r.status), H.td(r.note or ''),
+        }
+    end
+    local status = {}
+    for _, s in ipairs { 'measured', 'observed-2009', 'unknown' } do
+        status[#status + 1] = H.li { H.b(s), ': ', VP.tags.statusText[s] }
+    end
+    return U.html('200 OK', 'Control codes', {
+        U.header(U.link { { 'p', 'tags' } }),
+        H.h1 'Control codes',
+        H.p 'Codes are written as {tags} in the translation; in the editor they show as chips. Arguments are bytes (0-255).',
+        H.ul(status),
+        H.p(VP.tags.scopeText()),
+        H.table(rows),
+    })
+end
