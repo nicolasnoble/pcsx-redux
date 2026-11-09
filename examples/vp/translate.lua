@@ -185,6 +185,7 @@ local function drawTranslate(v, room)
     drawLanguages(v)
     drawJapaneseDisc(v)
     drawPreviewControl()
+    VP.glyphEditor.draw(v)
 
     local ptrs, err = VP.vfs.ptrs(room)
     if not ptrs then

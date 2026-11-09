@@ -409,6 +409,33 @@ function VP.glyphs.drawPage(window, lines, font, scale)
     return missing
 end
 
+-- Draws one line of text on the page colour at the cursor, from a charset
+-- table, 4 game pixels of margin around it. Returns the line's width in game
+-- pixels.
+function VP.glyphs.drawLine(text, set, scale)
+    local a, map = atlasMap(set)
+    scale = scale or 2
+    local ox, oy = imgui.GetCursorPos()
+    local w = layoutLine(text, map)
+    drawSolid(a, 'page', ox, oy, 0, 0, w + 8, LINE_H + 6, scale)
+    layoutLine(text, map, function(g, x)
+        imgui.SetCursorPos(ox + (x + 4) * scale, oy + 4 * scale)
+        imgui.Image(a.texture, g.width * scale, g.height * scale, g.u0, g.v0, g.u1, g.v1)
+    end)
+    imgui.SetCursorPos(ox, oy + (LINE_H + 6) * scale)
+    imgui.Dummy(1, 2)
+    return w
+end
+
+-- A glyph already in the atlas changed in place (the glyph editor's working
+-- copy): rebuild the texture from the current data.
+function VP.glyphs.refreshGlyph(g)
+    if atlas and atlas.byGlyph[g] then
+        gl.glDeleteTextures(1, ffi.new('GLuint[1]', atlas.texture))
+        atlas = nil
+    end
+end
+
 -- The same page as drawPage, as a 320x240 PNG (palette: page, ink, and the
 -- two frame colours), for views with no GL context. Returns the PNG bytes and
 -- the number of characters that had no glyph.

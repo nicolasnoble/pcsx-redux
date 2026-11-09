@@ -44,6 +44,7 @@ d 'tdb.lua'
 d 'translate-model.lua'
 d 'jp.lua'
 d 'translate.lua'
+d 'glyph-editor.lua'
 d 'translate-web.lua'
 d 'preview.lua'
 -- The GUI loads this resource at startup; without a GUI (-no-ui) it does not.

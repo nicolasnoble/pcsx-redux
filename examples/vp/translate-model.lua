@@ -184,3 +184,67 @@ function M.history(extra, i, lookup)
     end
     return out
 end
+
+-- Glyphs. The database's target language owns a set of edited and added
+-- glyphs (tdb putGlyph); both views edit them through these. A glyph edit
+-- state is: ch, base (the stored version it was read at, 0 for none), rows
+-- (VP.fontedit rows), width (the advance), origin ('retail', 'letter',
+-- 'edited', 'added' or 'new'), note, and conflict after a stale save.
+
+-- Every editable character of the target language, VP.fontedit.entries.
+function M.glyphEntries()
+    return VP.fontedit.entries(M.db:glyphLanguage(), M.db:glyphEdits())
+end
+
+function M.loadGlyph(ch)
+    local F = VP.fontedit
+    local row = M.db:glyph(ch)
+    local g = M.db:charset()[ch]
+    local live = row and not row.deletedAt
+    return {
+        ch = ch,
+        base = row and row.version or 0,
+        rows = g and F.rows(g.data, g.height) or F.blank(),
+        width = g and g.width or 1,
+        origin = g and F.origin(ch, M.db:targetLanguage(), live) or 'new',
+        note = live and row.note or '',
+    }
+end
+
+-- The glyph an edit state describes, as tdb:putGlyph takes it.
+function M.glyphOf(ge)
+    return { ch = ge.ch, width = ge.width, height = VP.fontedit.HEIGHT, data = VP.fontedit.encode(ge.rows),
+        note = ge.note ~= '' and ge.note or nil, author = ge.author or M.author }
+end
+
+-- Problems (refusals) and notes of an edit state, VP.fontedit.check.
+function M.checkGlyph(ge)
+    return VP.fontedit.check(M.glyphOf(ge), M.db:charset())
+end
+
+-- Returns 'saved' and the row, 'conflict' and the stored row, or 'error' and
+-- a message. expected defaults to the version the state was read at.
+function M.saveGlyph(ge, expected)
+    local ok, r = M.db:putGlyph(M.glyphOf(ge), expected or ge.base)
+    if ok then return 'saved', r end
+    if ok == false then return 'conflict', r end
+    return 'error', r
+end
+
+-- Back to the retail or language glyph (an added character goes away).
+function M.revertGlyph(ge, expected)
+    local ok, r = M.db:deleteGlyph(ge.ch, expected or ge.base, ge.author or M.author)
+    if ok then return 'saved', r end
+    if ok == false then return r and 'conflict' or 'error', r or 'Nothing to revert: the glyph was never edited.' end
+end
+
+-- One line per stored version of ch.
+function M.glyphHistory(ch)
+    local out = {}
+    for _, h in ipairs(M.db:glyphHistory(ch)) do
+        out[#out + 1] = string.format('v%d %s %s: %s, advance %d, extent %d%s', h.version,
+            os.date('!%Y-%m-%d %H:%M', h.updatedAt), h.author or '?', h.deletedAt and 'reverted' or 'saved',
+            h.width, VP.fontedit.extent(VP.fontedit.rows(h.data, h.height)), h.note and (' (' .. h.note .. ')') or '')
+    end
+    return out
+end
