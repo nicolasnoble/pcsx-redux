@@ -19,7 +19,7 @@ local M = VP.tmodel
 -- Pixels per game pixel in the page previews.
 T.previewScale = T.previewScale or 2
 local PAGE_W, PAGE_H = 320, 240
-local RED, GREEN, YELLOW = 0xff5050ff, 0xff60d060, 0xff40c8e8
+local RED, GREEN, YELLOW, GREY = 0xff5050ff, 0xff60d060, 0xff40c8e8, 0xff999999
 
 local function colored(color, text)
     imgui.PushStyleColor(imgui.constant.Col.Text, color)
@@ -274,11 +274,11 @@ local function drawTranslate(v, room)
     imgui.TextUnformatted('Japanese original')
     local jps, jerr = VP.jp.string(extra, i)
     if jps then
-        imgui.TextDisabled(string.format('JP pointer %d (%s)', jps.ptr, jps.how == 'same' and 'same index' or
+        colored(GREY, string.format('JP pointer %d (%s)', jps.ptr, jps.how == 'same' and 'same index' or
             'paired by the room logic'))
         drawPages(jps.window, jps.pages, 'JP', 'jppages')
     else
-        imgui.TextDisabled(jerr)
+        colored(GREY, jerr)
     end
     imgui.EndGroup()
     imgui.SameLine()
