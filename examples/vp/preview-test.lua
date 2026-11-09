@@ -32,6 +32,19 @@ local bases = {
 }
 local seen = {}
 
+-- VP_EDITABLE_OUT=<file> also writes every string's editable text form, one
+-- JSON string a line: the corpus of the web editor's chip round-trip test
+-- (translate-web-test.mjs).
+local editableOut = os.getenv('VP_EDITABLE_OUT') and assert(io.open(os.getenv('VP_EDITABLE_OUT'), 'w'))
+stats.editable = 0
+local function json(str)
+    return '"' .. str:gsub('[%c"\\]', function(c)
+        if c == '\n' then return '\\n' end
+        if c == '"' or c == '\\' then return '\\' .. c end
+        return string.format('\\u%04x', c:byte())
+    end) .. '"'
+end
+
 local function fail(path, what)
     stats.failures = stats.failures + 1
     if stats.failures <= 20 then print('FAIL ' .. path .. ': ' .. what) end
@@ -66,6 +79,15 @@ local function check(path, v)
     if seen[extra.key] then return end
     seen[extra.key] = true
     stats.scripts = stats.scripts + 1
+    if editableOut then
+        local lookup = resolveFont(extra.font)
+        local i = extra.first
+        while extra.tokens[i] do
+            editableOut:write(json(VP.text.toEditable(extra.tokens[i], lookup, extra.style)), '\n')
+            stats.editable = stats.editable + 1
+            i = i + 1
+        end
+    end
 
     if v.fontFile then
         local fontBytes = tostring(v.fontFile:readAt(v.fontFile:size(), 0))
@@ -176,6 +198,10 @@ walkDir(VP.vfs.expand(VP.vfs.root(iso))[2], '')
 
 print(string.format('scripts=%d identity=%d self=%d changed=%d boxes=%d accents=%d skipped=%d failures=%d',
     stats.scripts, stats.identity, stats.selfRows, stats.changed, stats.boxes, stats.accents, stats.skipped, stats.failures))
+if editableOut then
+    editableOut:close()
+    print(string.format('editable strings written: %d', stats.editable))
+end
 local pass = stats.failures == 0 and stats.scripts > 1000 and stats.identity == stats.scripts and stats.boxes > 0
     and stats.accents > 0
 print(pass and 'PASS' or 'FAIL')

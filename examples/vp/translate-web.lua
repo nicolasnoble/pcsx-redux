@@ -20,6 +20,17 @@ local M = VP.tmodel
 local H = PCSX.Html
 local BASE = '/api/v1/lua/vp'
 
+-- The rich editor's script, read once from the directory browser.lua is in.
+do
+    local f = io.open((VP.here or './') .. 'translate-web.js', 'r')
+    if f then
+        W.richScript = f:read('*a')
+        f:close()
+    else
+        print('translate-web: translate-web.js not found, the editor stays plain text')
+    end
+end
+
 local function decode(s)
     return (s:gsub('+', ' '):gsub('%%(%x%x)', function(h) return string.char(tonumber(h, 16)) end))
 end
@@ -60,12 +71,16 @@ local function html(status, title, body)
 body { font-family: sans-serif; margin: 1em; background: #1d1f23; color: #ddd; }
 a { color: #8cf; } textarea, input { background: #2a2d33; color: #eee; border: 1px solid #555; }
 textarea { width: 100%; font-family: monospace; font-size: 14px; }
-.cols { display: flex; gap: 1.5em; align-items: flex-start; } .cols > div { flex: 1; }
+.cols { display: flex; gap: 1.5em; align-items: flex-start; } .cols > div { flex: 1; } .pages { display: flex; flex-wrap: wrap; gap: 0 1em; }
 .red { color: #f66; } .green { color: #6d6; } .yellow { color: #ec4; }
-.page { background: #000; border: 2px solid #ccc; padding: 6px 10px; font-family: monospace;
-        white-space: pre; display: inline-block; min-width: 20em; margin: 4px 0; }
 input[type=number] { width: 5em; }
 .screen img { width: 640px; image-rendering: pixelated; border: 1px solid #555; }
+.rich { background: #2a2d33; color: #eee; border: 1px solid #555; font-family: monospace; font-size: 14px;
+        white-space: pre-wrap; min-height: 6em; padding: 2px; overflow-wrap: anywhere; }
+.rich[contenteditable=true] { min-height: 9em; } .rich:focus { outline: 1px solid #8cf; }
+.chip { background: #3d5a80; color: #fff; border-radius: 3px; padding: 0 3px; margin: 0 1px; font-size: 12px;
+        user-select: all; cursor: default; } .chip-new { background: #80603d; }
+img.gamepage { image-rendering: pixelated; border: 1px solid #555; display: block; margin: 4px 0; }
 table.list td { padding: 1px 1em 1px 0; } .hist { font-family: monospace; font-size: 12px; }
 ]]),
         },
@@ -107,9 +122,29 @@ local function ensureDb()
     return M.db, M.dbError
 end
 
-local function header(extra)
-    return H.p {
+local function header(back)
+    local target, source = M.languages()
+    return H.div {
         H.a { href = link { { 'p', 'list' } }, 'Scripts' }, ' | database ', H.code(M.openPath or M.path),
+        M.db and H.form { method = 'post', action = link { { 'p', 'languages' } }, style = 'display: inline',
+            ' | translating from ',
+            H.input { type = 'text', name = 'source', value = source, size = 6, title = 'BCP 47 tag, e.g. en' },
+            ' to ', H.input { type = 'text', name = 'target', value = target, size = 6, title = 'BCP 47 tag, e.g. fr' },
+            H.input { type = 'hidden', name = 'back', value = back or BASE },
+            ' ', H.input { type = 'submit', value = 'Set' }, ' ', VP.languages.describe(target),
+        } or false,
+    }
+end
+
+-- A text-form field that the rich editor can show as chips: the textarea is
+-- what the form posts, the div the chips. lang drives the browser spellchecker.
+local function richPair(textarea, lang, readonly)
+    textarea.attrs.lang = lang
+    textarea.attrs.spellcheck = readonly and 'false' or 'true'
+    return H.div { class = 'rich-pair',
+        textarea,
+        H.div { class = 'rich', lang = lang, spellcheck = readonly and 'false' or 'true',
+            contenteditable = not readonly and 'true' or false, style = 'display: none' },
     }
 end
 
@@ -135,11 +170,16 @@ local function listPage(q)
     })
 end
 
-local function pagesBlock(pages)
+-- Each page drawn in the game font (VP.glyphs.pagePng, the layout the ImGui
+-- preview draws), at twice the game's resolution, with its text as alt text.
+local function pagesBlock(window, pages)
     local out = {}
     for p, lines in ipairs(pages) do
         if #pages > 1 then out[#out + 1] = H.div(string.format('page %d/%d', p, #pages)) end
-        out[#out + 1] = H.div { class = 'page', table.concat(lines, '\n') }
+        local png = VP.glyphs.pagePng(window, lines)
+        local text = table.concat(lines, '\n')
+        out[#out + 1] = H.img { class = 'gamepage', width = 640, height = 480, alt = text, title = text,
+            src = 'data:image/png;base64,' .. base64.encode(png) }
     end
     return out
 end
@@ -199,17 +239,17 @@ local function editPage(path, i, e, message, conflict)
 
     local tokens, perr2, ppos = M.parse(extra, e)
     local fit = {}
-    local trPages = {}
+    local trPages, trWindow = {}, nil
     if tokens then
-        local _, pages, problems, notes = M.translationPreview(extra, i, e, tokens, lookup)
-        trPages = pages
+        local window, pages, problems, notes = M.translationPreview(extra, i, e, tokens, lookup)
+        trPages, trWindow = pages, window
         if #problems == 0 and #notes == 0 then fit[1] = H.p { class = 'green', 'Fits the box.' } end
         for _, p in ipairs(problems) do fit[#fit + 1] = H.p { class = 'red', p } end
         for _, n in ipairs(notes) do fit[#fit + 1] = H.p { class = 'yellow', n } end
     else
         fit[1] = H.p { class = 'red', string.format('At byte %d: %s', ppos, perr2) }
     end
-    local _, origPages = M.originalPreview(ptrs[i], extra, i, lookup)
+    local origWindow, origPages = M.originalPreview(ptrs[i], extra, i, lookup)
 
     local statuses = {}
     for s = 0, 2 do
@@ -222,6 +262,7 @@ local function editPage(path, i, e, message, conflict)
         return H.label { ' ', label, ' ', H.input { type = 'number', name = name, value = e[name], min = 0, size = 5 } }
     end
 
+    local target, source = M.languages()
     local conflictBlock = false
     if conflict then
         conflictBlock = H.div { class = 'red',
@@ -230,8 +271,8 @@ local function editPage(path, i, e, message, conflict)
                 conflict.author or 'Someone', conflict.version, e.base)),
             conflict.deletedAt and H.p 'Their version deletes the translation.' or false,
             H.p('Theirs (' .. (VP.tdb.statusNames[conflict.status] or '?') .. '):'),
-            H.textarea { rows = 4, readonly = true,
-                conflict.tokens and VP.text.toEditable(conflict.tokens, lookup) or '' },
+            richPair(H.textarea { rows = 4, readonly = true,
+                conflict.tokens and VP.text.toEditable(conflict.tokens, lookup) or '' }, target, true),
             H.p 'Yours is in the editor below. Save again to keep yours over theirs, or',
             H.a { href = at(i), 'take theirs' }, '.',
         }
@@ -242,20 +283,26 @@ local function editPage(path, i, e, message, conflict)
 
     return html('200 OK', path .. ' #' .. i, {
         H.h1 { path, ' #', i },
-        header(),
+        header(at(i)),
         nav,
         conflictBlock,
         H.div { class = 'cols',
             H.div {
                 H.h3 'Original',
-                H.textarea { rows = 4, readonly = true, VP.text.toEditable(extra.tokens[i], lookup) },
+                richPair(H.textarea { rows = 4, readonly = true, VP.text.toEditable(extra.tokens[i], lookup) },
+                    source, true),
                 H.form { method = 'post', action = link { { 'p', 'save' } },
                     H.input { type = 'hidden', name = 'path', value = path },
                     H.input { type = 'hidden', name = 'i', value = i },
                     -- The version this edit started from; a conflict raises it to theirs.
                     H.input { type = 'hidden', name = 'base', value = conflict and conflict.version or e.base },
-                    H.h3 'Translation (control codes as {tags}, write {{ and }} for braces)',
-                    H.textarea { name = 'text', rows = 6, e.text },
+                    H.h3 'Translation',
+                    H.p {
+                        H.label { H.input { type = 'checkbox', id = 'rich-toggle' }, ' control codes as chips' },
+                        ' (as plain text they are {tags}, and {{ and }} are braces) ',
+                        H.span { id = 'rich-message', class = 'red' },
+                    },
+                    richPair(H.textarea { name = 'text', rows = 6, e.text }, target, false),
                     e.sourceChanged and H.p { class = 'red', 'The original text changed since this translation was saved.' }
                         or false,
                     H.p {
@@ -275,15 +322,16 @@ local function editPage(path, i, e, message, conflict)
                 },
                 message and H.p { class = message.class, message.text } or false,
                 fit,
-                H.div { class = 'cols',
-                    H.div { H.h3 'Original page', pagesBlock(origPages) },
-                    H.div { H.h3 'Translated page', pagesBlock(trPages) },
+                H.div { class = 'pages',
+                    H.div { H.h3 'Original page', pagesBlock(origWindow, origPages) },
+                    H.div { H.h3 'Translated page', pagesBlock(trWindow, trPages) },
                 },
                 H.h3 'History',
                 H.div { class = 'hist', hist },
             },
             H.div { screenBlock() },
         },
+        W.richScript and H.script(H.raw(W.richScript)) or false,
     })
 end
 
@@ -327,6 +375,15 @@ function W.handle(request)
         return editPage(q.path, tonumber(q.i), nil, msg)
     end
     if p == 'save' and request.method == 'POST' then return save(form) end
+    if p == 'languages' and request.method == 'POST' then
+        local db, dberr = ensureDb()
+        if not db then return html('200 OK', 'Error', { H.p { class = 'red', dberr } }) end
+        local ok, err = M.setLanguages(form.target or '', form.source or '')
+        if not ok then return html('400 Bad Request', 'Bad language', { H.p { class = 'red', err } }) end
+        local back = form.back or ''
+        if not back:match('^/') then back = BASE end
+        return redirect(back)
+    end
     if p == 'preview' and request.method == 'POST' then
         local db, dberr = ensureDb()
         if form.on == '1' and db then VP.preview.arm(db) elseif form.on == '0' then VP.preview.disarm() end

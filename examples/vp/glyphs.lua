@@ -317,43 +317,143 @@ local function drawSolid(a, name, ox, oy, x, y, w, h, scale)
     imgui.Image(a.texture, w * scale, h * scale, uv[1], uv[2], uv[3], uv[4])
 end
 
--- Draws one page at the current cursor position and moves the cursor below it.
--- Returns the number of characters that had no glyph.
-function VP.glyphs.drawPage(window, lines, font, scale)
-    local a = VP.glyphs.atlas()
-    local map = a.maps[font or 'US']
-    scale = scale or 2
-    local ox, oy = imgui.GetCursorPos()
-    drawSolid(a, 'page', ox, oy, 0, 0, PAGE_W, PAGE_H, scale)
-
+-- Lays out one page the way the game draws it: solid(name, x, y, w, h) for
+-- the page and the window frame, then glyph(g, x, y) for every glyph that
+-- starts on the page, in page pixels. map gives each character's glyph (its
+-- width is the advance). Returns the number of characters with no glyph.
+local function layoutPage(window, lines, map, solid, glyph)
+    solid('page', 0, 0, PAGE_W, PAGE_H)
     local xBase, yCurr = 10, 10
     if window then
         xBase, yCurr = window.x, window.y
         local w, h = window.width, window.height
-        drawSolid(a, 'outer', ox, oy, xBase - 8, yCurr, 1, h, scale)
-        drawSolid(a, 'inner', ox, oy, xBase - 7, yCurr, 2, h, scale)
-        drawSolid(a, 'outer', ox, oy, xBase - 2, yCurr - 7, w + 5, 1, scale)
-        drawSolid(a, 'inner', ox, oy, xBase - 2, yCurr - 6, w + 5, 2, scale)
-        drawSolid(a, 'outer', ox, oy, xBase + w + 9, yCurr, 1, h, scale)
-        drawSolid(a, 'inner', ox, oy, xBase + w + 7, yCurr, 2, h, scale)
-        drawSolid(a, 'outer', ox, oy, xBase - 2, yCurr + h + 6, w + 5, 1, scale)
-        drawSolid(a, 'inner', ox, oy, xBase - 2, yCurr + h + 4, w + 5, 2, scale)
+        solid('outer', xBase - 8, yCurr, 1, h)
+        solid('inner', xBase - 7, yCurr, 2, h)
+        solid('outer', xBase - 2, yCurr - 7, w + 5, 1)
+        solid('inner', xBase - 2, yCurr - 6, w + 5, 2)
+        solid('outer', xBase + w + 9, yCurr, 1, h)
+        solid('inner', xBase + w + 7, yCurr, 2, h)
+        solid('outer', xBase - 2, yCurr + h + 6, w + 5, 1)
+        solid('inner', xBase - 2, yCurr + h + 4, w + 5, 2)
     end
-
     local missing = 0
     for _, line in ipairs(lines) do
         local _, m = layoutLine(line, map, function(g, dx)
             local x = xBase + dx
-            if x < PAGE_W and yCurr < PAGE_H then
-                imgui.SetCursorPos(ox + x * scale, oy + yCurr * scale)
-                imgui.Image(a.texture, g.width * scale, g.height * scale, g.u0, g.v0, g.u1, g.v1)
-            end
+            if x < PAGE_W and yCurr < PAGE_H then glyph(g, x, yCurr) end
         end)
         missing = missing + m
         yCurr = yCurr + LINE_H
     end
+    return missing
+end
 
+-- Draws one page at the current cursor position and moves the cursor below it.
+-- Returns the number of characters that had no glyph.
+function VP.glyphs.drawPage(window, lines, font, scale)
+    local a = VP.glyphs.atlas()
+    scale = scale or 2
+    local ox, oy = imgui.GetCursorPos()
+    local missing = layoutPage(window, lines, a.maps[font or 'US'], function(name, x, y, w, h)
+        drawSolid(a, name, ox, oy, x, y, w, h, scale)
+    end, function(g, x, y)
+        imgui.SetCursorPos(ox + x * scale, oy + y * scale)
+        imgui.Image(a.texture, g.width * scale, g.height * scale, g.u0, g.v0, g.u1, g.v1)
+    end)
     imgui.SetCursorPos(ox, oy + PAGE_H * scale)
     imgui.Dummy(PAGE_W * scale, 4)
     return missing
+end
+
+-- The same page as drawPage, as a 320x240 PNG (palette: page, ink, and the
+-- two frame colours), for views with no GL context. Returns the PNG bytes and
+-- the number of characters that had no glyph.
+local palette = { 'page', 'ink', 'outer', 'inner' }
+local colorOf = { ink = 0xff000000 }
+for k, v in pairs(solids) do colorOf[k] = v end
+local indexOf = {}
+for i, name in ipairs(palette) do indexOf[name] = i - 1 end
+local bitmapCache = setmetatable({}, { __mode = 'k' })
+
+local crcTable
+local function crc32(s)
+    if not crcTable then
+        crcTable = {}
+        for n = 0, 255 do
+            local c = n
+            for _ = 1, 8 do c = bit.band(c, 1) ~= 0 and bit.bxor(0xedb88320, bit.rshift(c, 1)) or bit.rshift(c, 1) end
+            crcTable[n] = c
+        end
+    end
+    local c = 0xffffffff
+    for i = 1, #s do c = bit.bxor(crcTable[bit.band(bit.bxor(c, s:byte(i)), 0xff)], bit.rshift(c, 8)) end
+    return bit.bxor(c, 0xffffffff)
+end
+
+local function be32(n)
+    return string.char(bit.band(bit.rshift(n, 24), 255), bit.band(bit.rshift(n, 16), 255),
+        bit.band(bit.rshift(n, 8), 255), bit.band(n, 255))
+end
+
+local function chunk(kind, data) return be32(#data) .. kind .. data .. be32(crc32(kind .. data)) end
+
+-- zlib stream of stored (uncompressed) deflate blocks.
+local function zstore(data)
+    local out, a, b = { '\120\1' }, 1, 0
+    for i = 1, #data do
+        a = (a + data:byte(i)) % 65521
+        b = (b + a) % 65521
+    end
+    local pos = 1
+    repeat
+        local n = math.min(65535, #data - pos + 1)
+        local final = pos + n > #data and 1 or 0
+        out[#out + 1] = string.char(final, bit.band(n, 255), bit.rshift(n, 8), bit.band(bit.bnot(n), 255),
+            bit.band(bit.rshift(bit.bnot(n), 8), 255))
+        out[#out + 1] = data:sub(pos, pos + n - 1)
+        pos = pos + n
+    until pos > #data
+    out[#out + 1] = be32(b * 65536 + a)
+    return table.concat(out)
+end
+
+function VP.glyphs.pagePng(window, lines, font)
+    local db = font == 'JP' and VP.constants.fontJP or VP.constants.font
+    local pix = ffi.new('uint8_t[?]', PAGE_W * PAGE_H)
+    local function fill(x0, y0, w, h, v)
+        for y = math.max(0, y0), math.min(PAGE_H, y0 + h) - 1 do
+            for x = math.max(0, x0), math.min(PAGE_W, x0 + w) - 1 do pix[y * PAGE_W + x] = v end
+        end
+    end
+    local missing = layoutPage(window, lines, db, function(name, x, y, w, h)
+        fill(x, y, w, h, indexOf[name])
+    end, function(g, x0, y0)
+        local bytes = bitmapCache[g]
+        if not bytes then
+            bytes = base64.decode(g.data)
+            bitmapCache[g] = bytes
+        end
+        for y = 0, g.height - 1 do
+            local bits = (bytes:byte(y * 2 + 2) or 0) * 256 + (bytes:byte(y * 2 + 1) or 0)
+            for x = 0, math.min(g.width, CELL_W) - 1 do
+                local px, py = x0 + x, y0 + y
+                if bit.band(bits, bit.lshift(1, 15 - x)) ~= 0 and px < PAGE_W and py < PAGE_H then
+                    pix[py * PAGE_W + px] = indexOf.ink
+                end
+            end
+        end
+    end)
+    local rows = {}
+    for y = 0, PAGE_H - 1 do rows[#rows + 1] = '\0' .. ffi.string(pix + y * PAGE_W, PAGE_W) end
+    local plte = {}
+    for _, name in ipairs(palette) do
+        local c = colorOf[name]
+        plte[#plte + 1] = string.char(bit.band(c, 255), bit.band(bit.rshift(c, 8), 255), bit.band(bit.rshift(c, 16), 255))
+    end
+    local png = '\137PNG\r\n\26\n' ..
+        chunk('IHDR', be32(PAGE_W) .. be32(PAGE_H) .. '\8\3\0\0\0') ..
+        chunk('PLTE', table.concat(plte)) ..
+        chunk('IDAT', zstore(table.concat(rows))) ..
+        chunk('IEND', '')
+    return png, missing
 end

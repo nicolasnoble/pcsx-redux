@@ -13,6 +13,8 @@ VP.constants = VP.constants or {}
 VP.arguments = VP.arguments or {}
 VP.arguments.dump = false
 VP.arguments.dumpGlyphs = false
+-- This directory, for the files the scripts read that are not Lua (translate-web.js).
+VP.here = debug.getinfo(1, 'S').source:match('^@(.*/)') or './'
 
 local d = Support.extra.dofile
 
