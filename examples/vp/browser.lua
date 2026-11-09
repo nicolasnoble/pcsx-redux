@@ -13,10 +13,29 @@ VP.constants = VP.constants or {}
 VP.arguments = VP.arguments or {}
 VP.arguments.dump = false
 VP.arguments.dumpGlyphs = false
--- This directory, for the files the scripts read that are not Lua (translate-web.js).
-VP.here = debug.getinfo(1, 'S').source:match('^@(.*/)') or './'
+-- This directory: '' when browser.lua was loaded from the root of a mounted
+-- archive (vp-translate.zip), so the names below are archive member names.
+VP.here = debug.getinfo(1, 'S').source:match('^@(.*/)') or ''
 
-local d = Support.extra.dofile
+-- Modules load with require 'vp.<file>', resolved next to this script.
+-- Support._internal.loadfile looks in the mounted archives first, then on disk,
+-- so the same names work from a source tree and from the zip.
+VP.readFile = function(name)
+    local ok, text = pcall(Support._internal.loadfile, VP.here .. name)
+    if ok then return text end
+end
+if not VP.searcher then
+    VP.searcher = function(module)
+        local file = module:match('^vp%.(.+)$')
+        if not file then return end
+        local path = VP.here .. file .. '.lua'
+        local text = VP.readFile(file .. '.lua')
+        if not text then return '\n\tno file ' .. path .. ' in the mounted archives or on disk' end
+        return assert(loadstring(text, '@' .. path))
+    end
+    table.insert(package.loaders, 2, VP.searcher)
+end
+local function d(name) return require('vp.' .. name:gsub('%.lua$', '')) end
 
 d 'base64.lua'
 d 'constants.lua'
@@ -49,7 +68,12 @@ d 'translate-web.lua'
 d 'translate-web-glyphs.lua'
 d 'preview.lua'
 -- The GUI loads this resource at startup; without a GUI (-no-ui) it does not.
-if not (PCSX.FileViewers and PCSX.FileViewers.soundViewer) then d '../../resources/fileviewers.lua' end
+if not (PCSX.FileViewers and PCSX.FileViewers.soundViewer) then
+    -- Found in a source tree; from the archive there is none, and sounds have no viewer.
+    if not pcall(Support.extra.dofile, VP.here .. '../../resources/fileviewers.lua') then
+        print('vp: no resources/fileviewers.lua next to this script, sound viewers disabled')
+    end
+end
 d 'images.lua'
 d 'sounds.lua'
 d 'loadlog.lua'

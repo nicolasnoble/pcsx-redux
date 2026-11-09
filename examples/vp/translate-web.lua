@@ -22,11 +22,8 @@ local BASE = '/api/v1/lua/vp'
 
 -- The rich editor's script, read once from the directory browser.lua is in.
 do
-    local f = io.open((VP.here or './') .. 'translate-web.js', 'r')
-    if f then
-        W.richScript = f:read('*a')
-        f:close()
-    else
+    W.richScript = VP.readFile and VP.readFile('translate-web.js')
+    if not W.richScript then
         print('translate-web: translate-web.js not found, the editor stays plain text')
     end
 end
