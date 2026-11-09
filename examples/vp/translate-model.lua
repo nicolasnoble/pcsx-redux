@@ -4,7 +4,8 @@
 --
 -- An edit state is a plain table: base (the version it was loaded from), text
 -- (the editable form of VP.text.toEditable), status, note, override and
--- boxX/boxY/boxW/boxH, sourceChanged. Views keep their own per-pointer table
+-- boxX/boxY/boxW/boxH, sourceChanged, and optionally author (the translator
+-- saving it, M.author when absent). Views keep their own per-pointer table
 -- of them and add whatever display fields they need.
 --
 -- The database file is VP_TDB from the environment, or vp-fr.tdb in the current
@@ -85,7 +86,7 @@ function M.parse(extra, e) return VP.text.fromEditable(e.text, extra.style) end
 local function rowFromEdit(extra, i, e, tokens)
     local row = {
         key = extra.key, idx = i, srcHash = srcHash(extra, i), tokens = tokens, status = e.status,
-        author = M.author ~= '' and M.author or nil, note = e.note ~= '' and e.note or nil,
+        author = (e.author or M.author) ~= '' and (e.author or M.author) or nil, note = e.note ~= '' and e.note or nil,
     }
     if e.override then row.boxX, row.boxY, row.boxW, row.boxH = e.boxX, e.boxY, e.boxW, e.boxH end
     return row
