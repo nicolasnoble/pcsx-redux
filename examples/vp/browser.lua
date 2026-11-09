@@ -36,6 +36,7 @@ d 'utils.lua'
 d 'vfs.lua'
 d 'glyphs.lua'
 d 'tdb.lua'
+d 'translate-model.lua'
 d 'translate.lua'
 d 'preview.lua'
 -- The GUI loads this resource at startup; without a GUI (-no-ui) it does not.
