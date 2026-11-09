@@ -5,7 +5,8 @@
 --
 -- Red arms: VP_TDB_RED=1 makes the sqlite backend skip its version check,
 -- which the conflict tests must catch; VP_TDB_RED=2 runs transactions without
--- a transaction, which the rollback test must catch.
+-- a transaction, which the rollback test must catch; VP_TDB_RED=3 gives every
+-- language every letter, which the languages test must catch.
 
 local here = debug.getinfo(1, 'S').source:match('^@(.*/)') or './'
 Support.extra.dofile(here .. 'browser.lua')
@@ -17,6 +18,10 @@ if os.getenv('VP_TDB_RED') == '1' then
         return cas(self, rec, cur and cur.version or 0, now)
     end
     print('red arm: the version check is skipped')
+end
+if os.getenv('VP_TDB_RED') == '3' then
+    VP.languages.charset = function() return VP.constants.font end
+    print('red arm: every language gets every letter')
 end
 if os.getenv('VP_TDB_RED') == '2' then
     VP.tdb.backends.sqlite.transaction = function(self, fn) return fn() end
@@ -303,6 +308,50 @@ test('editable codec', function()
     refuses('{rspd 1}', 'an argument on an alias')
     refuses('a}b', 'a lone }')
     refuses('{new', 'an unclosed tag')
+end)
+
+test('languages', function()
+    -- A database made before the settings migration upgrades to fr from en.
+    local path = os.tmpname()
+    os.remove(path)
+    paths[#paths + 1] = path
+    local old = VP.tdb.open(path, { migrations = { VP.tdb.migrations[1] } })
+    old:close()
+    local db = VP.tdb.open(path)
+    eq(db:targetLanguage(), 'fr', 'upgraded target')
+    eq(db:sourceLanguage(), 'en', 'upgraded source')
+    db:close()
+    db = tmpdb()
+    eq(db:targetLanguage(), 'fr', 'new target')
+    truthy(db:setLanguage('target', 'fr-CA'), 'fr-CA accepted')
+    eq(db:targetLanguage(), 'fr-CA', 'target set')
+    for _, bad in ipairs({ 'french!', '', 'f', 'fr-', 'fr--CA', 'toolongsubtag-x', 'fr-abcdefghi' }) do
+        local ok = db:setLanguage('target', bad)
+        if ok then error('accepted the tag ' .. bad, 0) end
+    end
+    eq(db:targetLanguage(), 'fr-CA', 'a refused tag changes nothing')
+    -- fr-CA uses the fr letters; en has none, so the same text no longer parses
+    -- or fits, exactly as a character with no glyph at all.
+    truthy(db:charset()['é'], 'fr-CA has é')
+    truthy(VP.text.fromEditable('été', 'primary', db:charset()), 'été parses in fr-CA')
+    db:setLanguage('target', 'en')
+    eq(db:charset()['é'], nil, 'en has no é')
+    truthy(db:charset()['e'], 'en has e')
+    local t, err = VP.text.fromEditable('été', 'primary', db:charset())
+    eq(t, nil, 'été parses in en')
+    truthy(err:find('No glyph for é', 1, true), 'refused as a missing glyph: ' .. tostring(err))
+    local problems = VP.tdb.fitProblems(chars('été'), { width = 100, height = 14 }, nil, db:charset())
+    eq(problems[1], '2 characters have no glyph', 'fit check in en')
+    local ok, msg = db:put({ key = 'k', idx = 3, tokens = chars('été'), status = VP.tdb.status.reviewed }, 0,
+        { box = { width = 100, height = 14 } })
+    eq(ok, nil, 'reviewed save in en')
+    truthy(msg:find('no glyph', 1, true), 'reviewed save refused on the glyph: ' .. tostring(msg))
+    db:setLanguage('target', 'fr')
+    truthy(db:put({ key = 'k', idx = 3, tokens = chars('été'), status = VP.tdb.status.reviewed }, 0,
+        { box = { width = 100, height = 14 } }), 'reviewed save in fr')
+    -- The retail font has no French letters; the font database has them all.
+    eq(VP.constants.retailFont['é'], nil, 'retail font has no é')
+    truthy(VP.constants.font['é'], 'font database has é')
 end)
 
 for _, t in ipairs(tests) do

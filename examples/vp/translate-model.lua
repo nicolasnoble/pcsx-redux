@@ -81,7 +81,29 @@ function M.loadEdit(extra, i, lookup)
 end
 
 -- The edit's text as tokens, or nil, message, byte position.
-function M.parse(extra, e) return VP.text.fromEditable(e.text, extra.style) end
+-- Only characters of the database's target language parse.
+function M.parse(extra, e) return VP.text.fromEditable(e.text, extra.style, M.charset()) end
+
+-- Characters the open database's target language may use.
+function M.charset() return M.db and M.db:charset() or VP.constants.font end
+
+-- Sets the open database's languages (BCP 47 tags). Returns true, or nil and
+-- a message, in which case neither changed.
+function M.setLanguages(target, source)
+    if not M.db then return nil, 'No database open' end
+    for _, t in ipairs({ target, source }) do
+        if not VP.languages.valid(t) then return nil, 'Not a language tag: ' .. tostring(t) end
+    end
+    M.db:setLanguage('target', target)
+    M.db:setLanguage('source', source)
+    return true
+end
+
+-- The open database's target and source languages, or the defaults.
+function M.languages()
+    if not M.db then return 'fr', 'en' end
+    return M.db:targetLanguage(), M.db:sourceLanguage()
+end
 
 local function rowFromEdit(extra, i, e, tokens)
     local row = {
@@ -147,7 +169,7 @@ function M.translationPreview(extra, i, e, tokens, lookup)
     local head = M.windowHead(tb, row)
     local window = head and VP.glyphs.windowGeometry(head) or nil
     local box = VP.tdb.effectiveBox(row or {}, M.originalBox(tb))
-    local problems, notes, wrapped = VP.tdb.fitProblems(tokens, box, lookup)
+    local problems, notes, wrapped = VP.tdb.fitProblems(tokens, box, lookup, M.charset())
     return window, VP.glyphs.scrollPages(wrapped, box.height), problems, notes
 end
 

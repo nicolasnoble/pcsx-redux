@@ -165,6 +165,13 @@ end
 -- advances by its glyph's width, and a character with no glyph in `map` is
 -- skipped. Calls fn(glyph, x) for each drawn glyph, x relative to the line's
 -- start. Returns the line's width and the number of characters skipped.
+-- `set` in the functions below is 'US' (the default) or 'JP', the font
+-- database to measure with, or a charset table such as VP.languages.charset.
+local function mapOf(set)
+    if type(set) == 'table' then return set end
+    return set == 'JP' and VP.constants.fontJP or VP.constants.font
+end
+
 local function layoutLine(line, map, fn)
     local x, missing = 0, 0
     for ch in line:gmatch('[%z\1-\127\194-\244][\128-\191]*') do
@@ -243,7 +250,7 @@ end
 -- wider than the box on its own. width nil returns the line unchanged.
 function VP.glyphs.wrapLine(line, width, set)
     if type(width) ~= 'number' then return { line }, false end
-    local map = set == 'JP' and VP.constants.fontJP or VP.constants.font
+    local map = mapOf(set)
     local out, cur, tooWide = {}, line:match('^ *'), false
     local hasWord = false
     for word, spaces in line:gmatch('([^ ]+)( *)') do
@@ -290,7 +297,7 @@ function VP.glyphs.scrollPages(pages, height)
 end
 
 function VP.glyphs.measureTokens(tokens, lookup, style, set)
-    local map = set == 'JP' and VP.constants.fontJP or VP.constants.font
+    local map = mapOf(set)
     local widths, missing = {}, 0
     for p, lines in ipairs(VP.glyphs.pagesFromTokens(tokens, lookup, style)) do
         widths[p] = {}

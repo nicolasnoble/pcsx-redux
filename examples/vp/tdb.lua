@@ -194,6 +194,14 @@ CREATE TABLE history (
 CREATE INDEX history_row ON history (script_key, ptr_idx, version);
 ]]
     end,
+    -- Database-wide settings. A database made before this migration translates
+    -- English into French, which is what it was used for.
+    [2] = function(db)
+        db:exec [[
+CREATE TABLE settings (name TEXT PRIMARY KEY, value TEXT NOT NULL);
+INSERT INTO settings (name, value) VALUES ('target_language', 'fr'), ('source_language', 'en');
+]]
+    end,
 }
 
 -- Columns of a stored record, in table order, and the row field each maps to.
@@ -228,7 +236,8 @@ end
 -- compareAndSet(record, expectedVersion, now) stores the record as version
 -- expectedVersion + 1 when the stored version is expectedVersion (0 meaning no
 -- stored row), and returns true and the stored record, or false and the
--- current record.
+-- current record. getSetting(name) and setSetting(name, value) read and write
+-- the database-wide settings, strings keyed by name.
 VP.tdb.backends = VP.tdb.backends or {}
 
 local sqlite = {}
@@ -329,6 +338,15 @@ function sqlite:transaction(fn) return self.db:transaction(fn) end
 
 function sqlite:close() self.db:close() end
 
+function sqlite:getSetting(name)
+    local r = self.db:first('SELECT value FROM settings WHERE name = ?', name)
+    return r and r.value
+end
+
+function sqlite:setSetting(name, value)
+    self.db:run('INSERT OR REPLACE INTO settings (name, value) VALUES (?, ?)', name, value)
+end
+
 -- The database object the editor uses, over any backend.
 local tdb = {}
 tdb.__index = tdb
@@ -426,6 +444,23 @@ end
 
 function tdb:close() self.backend:close() end
 
+-- The languages the database translates between, BCP 47 tags: target
+-- (default fr) and source (default en). The target picks the letters a
+-- translation may use (VP.languages.charset).
+function tdb:targetLanguage() return self.backend:getSetting('target_language') or 'fr' end
+function tdb:sourceLanguage() return self.backend:getSetting('source_language') or 'en' end
+
+-- Sets 'target' or 'source' to a tag. Returns true, or nil and a message.
+function tdb:setLanguage(which, tag)
+    if which ~= 'target' and which ~= 'source' then error('tdb:setLanguage: target or source', 2) end
+    if not VP.languages.valid(tag) then return nil, 'Not a language tag: ' .. tostring(tag) end
+    self.backend:setSetting(which .. '_language', tag)
+    return true
+end
+
+-- Characters a translation in this database may use.
+function tdb:charset() return VP.languages.charset(self:targetLanguage()) end
+
 -- The geometry a row will be shown in: its overrides over the original box.
 -- original is { x, y, width, height } or nil.
 function VP.tdb.effectiveBox(row, original)
@@ -444,22 +479,24 @@ end
 -- five), so neither stops a review; a missing glyph or a single word wider than
 -- the box does. When the width is only known at run time, wrapping is not
 -- checked. context.box is the original textbox, context.lookup the script
--- font's glyph-to-character map for any {g} token.
-function VP.tdb.fitHook(row, context)
+-- font's glyph-to-character map for any {g} token. A character outside the
+-- database's target language (tdb:charset) has no glyph.
+function VP.tdb.fitHook(row, context, db)
     if row.status ~= VP.tdb.status.reviewed or not row.tokens then return nil end
     local box = VP.tdb.effectiveBox(row, context.box)
-    local problems = VP.tdb.fitProblems(row.tokens, box, context.lookup)
+    local problems = VP.tdb.fitProblems(row.tokens, box, context.lookup, db and db:charset())
     if #problems > 0 then return 'Cannot be marked reviewed: ' .. problems[1] end
     return nil
 end
 
 -- Returns the problems that stop a review, and the notes that do not (pages
--- that scroll).
-function VP.tdb.fitProblems(tokens, box, lookup)
+-- that scroll). charset is the characters that have a glyph (the font
+-- database when nil).
+function VP.tdb.fitProblems(tokens, box, lookup, charset)
     local problems, notes = {}, {}
-    local widths, missing = VP.glyphs.measureTokens(tokens, lookup)
+    local widths, missing = VP.glyphs.measureTokens(tokens, lookup, nil, charset)
     if missing > 0 then problems[#problems + 1] = missing .. ' characters have no glyph' end
-    local pages, tooWide = VP.glyphs.wrapPages(VP.glyphs.pagesFromTokens(tokens, lookup), box.width)
+    local pages, tooWide = VP.glyphs.wrapPages(VP.glyphs.pagesFromTokens(tokens, lookup), box.width, charset)
     if tooWide then
         problems[#problems + 1] = string.format('a word is wider than the box (%d px) and cannot wrap', box.width)
     end

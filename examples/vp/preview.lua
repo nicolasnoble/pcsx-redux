@@ -198,9 +198,12 @@ function preview.buildFont(font)
 end
 
 -- Turns the { ch } tokens of rows into { g } tokens of the room's font, adding
--- glyphs from the font database that the room does not have. Returns the new
--- rows, the new font bytes (nil when unchanged) and the number of glyphs added.
-function preview.resolveChars(rows, fontBytes)
+-- glyphs from charset that the room does not have. charset is the database's
+-- target language (tdb:charset), the whole font database when nil. Returns the
+-- new rows, the new font bytes (nil when unchanged) and the number of glyphs
+-- added.
+function preview.resolveChars(rows, fontBytes, charset)
+    charset = charset or VP.constants.font
     local font = preview.parseFont(fontBytes)
     local added = 0
     local out = {}
@@ -210,8 +213,8 @@ function preview.resolveChars(rows, fontBytes)
         local toks = { terminated = row.tokens.terminated }
         for i, t in ipairs(row.tokens) do
             if t.ch then
-                local g = VP.constants.font[t.ch]
-                if not g then error(string.format('pointer %d: no glyph for %s in the font database', idx, t.ch)) end
+                local g = charset[t.ch]
+                if not g then error(string.format('pointer %d: no glyph for %s in the target language', idx, t.ch)) end
                 if g.height ~= font.height then error('pointer ' .. idx .. ': glyph height does not match the room font') end
                 local bitmap = base64.decode(g.data)
                 local k = g.width .. '-' .. bitmap
@@ -260,7 +263,7 @@ function preview.patched(script, font)
     entry.n = n
     if n == 0 then return entry end
     local ok, err = pcall(function()
-        local resolved, newFont, added = preview.resolveChars(rows, font)
+        local resolved, newFont, added = preview.resolveChars(rows, font, db.charset and db:charset())
         local bytes, problems = preview.rebuild(script, resolved)
         entry.script, entry.font, entry.added, entry.problems = bytes, newFont, added, problems
     end)

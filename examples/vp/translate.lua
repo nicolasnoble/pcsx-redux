@@ -119,6 +119,33 @@ local function drawPreviewControl()
     if #log > 0 then imgui.TextUnformatted('Last: ' .. log[#log]) end
 end
 
+-- The database's languages: the target picks the letters a translation may
+-- use, and both are what the web view tells the browser's spellchecker.
+local function drawLanguages(v)
+    local target, source = M.languages()
+    if v.langDb ~= M.db then v.langDb, v.target, v.source = M.db, target, source end
+    imgui.TextUnformatted('Translating from')
+    imgui.SameLine()
+    imgui.SetNextItemWidth(80)
+    local _, src = imgui.extra.InputText('##srclang', v.source)
+    v.source = src
+    imgui.SameLine()
+    imgui.TextUnformatted('to')
+    imgui.SameLine()
+    imgui.SetNextItemWidth(80)
+    local _, tgt = imgui.extra.InputText('##tgtlang', v.target)
+    v.target = tgt
+    imgui.SameLine()
+    if (v.target ~= target or v.source ~= source) and imgui.Button('Set languages') then
+        local ok, err = M.setLanguages(v.target, v.source)
+        v.langMessage = ok and nil or err
+        v.edits = {}
+    end
+    imgui.SameLine()
+    imgui.TextUnformatted(VP.languages.describe(target))
+    if v.langMessage then colored(RED, v.langMessage) end
+end
+
 local function drawTranslate(v, room)
     imgui.TextUnformatted('Database')
     imgui.SameLine()
@@ -139,6 +166,7 @@ local function drawTranslate(v, room)
     if M.dbError then colored(RED, M.dbError) end
     if not M.db and not M.dbError then M.open(M.path) end
     if not M.db then return end
+    drawLanguages(v)
     drawPreviewControl()
 
     local ptrs, err = VP.vfs.ptrs(room)
