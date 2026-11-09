@@ -25,6 +25,10 @@ local solids = {
 }
 
 local atlas
+-- Glyphs drawn from a charset table (a translation database's, VP.tdb
+-- charset) that are not in the font databases: edited and added glyphs. Each
+-- new one rebuilds the atlas.
+local extraGlyphs, extraSeen = {}, {}
 
 local function buildAtlas()
     local entries = {}
@@ -33,12 +37,14 @@ local function buildAtlas()
             entries[#entries + 1] = { set = set.key, text = text, glyph = g }
         end
     end
+    for _, g in ipairs(extraGlyphs) do entries[#entries + 1] = { glyph = g } end
     local solidNames = { 'page', 'outer', 'inner' }
     local count = #entries + #solidNames
     local rows = math.ceil(count / COLS)
     local w, h = COLS * STRIDE_W, rows * STRIDE_H
     local pix = ffi.new('uint32_t[?]', w * h)
     local maps = { US = {}, JP = {} }
+    local byGlyph = {}
 
     local function cellOrigin(i)
         return (i % COLS) * STRIDE_W + GUTTER, math.floor(i / COLS) * STRIDE_H + GUTTER
@@ -57,12 +63,14 @@ local function buildAtlas()
                 end
             end
         end
-        maps[e.set][e.text] = {
+        local uv = {
             width = g.width,
             height = g.height,
             u0 = cx / w, v0 = cy / h,
-            u1 = (cx + g.width) / w, v1 = (cy + g.height) / h,
+            u1 = (cx + math.min(g.width, CELL_W)) / w, v1 = (cy + g.height) / h,
         }
+        if e.set then maps[e.set][e.text] = uv end
+        byGlyph[g] = uv
     end
 
     local solidUV = {}
@@ -83,13 +91,41 @@ local function buildAtlas()
     gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MAG_FILTER, gl.GL_NEAREST)
     gl.glTexImage2D(gl.GL_TEXTURE_2D, 0, gl.GL_RGBA, w, h, 0, gl.GL_RGBA, gl.GL_UNSIGNED_BYTE, pix)
 
-    atlas = { texture = tonumber(id[0]), maps = maps, solids = solidUV, width = w, height = h, glyphs = #entries }
+    atlas = { texture = tonumber(id[0]), maps = maps, byGlyph = byGlyph, solids = solidUV, width = w, height = h,
+        glyphs = #entries }
     return atlas
 end
 
 -- Must be called with a GL context current, i.e. from DrawImguiFrame.
 function VP.glyphs.atlas()
     return atlas or buildAtlas()
+end
+
+-- The atlas map of a charset table: every glyph it holds, added to the atlas
+-- first when it is not there yet. Checked once per table; a database builds a
+-- new table whenever its glyphs change.
+local charsetMaps = setmetatable({}, { __mode = 'k' })
+local function atlasMap(set)
+    local a = VP.glyphs.atlas()
+    local m = charsetMaps[set]
+    if m and m.atlas == a then return a, m.map end
+    local grew = false
+    for _, g in pairs(set) do
+        if not a.byGlyph[g] and not extraSeen[g] then
+            extraSeen[g] = true
+            extraGlyphs[#extraGlyphs + 1] = g
+            grew = true
+        end
+    end
+    if grew then
+        gl.glDeleteTextures(1, ffi.new('GLuint[1]', a.texture))
+        atlas = nil
+        a = buildAtlas()
+    end
+    local map = {}
+    for ch, g in pairs(set) do map[ch] = a.byGlyph[g] end
+    charsetMaps[set] = { atlas = a, map = map }
+    return a, map
 end
 
 -- Screen rectangle of the text area described by a <window .../> line, or nil.
@@ -349,12 +385,20 @@ local function layoutPage(window, lines, map, solid, glyph)
 end
 
 -- Draws one page at the current cursor position and moves the cursor below it.
+-- font is 'US' (the default), 'JP', or a charset table (VP.tdb charset), whose
+-- edited and added glyphs are put in the atlas.
 -- Returns the number of characters that had no glyph.
 function VP.glyphs.drawPage(window, lines, font, scale)
-    local a = VP.glyphs.atlas()
+    local a, map
+    if type(font) == 'table' then
+        a, map = atlasMap(font)
+    else
+        a = VP.glyphs.atlas()
+        map = a.maps[font or 'US']
+    end
     scale = scale or 2
     local ox, oy = imgui.GetCursorPos()
-    local missing = layoutPage(window, lines, a.maps[font or 'US'], function(name, x, y, w, h)
+    local missing = layoutPage(window, lines, map, function(name, x, y, w, h)
         drawSolid(a, name, ox, oy, x, y, w, h, scale)
     end, function(g, x, y)
         imgui.SetCursorPos(ox + x * scale, oy + y * scale)
@@ -418,7 +462,7 @@ local function zstore(data)
 end
 
 function VP.glyphs.pagePng(window, lines, font)
-    local db = font == 'JP' and VP.constants.fontJP or VP.constants.font
+    local db = type(font) == 'table' and font or font == 'JP' and VP.constants.fontJP or VP.constants.font
     local pix = ffi.new('uint8_t[?]', PAGE_W * PAGE_H)
     local function fill(x0, y0, w, h, v)
         for y = math.max(0, y0), math.min(PAGE_H, y0 + h) - 1 do

@@ -7,7 +7,8 @@
 -- which the conflict tests must catch; VP_TDB_RED=2 runs transactions without
 -- a transaction, which the rollback test must catch; VP_TDB_RED=3 gives every
 -- language every letter, which the languages test must catch; VP_TDB_RED=4
--- makes the charset ignore the database glyphs, which the glyphs test must catch.
+-- makes the charset ignore the database glyphs, and VP_TDB_RED=5 draws pages from
+-- the font database instead of the charset; the glyphs test must catch both.
 
 local here = debug.getinfo(1, 'S').source:match('^@(.*/)') or './'
 Support.extra.dofile(here .. 'browser.lua')
@@ -24,6 +25,11 @@ if os.getenv('VP_TDB_RED') == '1' then
         return gcas(self, rec, cur and cur.version or 0, now)
     end
     print('red arm: the version check is skipped')
+end
+if os.getenv('VP_TDB_RED') == '5' then
+    local png = VP.glyphs.pagePng
+    VP.glyphs.pagePng = function(w, l, font) return png(w, l, type(font) == 'table' and 'US' or font) end
+    print('red arm: pages are drawn from the font database, not the charset')
 end
 if os.getenv('VP_TDB_RED') == '4' then
     VP.tdb.backends.sqlite.glyphs = function() return {} end
@@ -456,6 +462,10 @@ test('glyphs', function()
     eq(added, 1, 'edited é appended to the room font')
     eq(out[1].tokens[1].g, 1, 'e keeps the room glyph')
     eq(out[1].tokens[2].g, 3, 'é uses the appended glyph')
+    -- The web preview draws the edited glyph; the language set's draws the old one.
+    local edPng = VP.glyphs.pagePng(nil, { 'é' }, db:charset())
+    local basePng = VP.glyphs.pagePng(nil, { 'é' }, VP.languages.charset('fr'))
+    truthy(edPng ~= basePng, 'translated page drawn with the edited é')
     local nf = VP.preview.parseFont(newFont)
     eq(nf.widths[3], 7, 'appended glyph has the edited advance')
     eq(nf.bitmaps[3], base64.decode(F.encode(rows)), 'appended glyph has the edited bitmap')
@@ -466,6 +476,7 @@ test('glyphs', function()
     eq(db:charset()['é'].width, 6, 'é back to the French letter')
     local _, _, addedAfter = VP.preview.resolveChars({ [1] = { tokens = chars('é') } }, fontBytes, db:charset())
     eq(addedAfter, 0, 'restored é is the room font glyph again')
+    eq(VP.glyphs.pagePng(nil, { 'é' }, db:charset()), basePng, 'restored é drawn as the French letter')
     truthy(db:putGlyph({ ch = 'é', width = 6, data = base.data, author = 'ana' }, 2), 'é written again')
     local h = db:glyphHistory('é')
     eq(#h, 3, 'é history')

@@ -292,7 +292,7 @@ local function drawTranslate(v, room)
             for _, p in ipairs(problems) do colored(RED, p) end
             for _, n in ipairs(notes) do colored(YELLOW, n) end
         end
-        drawPages(trWindow, trPages, 'US', 'trpages')
+        drawPages(trWindow, trPages, M.charset(), 'trpages')
     end
     imgui.EndGroup()
 

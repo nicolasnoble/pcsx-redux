@@ -341,7 +341,7 @@ local function editPage(path, i, e, message, conflict)
                 H.div { class = 'pages',
                     H.div { H.h3 'Original page', pagesBlock(origWindow, origPages) },
                     jps and H.div { H.h3 'Japanese page', pagesBlock(jps.window, jps.pages, 'JP') } or false,
-                    H.div { H.h3 'Translated page', pagesBlock(trWindow, trPages) },
+                    H.div { H.h3 'Translated page', pagesBlock(trWindow, trPages, M.charset()) },
                 },
                 H.h3 'History',
                 H.div { class = 'hist', hist },
