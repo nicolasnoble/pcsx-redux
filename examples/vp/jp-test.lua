@@ -118,36 +118,48 @@ if usPath then
     VP.globals.index.entries = {}
     local us, usErrors = rooms(usPath, 'US')
     if not us then return end
-    local m = { pairs = 0, noJP = 0, scriptCount = 0, samePtrs = 0, diffPtrs = 0, usStrings = 0, matched = 0, emptyEither = 0 }
+    local m = { rooms = 0, noJP = 0, scriptCount = 0, how = { same = 0, logic = 0, none = 0 },
+        usStrings = 0, paired = 0, byIndex = 0, empty = 0 }
     for idx, list in pairs(us) do
+        m.rooms = m.rooms + 1
         local j = jp[idx + 117]
         if not j then
             m.noJP = m.noJP + 1
         elseif #j ~= #list then
             m.scriptCount = m.scriptCount + 1
         else
-            m.pairs = m.pairs + 1
             for k, extra in ipairs(list) do
                 local u, nu = strings(extra)
-                local p, np = strings(j[k])
+                local p = strings(j[k])
                 m.usStrings = m.usStrings + nu
-                if nu == np then m.samePtrs = m.samePtrs + 1 else
-                    m.diffPtrs = m.diffPtrs + 1
-                    if m.diffPtrs <= 20 then print(string.format('ptr count differs: US %d (%d) JP %d (%d)', idx, nu, idx + 117, np)) end
+                local r = VP.jpmatch.pair(extra, j[k])
+                m.how[r.how] = m.how[r.how] + 1
+                if r.how == 'none' and m.how.none <= 10 then
+                    print(string.format('unpaired: US %d (%d ptrs, %d opened) JP %d (%d opened)', idx, nu,
+                        #extra.textRefs, idx + 117, #j[k].textRefs))
                 end
-                for i, s in pairs(u) do
-                    if p[i] then
-                        m.matched = m.matched + 1
-                        if s == '' or p[i] == '' then m.emptyEither = m.emptyEither + 1 end
+                local show = os.getenv('VP_JP_SHOW') -- 'room:ptr,room:ptr'
+                for want in (show or ''):gmatch('[^,]+') do
+                    local room, ptr = want:match('(%d+):(%d+)')
+                    if tonumber(room) == idx and r.map[tonumber(ptr)] then
+                        print(string.format('SHOW %s %s US: %s', room, r.how, u[tonumber(ptr)]))
+                        print(string.format('SHOW %s JP ptr %d: %s', room, r.map[tonumber(ptr)], p[r.map[tonumber(ptr)]]))
                     end
+                end
+                if r.how == 'logic' then print('logic-paired room US ' .. idx) end
+                for ui, ji in pairs(r.map) do
+                    m.paired = m.paired + 1
+                    if ui == ji then m.byIndex = m.byIndex + 1 end
+                    if u[ui] == '' or p[ji] == '' then m.empty = m.empty + 1 end
                 end
             end
         end
     end
-    print(string.format('US rooms=%d load errors=%d; paired rooms=%d, US rooms with no JP room=%d, script count differs=%d',
-        (function() local n = 0 for _ in pairs(us) do n = n + 1 end return n end)(), usErrors, m.pairs, m.noJP, m.scriptCount))
-    print(string.format('scripts with the same pointer count=%d, different=%d; US strings=%d, with a JP string at the same index=%d (empty on one side %d)',
-        m.samePtrs, m.diffPtrs, m.usStrings, m.matched, m.emptyEither))
+    print(string.format('US rooms=%d load errors=%d, with no JP room=%d, script count differs=%d', m.rooms, usErrors,
+        m.noJP, m.scriptCount))
+    print(string.format('MATCH rooms same=%d logic=%d none=%d; US strings=%d paired=%d (at the same index %d, empty on a side %d)',
+        m.how.same, m.how.logic, m.how.none, m.usStrings, m.paired, m.byIndex, m.empty))
+    green = green and m.paired > 0
     green = green and usErrors == 0
 end
 print('JP ' .. (green and 'PASS' or 'FAIL'))

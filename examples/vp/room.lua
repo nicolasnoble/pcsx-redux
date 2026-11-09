@@ -52,6 +52,8 @@ end
 -- { typ = 'fixed' } / { typ = 'auto' } / nil.
 local function extractTextboxes(logic, ptrStart, out, ptrsRaws)
     local textboxes = {}
+    -- Every pointer a textbox opcode opens, in the order the logic holds them.
+    local refs = {}
     ptrsRaws = ptrsRaws or {}
 
     local function rdOp(pc)
@@ -67,6 +69,7 @@ local function extractTextboxes(logic, ptrStart, out, ptrsRaws)
     local function addTextbox(txtptr, tb, site)
         if txtptr < 0 then return end
         local idx = txtptr + ptrStart
+        refs[#refs + 1] = idx
         if textboxes[idx] then
             local sites = textboxes[idx].sites
             if sites and site then sites[#sites + 1] = site end
@@ -194,7 +197,7 @@ local function extractTextboxes(logic, ptrStart, out, ptrsRaws)
         [0x14] = callProcess,
     })
 
-    return textboxes
+    return textboxes, refs
 end
 
 VP.room = VP.room or {}
@@ -305,7 +308,7 @@ function extract_room_script(fname, script, font, fileInfo)
         disasmOut = Support.File.open(fname .. '/EXTRA/logic.txt', 'TRUNCATE')
     end
     checkRoomLogic(logic)
-    local textboxes = extractTextboxes(logic, ptrStart, disasmOut, ptrsRaws)
+    local textboxes, textRefs = extractTextboxes(logic, ptrStart, disasmOut, ptrsRaws)
     if disasmOut and disasmOut.close then disasmOut:close() end
 
     -- Every room opens the same system messages at the start of its logic
@@ -386,6 +389,7 @@ function extract_room_script(fname, script, font, fileInfo)
     end
 
     extra.textboxes = textboxes
+    extra.textRefs = textRefs
     return ptrsContents, extra
 end
 
