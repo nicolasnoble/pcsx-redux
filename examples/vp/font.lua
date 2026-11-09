@@ -39,10 +39,16 @@ function extractFont(file, fileInfo)
 
     for i = 1, numGlyphs do
         local glyph = base64.encode(tostring(file:read(height * 2)))
-        -- A glyph is looked up in the US database first, then in the JP one,
-        -- so a US room never resolves to a JP character.
+        -- A glyph is looked up in its own disc's database first, then in the
+        -- other one: the two share bitmaps under different characters (the
+        -- US middle dot is the JP katakana middle dot).
         local key = glyphKey(widths[i], glyph)
-        local fontData = VP.constants.fontByData[key] or VP.constants.fontJPByData[key]
+        local fontData
+        if fileInfo.region == 'JP' then
+            fontData = VP.constants.fontJPByData[key] or VP.constants.fontByData[key]
+        else
+            fontData = VP.constants.fontByData[key] or VP.constants.fontJPByData[key]
+        end
         -- Fonts are padded with blank glyphs of width 0, which stand for no
         -- character.
         if not fontData and widths[i] == 0 and not glyph:find('[^A=]') then

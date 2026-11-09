@@ -83,7 +83,7 @@ end
 
 local jp, jpErrors = rooms(os.getenv('VP_DISC_JP'), 'JP')
 if not jp then return end
-local stats = { rooms = 0, scripts = 0, strings = 0, failures = 0, unknown = 0, heights = {} }
+local stats = { rooms = 0, scripts = 0, strings = 0, failures = 0, unknown = 0, undrawable = 0, undrawableChars = {}, heights = {} }
 for idx, list in pairs(jp) do
     stats.rooms = stats.rooms + 1
     for _, extra in ipairs(list) do
@@ -100,6 +100,12 @@ for idx, list in pairs(jp) do
                 if t.g and extra.font[t.g] and not extra.font[t.g].text and not extra.font[t.g].padding then
                     stats.unknown = stats.unknown + 1
                 end
+                -- Every JP character must be drawable with the JP font set.
+                local f = t.g and extra.font[t.g]
+                if f and f.text and not VP.constants.fontJP[f.text] then
+                    stats.undrawable = stats.undrawable + 1
+                    stats.undrawableChars[f.text] = true
+                end
             end
             i = i + 1
         end
@@ -111,7 +117,10 @@ local hs = {}
 for h, n in pairs(stats.heights) do hs[#hs + 1] = h .. ':' .. n end
 print(string.format('JP rooms=%d scripts=%d strings=%d round-trip failures=%d unknown glyphs=%d load errors=%d heights %s',
     stats.rooms, stats.scripts, stats.strings, stats.failures, stats.unknown, jpErrors, table.concat(hs, ' ')))
-local green = stats.failures == 0 and jpErrors == 0 and stats.strings > 0
+local undrawable = {}
+for c in pairs(stats.undrawableChars) do undrawable[#undrawable + 1] = c end
+print(string.format('JP characters the JP font cannot draw: %d tokens (%s)', stats.undrawable, table.concat(undrawable, ' ')))
+local green = stats.failures == 0 and jpErrors == 0 and stats.strings > 0 and stats.undrawable == 0
 
 local usPath = os.getenv('VP_DISC_US')
 if usPath then

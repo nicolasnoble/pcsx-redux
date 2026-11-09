@@ -59,7 +59,7 @@ end
 -- scripts the script key and the textboxes.
 -- Room scripts also get a Logic viewer: the disassembly of the room bytecode,
 -- with the text each textbox opcode opens, written by the same pass.
-local function roomScriptViewer(script, font, index)
+local function roomScriptViewer(script, font, index, region)
     local logic = {}
     local sink = { write = function(_, s) logic[#logic + 1] = s end }
     local viewer = {
@@ -69,7 +69,7 @@ local function roomScriptViewer(script, font, index)
         fontFile = font,
     }
     viewer.load = function()
-        local ptrs, extra = extract_room_script('room', script, font, { index = index, logicSink = sink })
+        local ptrs, extra = extract_room_script('room', script, font, { index = index, region = region, logicSink = sink })
         viewer.extra = extra
         return ptrs
     end
@@ -181,7 +181,7 @@ containers.arcroom = function(node, file)
     end
     if node.ext == 'arm' then
         pairScripts(children, function(c) if c.tag == 4 then return { 'script', 'font' } end end,
-            function(s, f) return roomScriptViewer(s, f, node.index) end)
+            function(s, f) return roomScriptViewer(s, f, node.index, node.region) end)
     elseif node.ext == 'sarc' then
         pairScripts(children, function(c)
             if c.tag == 4 then return { 'script', 'font' } end
@@ -254,6 +254,7 @@ local function expandContent(node)
                 ftype = node.ftype ~= 'cscript' and node.ftype or nil,
                 ext = node.ext,
                 index = node.index,
+                region = node.region,
                 open = function() return bufferFile(data) end,
             })
         end
@@ -361,6 +362,7 @@ local function indexNode(iso, region)
                         name = string.format('%04i.%s', i, ext),
                         size = entry.size * sectorSize,
                         index = i,
+                        region = region,
                         ftype = info.ftype,
                         ext = ext,
                         open = function() return entry.iso:open(entry.lba, entry.size * sectorSize, mode) end,

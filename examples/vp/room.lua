@@ -216,7 +216,7 @@ function extract_room_script(fname, script, font, fileInfo)
         mkdir(fname .. '/EXTRA')
     end
 
-    local fontData = extractFont(font, { dir = fname .. '/FONT', name = 'font' })
+    local fontData = extractFont(font, { dir = fname .. '/FONT', name = 'font', region = fileInfo and fileInfo.region })
     local lookup = resolveFont(fontData)
 
     script:rSeek(0)
@@ -390,6 +390,7 @@ function extract_room_script(fname, script, font, fileInfo)
 
     extra.textboxes = textboxes
     extra.textRefs = textRefs
+    extra.index = fileInfo and fileInfo.index
     return ptrsContents, extra
 end
 

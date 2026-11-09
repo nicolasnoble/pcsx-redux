@@ -72,7 +72,7 @@ body { font-family: sans-serif; margin: 1em; background: #1d1f23; color: #ddd; }
 a { color: #8cf; } textarea, input { background: #2a2d33; color: #eee; border: 1px solid #555; }
 textarea { width: 100%; font-family: monospace; font-size: 14px; }
 .cols { display: flex; gap: 1.5em; align-items: flex-start; } .cols > div { flex: 1; } .pages { display: flex; flex-wrap: wrap; gap: 0 1em; }
-.red { color: #f66; } .green { color: #6d6; } .yellow { color: #ec4; }
+.red { color: #f66; } .green { color: #6d6; } .yellow { color: #ec4; } .dim { color: #999; }
 input[type=number] { width: 5em; }
 .screen img { width: 640px; image-rendering: pixelated; border: 1px solid #555; }
 .rich { background: #2a2d33; color: #eee; border: 1px solid #555; font-family: monospace; font-size: 14px;
@@ -133,6 +133,10 @@ local function header(back)
             H.input { type = 'hidden', name = 'back', value = back or BASE },
             ' ', H.input { type = 'submit', value = 'Set' }, ' ', VP.languages.describe(target),
         } or false,
+        -- The disc is opened on the host, so its path is set from the emulator
+        -- (Translate tab or VP_DISC_JP), never from this page.
+        ' | Japanese disc ', VP.jp.status() == 'ok' and H.code(VP.jp.disc.exe) or
+            H.span { class = 'dim', VP.jp.status() == 'unset' and 'not opened' or VP.jp.status() },
     }
 end
 
@@ -172,11 +176,11 @@ end
 
 -- Each page drawn in the game font (VP.glyphs.pagePng, the layout the ImGui
 -- preview draws), at twice the game's resolution, with its text as alt text.
-local function pagesBlock(window, pages)
+local function pagesBlock(window, pages, font)
     local out = {}
     for p, lines in ipairs(pages) do
         if #pages > 1 then out[#out + 1] = H.div(string.format('page %d/%d', p, #pages)) end
-        local png = VP.glyphs.pagePng(window, lines)
+        local png = VP.glyphs.pagePng(window, lines, font)
         local text = table.concat(lines, '\n')
         out[#out + 1] = H.img { class = 'gamepage', width = 640, height = 480, alt = text, title = text,
             src = 'data:image/png;base64,' .. base64.encode(png) }
@@ -250,6 +254,17 @@ local function editPage(path, i, e, message, conflict)
         fit[1] = H.p { class = 'red', string.format('At byte %d: %s', ppos, perr2) }
     end
     local origWindow, origPages = M.originalPreview(ptrs[i], extra, i, lookup)
+    local jps, jerr = VP.jp.string(extra, i)
+    local jpBlock
+    if jps then
+        jpBlock = H.div {
+            H.h3 { 'Japanese original ', H.span { class = 'dim', string.format('(JP pointer %d, %s)', jps.ptr,
+                jps.how == 'same' and 'same index' or 'paired by the room logic') } },
+            H.textarea { rows = 4, readonly = true, lang = 'ja', spellcheck = 'false', jps.text },
+        }
+    else
+        jpBlock = H.div { H.h3 'Japanese original', H.p { class = 'dim', jerr } }
+    end
 
     local statuses = {}
     for s = 0, 2 do
@@ -291,6 +306,7 @@ local function editPage(path, i, e, message, conflict)
                 H.h3 'Original',
                 richPair(H.textarea { rows = 4, readonly = true, VP.text.toEditable(extra.tokens[i], lookup) },
                     source, true),
+                jpBlock,
                 H.form { method = 'post', action = link { { 'p', 'save' } },
                     H.input { type = 'hidden', name = 'path', value = path },
                     H.input { type = 'hidden', name = 'i', value = i },
@@ -324,6 +340,7 @@ local function editPage(path, i, e, message, conflict)
                 fit,
                 H.div { class = 'pages',
                     H.div { H.h3 'Original page', pagesBlock(origWindow, origPages) },
+                    jps and H.div { H.h3 'Japanese page', pagesBlock(jps.window, jps.pages, 'JP') } or false,
                     H.div { H.h3 'Translated page', pagesBlock(trWindow, trPages) },
                 },
                 H.h3 'History',

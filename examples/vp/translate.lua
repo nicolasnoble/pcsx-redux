@@ -146,6 +146,22 @@ local function drawLanguages(v)
     if v.langMessage then colored(RED, v.langMessage) end
 end
 
+-- The Japanese disc whose script shows beside the English one.
+local function drawJapaneseDisc(v)
+    VP.jp.status() -- opens VP_DISC_JP on first use
+    if v.jpPath == nil then v.jpPath = VP.jp.path or '' end
+    imgui.TextUnformatted('Japanese disc')
+    imgui.SameLine()
+    imgui.SetNextItemWidth(420)
+    local _, p = imgui.extra.InputTextWithHint('##jpdisc', 'path to a JP disc 1 .cue', v.jpPath)
+    v.jpPath = p
+    imgui.SameLine()
+    if imgui.Button('Open##jpdisc') then VP.jp.setDisc(v.jpPath) end
+    imgui.SameLine()
+    local st = VP.jp.status()
+    if st == 'ok' then colored(GREEN, VP.jp.disc.exe) elseif st ~= 'unset' then colored(RED, st) end
+end
+
 local function drawTranslate(v, room)
     imgui.TextUnformatted('Database')
     imgui.SameLine()
@@ -167,6 +183,7 @@ local function drawTranslate(v, room)
     if not M.db and not M.dbError then M.open(M.path) end
     if not M.db then return end
     drawLanguages(v)
+    drawJapaneseDisc(v)
     drawPreviewControl()
 
     local ptrs, err = VP.vfs.ptrs(room)
@@ -251,6 +268,18 @@ local function drawTranslate(v, room)
     imgui.TextUnformatted('Original')
     local origWindow, origPages = M.originalPreview(ptrs[i], extra, i, v.lookup)
     drawPages(origWindow, origPages, 'US', 'origpages')
+    imgui.EndGroup()
+    imgui.SameLine()
+    imgui.BeginGroup()
+    imgui.TextUnformatted('Japanese original')
+    local jps, jerr = VP.jp.string(extra, i)
+    if jps then
+        imgui.TextDisabled(string.format('JP pointer %d (%s)', jps.ptr, jps.how == 'same' and 'same index' or
+            'paired by the room logic'))
+        drawPages(jps.window, jps.pages, 'JP', 'jppages')
+    else
+        imgui.TextDisabled(jerr)
+    end
     imgui.EndGroup()
     imgui.SameLine()
     imgui.BeginGroup()
