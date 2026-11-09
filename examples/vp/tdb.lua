@@ -202,6 +202,52 @@ CREATE TABLE settings (name TEXT PRIMARY KEY, value TEXT NOT NULL);
 INSERT INTO settings (name, value) VALUES ('target_language', 'fr'), ('source_language', 'en');
 ]]
     end,
+    -- Glyphs a translator edited or added, per target language (primary
+    -- subtag), versioned and soft-deleted like strings. A live row replaces the
+    -- retail or language glyph of its character; a deleted one restores it.
+    [3] = function(db)
+        db:exec [[
+CREATE TABLE glyphs (
+    lang TEXT NOT NULL,
+    ch TEXT NOT NULL,
+    width INTEGER NOT NULL,
+    height INTEGER NOT NULL,
+    data TEXT NOT NULL,
+    author TEXT,
+    note TEXT,
+    version INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    deleted_at INTEGER,
+    PRIMARY KEY (lang, ch)
+);
+CREATE TABLE glyph_history (
+    id INTEGER PRIMARY KEY,
+    lang TEXT NOT NULL,
+    ch TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    width INTEGER NOT NULL,
+    height INTEGER NOT NULL,
+    data TEXT NOT NULL,
+    author TEXT,
+    note TEXT,
+    at INTEGER NOT NULL,
+    deleted_at INTEGER
+);
+CREATE INDEX glyph_history_row ON glyph_history (lang, ch, version);
+]]
+    end,
+}
+
+local glyphColumns = {
+    { 'lang', 'lang' }, { 'ch', 'ch' }, { 'width', 'width' }, { 'height', 'height' }, { 'data', 'data' },
+    { 'author', 'author' }, { 'note', 'note' }, { 'version', 'version' },
+    { 'created_at', 'createdAt' }, { 'updated_at', 'updatedAt' }, { 'deleted_at', 'deletedAt' },
+}
+local glyphHistoryColumns = {
+    { 'lang', 'lang' }, { 'ch', 'ch' }, { 'version', 'version' }, { 'width', 'width' }, { 'height', 'height' },
+    { 'data', 'data' }, { 'author', 'author' }, { 'note', 'note' }, { 'at', 'updatedAt' },
+    { 'deleted_at', 'deletedAt' },
 }
 
 -- Columns of a stored record, in table order, and the row field each maps to.
@@ -347,6 +393,53 @@ function sqlite:setSetting(name, value)
     self.db:run('INSERT OR REPLACE INTO settings (name, value) VALUES (?, ?)', name, value)
 end
 
+-- Glyph records: getGlyph(lang, ch), compareAndSetGlyph(rec, expected, now)
+-- with the same version rule as compareAndSet, glyphs(lang, deleted) and
+-- glyphHistory(lang, ch).
+function sqlite:getGlyph(lang, ch)
+    return fromColumns(self.db:first('SELECT ' .. columnList(glyphColumns) ..
+        ' FROM glyphs WHERE lang = ? AND ch = ?', lang, ch), glyphColumns)
+end
+
+function sqlite:compareAndSetGlyph(rec, expectedVersion, now)
+    return self.db:transaction(function()
+        local cur = self:getGlyph(rec.lang, rec.ch)
+        local curVersion = cur and cur.version or 0
+        if curVersion ~= expectedVersion then return false, cur end
+        local stored = {}
+        for k, v in pairs(rec) do stored[k] = v end
+        stored.version = curVersion + 1
+        stored.createdAt = cur and cur.createdAt or now
+        stored.updatedAt = now
+        local values = {}
+        for i, c in ipairs(glyphColumns) do values[i] = stored[c[2]] end
+        self.db:run('INSERT OR REPLACE INTO glyphs (' .. columnList(glyphColumns) .. ') VALUES (' ..
+            string.rep('?', #glyphColumns, ', ') .. ')', unpack(values, 1, #glyphColumns))
+        local hvalues = {}
+        for i, c in ipairs(glyphHistoryColumns) do hvalues[i] = stored[c[2]] end
+        self.db:run('INSERT INTO glyph_history (' .. columnList(glyphHistoryColumns) .. ') VALUES (' ..
+            string.rep('?', #glyphHistoryColumns, ', ') .. ')', unpack(hvalues, 1, #glyphHistoryColumns))
+        return true, stored
+    end)
+end
+
+function sqlite:glyphs(lang, deleted)
+    local list = {}
+    local sql = 'SELECT ' .. columnList(glyphColumns) .. ' FROM glyphs WHERE lang = ?' ..
+        (deleted and '' or ' AND deleted_at IS NULL') .. ' ORDER BY ch'
+    for r in self.db:rows(sql, lang) do list[#list + 1] = fromColumns(r, glyphColumns) end
+    return list
+end
+
+function sqlite:glyphHistory(lang, ch)
+    local list = {}
+    for r in self.db:rows('SELECT ' .. columnList(glyphHistoryColumns) ..
+        ' FROM glyph_history WHERE lang = ? AND ch = ? ORDER BY version', lang, ch) do
+        list[#list + 1] = fromColumns(r, glyphHistoryColumns)
+    end
+    return list
+end
+
 -- The database object the editor uses, over any backend.
 local tdb = {}
 tdb.__index = tdb
@@ -455,11 +548,73 @@ function tdb:setLanguage(which, tag)
     if which ~= 'target' and which ~= 'source' then error('tdb:setLanguage: target or source', 2) end
     if not VP.languages.valid(tag) then return nil, 'Not a language tag: ' .. tostring(tag) end
     self.backend:setSetting(which .. '_language', tag)
+    self.charsetCache = nil
     return true
 end
 
--- Characters a translation in this database may use.
-function tdb:charset() return VP.languages.charset(self:targetLanguage()) end
+-- Characters a translation in this database may use: the retail font and the
+-- target language's letters (VP.languages.charset), with the database's own
+-- glyphs over them. Cached until this object writes a glyph or a language; a
+-- glyph written through another connection shows after reloadGlyphs().
+function tdb:charset()
+    local lang = self:glyphLanguage()
+    local c = self.charsetCache
+    if c and c.lang == lang then return c.set end
+    local set = {}
+    for k, v in pairs(VP.languages.charset(lang)) do set[k] = v end
+    for _, g in ipairs(self.backend:glyphs(lang)) do
+        set[g.ch] = { width = g.width, height = g.height, data = g.data, edited = true }
+    end
+    self.charsetCache = { lang = lang, set = set }
+    return set
+end
+
+function tdb:reloadGlyphs() self.charsetCache = nil end
+
+-- Glyph rows are keyed by the target language's primary subtag, as letter sets are.
+function tdb:glyphLanguage() return VP.languages.primary(self:targetLanguage()) end
+
+-- The database's glyph for ch in its target language, deleted or not, or nil.
+function tdb:glyph(ch) return self.backend:getGlyph(self:glyphLanguage(), ch) end
+
+-- The live glyphs of the target language: { ch = row }.
+function tdb:glyphEdits()
+    local out = {}
+    for _, g in ipairs(self.backend:glyphs(self:glyphLanguage())) do out[g.ch] = g end
+    return out
+end
+
+function tdb:glyphHistory(ch) return self.backend:glyphHistory(self:glyphLanguage(), ch) end
+
+-- Stores g ({ ch, width, data, author, note }) as the new version of its
+-- character, in the target language. Same returns as put: true and the row,
+-- false and the current row on a version conflict, nil and a message when
+-- VP.fontedit.check refuses it.
+function tdb:putGlyph(g, expectedVersion)
+    if type(expectedVersion) ~= 'number' then error('tdb:putGlyph: needs the version the glyph was read at', 2) end
+    local rec = { ch = g.ch, width = g.width, height = g.height or VP.fontedit.HEIGHT, data = g.data,
+        author = g.author, note = g.note, lang = self:glyphLanguage() }
+    local problems = VP.fontedit.check(rec)
+    if #problems > 0 then return nil, 'Glyph not saved: ' .. problems[1] end
+    local ok, stored = self.backend:compareAndSetGlyph(rec, expectedVersion, self.clock())
+    if ok then self.charsetCache = nil end
+    return ok, stored
+end
+
+-- Soft delete: the character goes back to its retail or language glyph (an
+-- added one disappears). Versioned like putGlyph.
+function tdb:deleteGlyph(ch, expectedVersion, author)
+    local cur = self:glyph(ch)
+    if not cur then return false, nil end
+    local rec = {}
+    for k, v in pairs(cur) do rec[k] = v end
+    rec.version, rec.createdAt, rec.updatedAt = nil, nil, nil
+    rec.deletedAt = self.clock()
+    rec.author = author or cur.author
+    local ok, stored = self.backend:compareAndSetGlyph(rec, expectedVersion, rec.deletedAt)
+    if ok then self.charsetCache = nil end
+    return ok, stored
+end
 
 -- The geometry a row will be shown in: its overrides over the original box.
 -- original is { x, y, width, height } or nil.

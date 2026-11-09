@@ -6,7 +6,8 @@
 -- Red arms: VP_TDB_RED=1 makes the sqlite backend skip its version check,
 -- which the conflict tests must catch; VP_TDB_RED=2 runs transactions without
 -- a transaction, which the rollback test must catch; VP_TDB_RED=3 gives every
--- language every letter, which the languages test must catch.
+-- language every letter, which the languages test must catch; VP_TDB_RED=4
+-- makes the charset ignore the database glyphs, which the glyphs test must catch.
 
 local here = debug.getinfo(1, 'S').source:match('^@(.*/)') or './'
 Support.extra.dofile(here .. 'browser.lua')
@@ -17,7 +18,16 @@ if os.getenv('VP_TDB_RED') == '1' then
         local cur = self:get(rec.key, rec.idx)
         return cas(self, rec, cur and cur.version or 0, now)
     end
+    local gcas = VP.tdb.backends.sqlite.compareAndSetGlyph
+    VP.tdb.backends.sqlite.compareAndSetGlyph = function(self, rec, expected, now)
+        local cur = self:getGlyph(rec.lang, rec.ch)
+        return gcas(self, rec, cur and cur.version or 0, now)
+    end
     print('red arm: the version check is skipped')
+end
+if os.getenv('VP_TDB_RED') == '4' then
+    VP.tdb.backends.sqlite.glyphs = function() return {} end
+    print('red arm: the charset ignores the database glyphs')
 end
 if os.getenv('VP_TDB_RED') == '3' then
     VP.languages.charset = function() return VP.constants.font end
@@ -352,6 +362,136 @@ test('languages', function()
     -- The retail font has no French letters; the font database has them all.
     eq(VP.constants.retailFont['é'], nil, 'retail font has no é')
     truthy(VP.constants.font['é'], 'font database has é')
+end)
+
+test('glyphs', function()
+    local F = VP.fontedit
+    -- A database made before the glyphs migration upgrades with none.
+    local path = os.tmpname()
+    os.remove(path)
+    paths[#paths + 1] = path
+    local old = VP.tdb.open(path, { migrations = { VP.tdb.migrations[1], VP.tdb.migrations[2] } })
+    old:close()
+    local up = VP.tdb.open(path)
+    eq(next(up:glyphEdits()), nil, 'upgraded database has no glyphs')
+    up:close()
+
+    local db = tmpdb()
+    local base = db:charset()['é']
+    eq(base.width, 6, 'retail-set é advance')
+    -- Edit é: one more column, advance 7.
+    local rows = F.rows(base.data)
+    for y = 0, F.HEIGHT - 1 do
+        if F.get(rows, 4, y) then F.set(rows, 5, y, true) end
+    end
+    eq(F.extent(rows), 6, 'edited extent')
+    eq(F.suggestedWidth(rows), 7, 'suggested advance')
+    local ok, g = db:putGlyph({ ch = 'é', width = 7, data = F.encode(rows), author = 'ana' }, 0)
+    truthy(ok, 'é stored')
+    eq(g.version, 1, 'é version')
+    eq(db:charset()['é'].width, 7, 'charset uses the edit')
+    eq(db:charset()['é'].data, F.encode(rows), 'charset uses the edited bitmap')
+    eq(VP.languages.charset('fr')['é'].width, 6, 'the language set is untouched')
+    eq(VP.constants.font['é'].width, 6, 'the font database is untouched')
+    local widths = VP.glyphs.measureTokens(chars('éé'), nil, nil, db:charset())
+    eq(widths[1][1], 14, 'measured with the edited advance')
+    -- A stale write is a conflict, not last-writer-wins.
+    local ok2, cur = db:putGlyph({ ch = 'é', width = 8, data = F.encode(rows), author = 'bo' }, 0)
+    eq(ok2, false, 'stale glyph write')
+    eq(cur.author, 'ana', 'conflict returns the stored glyph')
+    eq(db:charset()['é'].width, 7, 'conflict changed nothing')
+    -- Add a character the language set does not have.
+    eq(db:charset()['ñ'], nil, 'fr has no ñ')
+    local t0 = VP.text.fromEditable('año', 'primary', db:charset())
+    eq(t0, nil, 'año refused before ñ exists')
+    local n = F.blank()
+    for x = 0, 4 do F.set(n, x, 1, true) end
+    for y = 4, 8 do
+        F.set(n, 0, y, true)
+        F.set(n, 4, y, true)
+    end
+    for x = 1, 3 do F.set(n, x, 3, true) end
+    truthy(db:putGlyph({ ch = 'ñ', width = F.suggestedWidth(n), data = F.encode(n), author = 'ana' }, 0), 'ñ added')
+    truthy(VP.text.fromEditable('año', 'primary', db:charset()), 'año parses once ñ exists')
+    eq(#VP.tdb.fitProblems(chars('año'), { width = 100, height = 14 }, nil, db:charset()), 0, 'año fits')
+    eq(F.origin('ñ', 'fr', true), 'added', 'ñ is added')
+    eq(F.origin('é', 'fr', true), 'edited', 'é is edited')
+    eq(F.origin('e', 'fr', false), 'retail', 'e is retail')
+    eq(F.origin('ê', 'fr', false), 'letter', 'ê is a French letter')
+    -- Glyphs belong to the target language's primary subtag.
+    db:setLanguage('target', 'en')
+    eq(db:charset()['ñ'], nil, 'en does not see the French ñ')
+    db:setLanguage('target', 'fr-CA')
+    truthy(db:charset()['ñ'], 'fr-CA sees the French ñ')
+    -- Refusals.
+    for _, bad in ipairs({
+        { ch = 'ab', width = 6, data = F.encode(n) },
+        { ch = '', width = 6, data = F.encode(n) },
+        { ch = '\n', width = 6, data = F.encode(n) },
+        { ch = 'x', width = 0, data = F.encode(n) },
+        { ch = 'x', width = 17, data = F.encode(n) },
+        { ch = 'x', width = 6, data = 'AAAA' },
+        { ch = 'x', width = 6, height = 11, data = F.encode(n) },
+    }) do
+        local okb, msg = db:putGlyph(bad, 0)
+        if okb ~= nil then error('accepted a bad glyph ' .. tostring(bad.ch) .. '/' .. tostring(bad.width), 0) end
+        truthy(msg:find('Glyph not saved', 1, true), 'refusal message: ' .. tostring(msg))
+    end
+    local _, notes = F.check({ ch = 'x', width = 3, data = F.encode(n) })
+    truthy(notes[1] and notes[1]:find('overlaps', 1, true), 'advance under the extent is noted')
+    local _, notes2 = F.check({ ch = 'q', width = 6, data = db:charset()['e'].data }, db:charset())
+    truthy(table.concat(notes2, ' '):find('same glyph as e', 1, true), 'a shared bitmap is noted')
+    -- In-game preview: a room font holding the retail e and é gets the edited é
+    -- appended (its bitmap is new), and nothing for an unedited e.
+    local function roomFont(list)
+        local f = { height = 12, widths = {}, bitmaps = {} }
+        for i, ch in ipairs(list) do
+            local gl = VP.languages.charset('fr')[ch]
+            f.widths[i], f.bitmaps[i] = gl.width, base64.decode(gl.data)
+        end
+        return VP.preview.buildFont(f)
+    end
+    local fontBytes = roomFont({ 'e', 'é' })
+    local out, newFont, added = VP.preview.resolveChars({ [1] = { tokens = chars('eé') } }, fontBytes, db:charset())
+    eq(added, 1, 'edited é appended to the room font')
+    eq(out[1].tokens[1].g, 1, 'e keeps the room glyph')
+    eq(out[1].tokens[2].g, 3, 'é uses the appended glyph')
+    local nf = VP.preview.parseFont(newFont)
+    eq(nf.widths[3], 7, 'appended glyph has the edited advance')
+    eq(nf.bitmaps[3], base64.decode(F.encode(rows)), 'appended glyph has the edited bitmap')
+    -- Delete restores the language glyph; history keeps every version.
+    local okd, del = db:deleteGlyph('é', 1, 'bo')
+    truthy(okd, 'é deleted')
+    eq(del.deletedAt ~= nil, true, 'soft deleted')
+    eq(db:charset()['é'].width, 6, 'é back to the French letter')
+    local _, _, addedAfter = VP.preview.resolveChars({ [1] = { tokens = chars('é') } }, fontBytes, db:charset())
+    eq(addedAfter, 0, 'restored é is the room font glyph again')
+    truthy(db:putGlyph({ ch = 'é', width = 6, data = base.data, author = 'ana' }, 2), 'é written again')
+    local h = db:glyphHistory('é')
+    eq(#h, 3, 'é history')
+    eq(h[1].width, 7, 'history v1')
+    eq(h[2].deletedAt ~= nil, true, 'history v2 is the delete')
+    eq(h[3].deletedAt, nil, 'history v3 brings it back')
+    db:close()
+end)
+
+test('glyph entries and JP duplicates', function()
+    local F = VP.fontedit
+    local list = F.entries('fr', { ['ñ'] = { width = 6, height = 12, data = VP.constants.font['n'].data } })
+    local byCh = {}
+    for _, e in ipairs(list) do byCh[e.ch] = e end
+    eq(byCh['ñ'].origin, 'added', 'added entry listed')
+    eq(byCh['é'].origin, 'letter', 'French letter listed')
+    eq(byCh['A'].origin, 'retail', 'retail letter listed')
+    truthy(list[1].ch == ' ', 'sorted by codepoint, space first: ' .. list[1].ch)
+    local dups = F.jpDuplicates()
+    truthy(#dups > 0, 'the JP database has duplicated characters')
+    local total = 0
+    for _, d in ipairs(dups) do
+        total = total + d.count
+        eq(#F.jpVariants(d.ch), d.count, 'variants of ' .. d.ch)
+    end
+    truthy(#VP.constants.fontJPVariants > 0, 'JP variants loaded')
 end)
 
 for _, t in ipairs(tests) do
