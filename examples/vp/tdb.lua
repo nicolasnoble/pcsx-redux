@@ -293,6 +293,17 @@ VP.tdb.backends.sqlite = sqlite
 function sqlite.open(path, options)
     local self = setmetatable({ db = PCSX.SQLite.open(path) }, sqlite)
     self.db:busyTimeout(5000)
+    -- sqlite runs on the GUI thread, so a commit's fsyncs stall the frame. In WAL
+    -- mode with synchronous=NORMAL a commit does not sync; only checkpoints do,
+    -- and with the automatic checkpoint off the only one runs when the last
+    -- connection closes. A power loss can drop the last commits, never corrupt
+    -- the file. options.durable keeps sqlite's defaults (rollback journal, a
+    -- sync on every commit).
+    if not (options and options.durable) then
+        self.db:first 'PRAGMA journal_mode = WAL'
+        self.db:exec 'PRAGMA synchronous = NORMAL'
+        self.db:first 'PRAGMA wal_autocheckpoint = 0'
+    end
     self.db:exec 'CREATE TABLE IF NOT EXISTS meta (migration INTEGER NOT NULL)'
     if not self.db:first 'SELECT migration FROM meta' then self.db:run 'INSERT INTO meta (migration) VALUES (0)' end
     local migrations = options and options.migrations or VP.tdb.migrations
